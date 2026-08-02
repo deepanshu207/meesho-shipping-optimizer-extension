@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "description": "Public live shipping seed reports — floor pair 59+60 for Kurtis (sscat 10004).",
+  "reports": [
+    {
+      "categoryId": "10004",
+      "file": "kurti-10004.csv",
+      "name": "Kurtis",
+      "note": "Pink kurti live run: tiers 59|60|68 — recommend floor pair 59+60"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+KIWI BROWSER (ANDROID) — INSTALL THIS EXTENSION
+================================================
+
+THIS FOLDER is the extension. manifest.json is HERE (same folder as this file).
+
+Before you zip, confirm you see:
+  ✓ manifest.json
+  ✓ content.js
+  ✓ icons/
+  ✓ Badge/
+  ✓ js/
+
+There must be NO file named _headers (Chrome/Kiwi block names starting with _).
+
+--- ZIP ON COMPUTER ---
+
+1. Zip THIS ENTIRE FOLDER (manifest.json at top level when unzipped).
+
+2. Or run from repo root:
+   bash scripts/build-extension-zip.sh
+
+--- ON ANDROID (KIWI) ---
+
+1. Copy zip to phone → unzip
+2. Kiwi → Extensions → Developer mode → Load unpacked
+3. Select the folder with manifest.json
+4. Open supplier.meesho.com → AI Optimizer button
+
+No license key needed — opens directly to Live / Test Lab.

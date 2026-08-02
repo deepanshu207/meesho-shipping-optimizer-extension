@@ -1,0 +1,50 @@
+record_type,key,value,variant_id,name,shipping_inr,est_inr,verified,live_verified,duplicate_pid,no_pid,variant_style,path,kb,width,height,source,recommended,pick_rank,score,gap_to_next,tier_count,notes,savings_vs_baseline,border_px,badge_count,jpeg_quality,live_total_price,meesho_price_used
+META,generated_at,2026-08-02T01:04:55.354Z,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,baseline_shipping_inr,59,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,category_id,10004,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,category_name,Kurtis · ID 10004,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,category_path,"Women Fashion › Ethnic Wear › Kurtis, Sets & Fabrics",,,,,,,,,,,,,,,,,,,,,,,,,,
+META,category_source,user,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,manual_mode,false,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,strategy,rupee_pair,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,strategy_reason,Lowest ₹1-apart pair found at ₹59 and ₹60. Both are worth testing — Meesho often clusters shipping one rupee apart at the floor.,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,total_variants,20,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,priced_count,20,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,unpriced_count,0,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,unique_prices,59|60|68,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,lowest_price,59,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,highest_price,68,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,recommended_prices,59|60,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,recommended_variant_ids,var-1-3v68z|var-3-yrswr,,,,,,,,,,,,,,,,,,,,,,,,,,
+META,all_rupee_pairs,59-60,,,,,,,,,,,,,,,,,,,,,,,,,,
+PATTERN,,FLOW: Generate live variants → Meesho returns customer shipping ₹ per image → sort by price → apply pick rules.,,,,,,,,,,,,,,,,,,,,,,,,,,
+PATTERN,,"PICK RULE: If lowest unique prices include a ₹1 gap (e.g. 60 & 61), recommend BOTH. Otherwise recommend ONLY the lowest price (e.g. 46 from 46,50).",,,,,,,,,,,,,,,,,,,,,,,,,,
+PATTERN,,RESULT: Pair strategy — test ₹59 and ₹60 variants on Meesho.,,,,,,,,,,,,,,,,,,,,,,,,,,
+PATTERN,,Only one ₹1 pair in this run: 59-60.,,,,,,,,,,,,,,,,,,,,,,,,,,
+PATTERN,,Category: Kurtis · ID 10004 (sscat_id 10004) — shipping slabs vary by category.,,,,,,,,,,,,,,,,,,,,,,,,,,
+PATTERN,,Large tier jumps: ₹60→₹68 (+8) — images likely crossed a Meesho size/weight slab.,,,,,,,,,,,,,,,,,,,,,,,,,,
+PRICE_TIER,,,var-1-3v68z,Var-5,59,,,,,,,,,,,,,,,1,2,verified=2;no_pid=0;dup_pid=2,,,,,,
+PRICE_TIER,,,var-3-yrswr,Var-9,60,,,,,,,,,,,,,,,8,1,verified=1;no_pid=0;dup_pid=1,,,,,,
+PRICE_TIER,,,var-4-dvjmp,Var-1,68,,,,,,,,,,,,,,,,17,verified=0;no_pid=17;dup_pid=0,,,,,,
+VARIANT,,,var-1-3v68z,Var-5,59,0,true,true,1032730386,false,standard,standard,52,,,,primary,true,1,185,,,,0,22,,,159,100
+VARIANT,,,var-2-1vxhv,Var-13,59,0,true,true,1032730386,false,standard,standard,51,,,,primary,false,,185,,,,0,20,,,159,100
+VARIANT,,,var-3-yrswr,Var-9,60,0,true,true,699067729,false,standard,standard,53,,,,primary,true,2,185,,,,-1,24,,,160,100
+VARIANT,,,var-4-dvjmp,Var-1,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-5-f45ne,Var-2,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-6-raswy,Var-3,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-7-x4jfm,Var-4,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-8-r2ebo,Var-6,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-9-0eyq3,Var-7,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-10-k2501,Var-8,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-11-axfmu,Var-10,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-12-fq7x7,Var-11,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-13-oqlli,Var-12,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-14-6crr6,Var-14,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-15-gvu2v,Var-15,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-16-qty65,Var-16,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-17-xllqq,Var-17,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-18-2ffg8,Var-18,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-19-rhk0b,Var-19,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+VARIANT,,,var-20-eofcr,Var-20,68,0,false,true,,true,standard,standard,,,,primary,false,,50,,,,-9,,,,168,100
+RECOMMENDATION,,,var-1-3v68z,Var-5,59,,true,true,1032730386,false,standard,standard,52,,,,,true,,185,,,Lowest ₹1-apart pair found at ₹59 and ₹60. Both are worth testing — Meesho often clusters shipping one rupee apart at the floor.,0,22,,,159,100
+RECOMMENDATION,,,var-3-yrswr,Var-9,60,,true,true,699067729,false,standard,standard,53,,,,,true,,185,,,Lowest ₹1-apart pair found at ₹59 and ₹60. Both are worth testing — Meesho often clusters shipping one rupee apart at the floor.,-1,24,,,160,100

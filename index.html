@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Meesho Shipping Cost Optimizer</title>
+  <link rel="icon" href="/icons/icon32.png" type="image/png">
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f5f5;
+      color: #111;
+      min-height: 100vh;
+    }
+    .topbar {
+      background: linear-gradient(135deg, #FFD700, #C9A227) !important;
+      padding: 16px 20px;
+      text-align: center;
+    }
+    .topbar h1 { font-size: 20px; font-weight: 700; color: #111; }
+    .topbar p { font-size: 13px; margin-top: 4px; color: #222; }
+    .wrap { max-width: 520px; margin: 0 auto; padding: 12px 12px 32px; }
+    #optimizer-app {
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.08);
+      overflow-x: hidden;
+    }
+    .opt-header {
+      background: linear-gradient(135deg, #FFD700, #C9A227);
+      padding: 18px 20px;
+      color: #111;
+    }
+    .opt-header h2 { font-size: 18px; font-weight: 700; }
+    .opt-body { padding: 16px; background: #fff; }
+    .opt-section {
+      border: 1px solid #eee;
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: #fafafa;
+    }
+    .opt-section-title { font-size: 13px; font-weight: 700; color: #047857; margin-bottom: 8px; }
+    .opt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .opt-label { display: block; font-size: 11px; color: #666; margin-bottom: 4px; font-weight: 600; }
+    .opt-select, .opt-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+      color: #111;
+    }
+    .opt-upload-box {
+      border: 2px dashed #C9A227;
+      border-radius: 12px;
+      padding: 28px 16px;
+      text-align: center;
+      background: #fffef5;
+      cursor: pointer;
+      position: relative;
+      display: block;
+      touch-action: manipulation;
+    }
+    .opt-file-btn {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 14px 28px;
+      background: linear-gradient(135deg, #FFD700, #C9A227);
+      color: #111;
+      font-weight: 700;
+      font-size: 15px;
+      border-radius: 10px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .opt-preview { margin-top: 12px; display: none; text-align: center; }
+    .opt-preview img { max-width: 140px; max-height: 140px; border-radius: 8px; border: 2px solid #10b981; object-fit: contain; }
+    .preview-label { font-size: 11px; color: #666; margin-top: 6px; word-break: break-all; }
+    .generate-btn {
+      display: block;
+      width: 100%;
+      margin-top: 14px;
+      padding: 16px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #FFD700, #C9A227);
+      color: #111;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .generate-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .api-note { font-size: 11px; color: #666; text-align: center; margin-top: 10px; line-height: 1.4; }
+    .boot-msg { padding: 10px 0 0; text-align: center; font-size: 13px; color: #047857; }
+    .file-input-offscreen {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .session-toggle {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #047857;
+      cursor: pointer;
+      text-align: left;
+    }
+    #session-panel { margin-top: 10px; }
+    #session-panel.collapsed { display: none; }
+    .session-status { font-size: 12px; margin-top: 8px; padding: 8px; border-radius: 6px; }
+    .session-status.ok { background: #ecfdf5; color: #047857; }
+    .session-status.warn { background: #fffbeb; color: #b45309; }
+    .session-hint { font-size: 11px; color: #666; margin-top: 6px; line-height: 1.4; }
+    .category-picker-hint { font-size: 10px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
+    #category-ac-wrap { position: relative; z-index: 10000; }
+    #category-search {
+      touch-action: manipulation;
+      -webkit-user-select: text; user-select: text;
+      font-size: 16px !important;
+      min-height: 44px;
+      width: 100%;
+      padding-right: 32px;
+    }
+    #category-clear {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #888;
+      display: none;
+      z-index: 2;
+      border: none;
+      background: transparent;
+      font-size: 14px;
+      padding: 4px;
+    }
+    .category-ac-list {
+      display: none;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 100%;
+      margin-top: 2px;
+      max-height: 260px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0,0,0,0.12);
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      z-index: 10001;
+    }
+    .category-ac-list.open { display: block; }
+    .category-ac-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f3f4f6; font-size: 12px; content-visibility: auto; contain-intrinsic-size: auto 44px; }
+    .category-ac-item:hover, .category-ac-item.active { background: rgba(102,126,234,0.12); }
+    .category-ac-item-name { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: #111827; }
+    .category-ac-item-id { font-size: 10px; color: #6b7280; font-weight: 500; }
+    .category-ac-item-path { font-size: 10px; color: #4b5563; margin-top: 2px; }
+    .category-ac-header, .category-ac-footer { padding: 8px 12px; font-size: 10px; color: #6b7280; background: #f9fafb; }
+    .category-ac-header { border-bottom: 1px solid #f3f4f6; }
+    .category-ac-footer { border-top: 1px solid #f3f4f6; }
+    .category-ac-empty { padding: 12px; color: #6b7280; font-size: 12px; }
+    .smart-mode-note {
+      font-size: 11px;
+      color: #666;
+      margin-top: 8px;
+      padding: 8px;
+      background: #f0fdf4;
+      border-radius: 6px;
+      line-height: 1.4;
+    }
+    /* Optimizer mode tabs — Live is default; Test Lab is isolated experiments */
+    .opt-tabs {
+      display: flex;
+      border-bottom: 2px solid #eee;
+      background: #fafafa;
+    }
+    .opt-tab {
+      flex: 1;
+      padding: 12px 10px;
+      border: none;
+      background: transparent;
+      font-size: 13px;
+      font-weight: 700;
+      color: #666;
+      cursor: pointer;
+    }
+    .opt-tab.active {
+      color: #047857;
+      background: #fff;
+      box-shadow: inset 0 -3px 0 #C9A227;
+    }
+    .opt-tab-panel { display: none; }
+    .opt-tab-panel.active { display: block; }
+    .test-lab-note {
+      font-size: 11px;
+      color: #666;
+      margin-top: 8px;
+      padding: 8px;
+      background: #eff6ff;
+      border-radius: 6px;
+      line-height: 1.45;
+      border: 1px solid #dbeafe;
+    }
+    .optimizer-chrome-hidden {
+      display: none !important;
+    }
+    .generate-sticky {
+      position: sticky;
+      bottom: 0;
+      z-index: 20;
+      padding: 8px 0 4px;
+      margin-top: 8px;
+      background: linear-gradient(to top, #fff 85%, rgba(255, 255, 255, 0));
+    }
+    .opt-preview.visible + .generate-sticky,
+    .opt-preview[style*="display: block"] + .generate-sticky {
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Meesho Shipping Cost Optimizer</h1>
+    <p>Upload image → AI creates variations → finds lowest shipping</p>
+  </header>
+
+  <main class="wrap">
+    <div id="optimizer-app">
+      <div class="opt-modal">
+        <div class="opt-header">
+          <h2>🚀 Upload &amp; Optimize</h2>
+        </div>
+        <div class="opt-tabs" id="optimizer-tabs" role="tablist">
+          <button type="button" class="opt-tab active" data-optimizer-tab="live" role="tab" aria-selected="true">Live</button>
+          <button type="button" class="opt-tab" data-optimizer-tab="test" role="tab" aria-selected="false">Test Lab</button>
+        </div>
+
+          <!-- Shared upload + generate (always visible below tabs) -->
+          <label class="opt-upload-box" id="upload-area" for="image-input" style="display:block;margin:12px 16px 0;">
+            <div style="font-size:40px;margin-bottom:8px;">📸</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Tap to upload product image</div>
+            <div style="font-size:12px;color:#888;margin-bottom:8px;">JPG, PNG, WebP</div>
+            <span class="opt-file-btn">Choose Image</span>
+            <input type="file" id="image-input" class="file-input-offscreen" accept="image/*,.jpg,.jpeg,.png,.webp,.heic,.heif">
+          </label>
+          <div class="opt-preview" id="preview-box" style="margin:12px 16px 0;">
+            <img id="preview-img" alt="Preview">
+            <div class="preview-label"></div>
+            <div style="color:#10b981;font-size:12px;margin-top:4px;">✓ Image selected</div>
+            <button type="button" id="clear-upload-btn" style="margin-top:10px;padding:8px 16px;font-size:13px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#374151;cursor:pointer;width:100%;max-width:220px;">Cancel &amp; upload again</button>
+          </div>
+          <div class="generate-sticky" id="generate-sticky" style="margin:8px 16px 0;">
+            <button type="button" id="generate-btn" class="generate-btn" disabled style="margin-top:0;">🚀 Generate Variants</button>
+            <button type="button" id="generate-showcase-btn" data-static-gen="showcase" class="generate-btn" disabled style="margin-top:8px;font-size:14px;padding:14px;background:linear-gradient(135deg,#ff9800,#4caf50);color:#fff;">🖼️ Generate Showcase Frames (25)</button>
+            <button type="button" id="generate-promo-lifestyle-btn" data-static-gen="lifestyle" class="generate-btn" disabled style="margin-top:8px;font-size:14px;padding:14px;background:#22c55e;color:#fff;">🏷️ Generate Lifestyle Promo (25)</button>
+            <button type="button" id="generate-tall-static-btn" data-static-gen="tall" class="generate-btn" disabled style="margin-top:8px;font-size:14px;padding:14px;background:#7c3aed;color:#fff;">📐 Generate Tall Promo (25)</button>
+            <button type="button" id="generate-gown-static-btn" data-static-gen="gown" class="generate-btn" disabled style="margin-top:8px;font-size:14px;padding:14px;background:#0d9488;color:#fff;">👗 Generate Gown Promo (25)</button>
+            <div style="margin-top:10px;padding:10px;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:10px;" class="local-price-panel">
+              <div style="font-size:11px;font-weight:700;color:#047857;margin-bottom:4px;">📦 Local Price History</div>
+              <p id="local-price-hint" style="font-size:10px;color:#6b7280;margin:0 0 8px;line-height:1.4;">Run live generate first → auto-learns lowest shipping for better local picks</p>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                <label style="font-size:10px;color:#047857;flex:1;">Variants to show</label>
+                <select id="local-price-pick-count" class="opt-select" style="flex:1;font-size:12px;padding:6px 8px;">
+                  <option value="2" selected>2 lowest</option>
+                  <option value="3">3 lowest</option>
+                  <option value="4">4 lowest</option>
+                  <option value="5">5 lowest</option>
+                  <option value="6">6 lowest</option>
+                  <option value="8">8 lowest</option>
+                  <option value="10">10 lowest</option>
+                </select>
+              </div>
+              <button type="button" id="local-price-generate-btn" disabled style="width:100%;padding:10px;font-size:13px;font-weight:700;border:none;border-radius:8px;background:#047857;color:#fff;cursor:pointer;margin-bottom:6px;min-height:44px;touch-action:manipulation;">📍 Generate 2 Local Variants</button>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+                <button type="button" id="local-price-save-btn" style="flex:1;min-width:80px;padding:8px;font-size:12px;font-weight:600;border:none;border-radius:8px;background:linear-gradient(135deg,#FFD700,#C9A227);color:#fff;cursor:pointer;">💾 Save</button>
+                <button type="button" id="local-price-view-btn" style="flex:1;min-width:80px;padding:8px;font-size:12px;font-weight:600;border:none;border-radius:8px;background:#065f46;color:#fff;cursor:pointer;">📊 View</button>
+                <button type="button" id="local-price-download-btn" style="flex:1;min-width:80px;padding:8px;font-size:12px;font-weight:600;border:1px solid #a7f3d0;border-radius:8px;background:#fff;color:#047857;cursor:pointer;">📥 CSV</button>
+                <button type="button" id="local-price-import-btn" style="flex:1;min-width:80px;padding:8px;font-size:12px;font-weight:600;border:1px solid #a7f3d0;border-radius:8px;background:#fff;color:#047857;cursor:pointer;">📤 Import</button>
+                <button type="button" id="local-price-clear-btn" style="flex:0 0 auto;padding:8px;font-size:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#374151;cursor:pointer;">🗑️</button>
+              </div>
+              <input type="file" id="local-price-import-input" accept=".csv,text/csv" style="display:none;">
+            </div>
+            <p style="font-size:10px;color:#888;text-align:center;margin-top:6px;">Static promo frames · showcase / lifestyle / tall / gown · no Meesho session</p>
+            <button type="button" id="test-generate-btn" class="generate-btn" disabled style="margin-top:0;display:none;">🧪 Run Test Lab</button>
+          </div>
+
+        <div class="opt-body" style="padding-top:0;">
+          <!-- LIVE TAB — production path (processImage). Do not add Test Lab logic here. -->
+          <div id="live-tab-panel" class="opt-tab-panel active" data-optimizer-panel="live">
+          <div class="opt-section">
+            <div class="opt-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>🔐 Meesho Session (for live shipping)</span>
+            </div>
+            <button type="button" id="toggle-session" class="session-toggle">Show Meesho session</button>
+            <div id="session-panel" class="collapsed">
+              <div class="opt-row" style="margin-top:10px;">
+                <div>
+                  <label class="opt-label" for="session-supplier-id">Supplier ID</label>
+                  <input type="text" id="session-supplier-id" class="opt-input" placeholder="e.g. 123456" autocomplete="off">
+                </div>
+                <div>
+                  <label class="opt-label" for="session-browser-id">Browser ID</label>
+                  <input type="text" id="session-browser-id" class="opt-input" placeholder="from supplier.meesho.com" autocomplete="off">
+                </div>
+              </div>
+              <div class="opt-row" style="margin-top:8px;">
+                <div>
+                  <label class="opt-label" for="session-identifier">Identifier</label>
+                  <input type="text" id="session-identifier" class="opt-input" placeholder="catalog tag (optional)" autocomplete="off">
+                </div>
+                <div>
+                  <label class="opt-label" for="session-price">Price (₹)</label>
+                  <input type="number" id="session-price" class="opt-input" value="100" min="1">
+                </div>
+              </div>
+              <div style="margin-top:8px;">
+                <label class="opt-label" for="session-cookie">Cookie (optional)</label>
+                <textarea id="session-cookie" class="opt-input" rows="2" placeholder="Paste cookie string from supplier.meesho.com DevTools" style="resize:vertical;font-size:12px;"></textarea>
+              </div>
+              <button type="button" id="save-session" class="generate-btn" style="margin-top:10px;padding:12px;font-size:14px;">Save Session</button>
+              <button type="button" id="test-session" class="session-toggle" style="margin-top:8px;">Test live connection</button>
+              <div id="session-status" class="session-status warn">⚠️ Add Supplier ID + Browser ID (login to supplier.meesho.com first)</div>
+              <p class="session-hint">Paste values from supplier.meesho.com while logged in. <strong>Live API from the web app often returns 403</strong> because Meesho blocks cloud-server requests — use the <strong>Chrome extension</strong> on supplier.meesho.com for guaranteed live shipping. This web app still works with built-in categories + local variants.</p>
+            </div>
+          </div>
+
+          <div class="opt-section">
+            <div class="opt-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+              <span>📁 Category <span style="font-size:10px;font-weight:normal;color:#6b7280;">(optional)</span></span>
+              <button type="button" id="refresh-categories" style="display:none;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:10px;" title="Refresh">🔄 Refresh</button>
+            </div>
+            <div id="category-ac-wrap">
+              <input type="text" id="category-search" class="opt-input" placeholder="Search 3777 categories by name or ID…" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="category-ac-list" disabled>
+              <button type="button" id="category-clear" aria-label="Clear category" title="Clear">✕</button>
+              <ul id="category-ac-list" class="category-ac-list" role="listbox"></ul>
+            </div>
+            <input type="hidden" id="category-select" value="">
+            <p class="category-picker-hint" id="category-count-hint" style="font-size:10px;color:#047857;margin-top:4px;line-height:1.4;">Loading categories…</p>
+            <p class="category-picker-hint" style="font-size:10px;color:#6b7280;margin-top:4px;line-height:1.4;">Type to search all categories · quick picks when empty</p>
+            <div id="category-error" style="display:none;margin-top:8px;padding:8px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;">
+              <span style="font-size:11px;color:#dc2626;">⚠️ Could not load categories. You can still generate variants — category is only needed for live Meesho shipping checks.</span>
+            </div>
+            <div id="selected-category" style="margin-top:8px;padding:8px;background:#ecfdf5;border-radius:6px;display:none;">
+              <span style="font-size:11px;color:#047857;">✓ </span>
+              <span id="selected-category-name" style="font-size:12px;font-weight:600;"></span>
+              <div id="selected-category-detail" style="font-size:10px;color:#4b5563;margin-top:4px;line-height:1.4;"></div>
+            </div>
+            <div id="category-api-preview" style="font-size:10px;color:#6b7280;margin-top:6px;line-height:1.4;display:none;"></div>
+            <p class="session-hint" style="margin-top:8px;">Pick the <strong>leaf</strong> category (e.g. Kurtis · ID 10004) — Meesho API uses <code>sscat_id</code>.</p>
+          </div>
+
+          <div class="opt-section">
+            <div class="opt-section-title">🎯 Smart Mode</div>
+            <div class="opt-row">
+              <div>
+                <label class="opt-label" for="current-shipping-baseline">Your current shipping (₹)</label>
+                <input type="number" id="current-shipping-baseline" class="opt-input" min="0" max="999" placeholder="e.g. 120">
+              </div>
+              <div style="display:flex;align-items:flex-end;padding-bottom:4px;">
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+                  <input type="checkbox" id="manual-shipping-mode" checked style="width:18px;height:18px;">
+                  Manual prices (recommended)
+                </label>
+              </div>
+            </div>
+            <div class="opt-row" style="margin-top:10px;">
+              <div>
+                <label class="opt-label" for="target-shipping">Target Shipping</label>
+                <select id="target-shipping" class="opt-select">
+                  <option value="30">≤ ₹30</option>
+                  <option value="40">≤ ₹40</option>
+                  <option value="50">≤ ₹50</option>
+                  <option value="60">≤ ₹60</option>
+                  <option value="70">≤ ₹70</option>
+                  <option value="80" selected>≤ ₹80</option>
+                  <option value="90">≤ ₹90</option>
+                  <option value="100">≤ ₹100</option>
+                </select>
+              </div>
+              <div>
+                <label class="opt-label" for="max-attempts">Max Variants</label>
+                <select id="max-attempts" class="opt-select">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="80" selected>80</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+              </div>
+            </div>
+            <p class="smart-mode-note">Manual mode: generate variants → download → test on Meesho → enter ₹ on each card. Best price sorts to top.</p>
+          </div>
+
+          <div class="opt-section">
+            <label class="opt-label" for="custom-text">✏️ Text on image (optional)</label>
+            <input type="text" id="custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING">
+          </div>
+          </div>
+          <!-- /live-tab-panel -->
+
+          <!-- TEST LAB TAB — mirrors Live + adaptive lowest-₹ hunt -->
+          <div id="test-tab-panel" class="opt-tab-panel" data-optimizer-panel="test">
+            <div class="opt-section" style="background:linear-gradient(135deg, rgba(4,120,87,0.08), rgba(102,126,234,0.06));border:1px solid rgba(4,120,87,0.2);">
+              <div class="opt-section-title" style="color:#047857;">🧪 Test Lab — Live logic + adaptive hunt</div>
+              <p class="test-lab-note">Same pipeline as Live (generate, analysis, 6-option editor). Once a best ₹ is found, higher shipping variants are skipped and next tries bias smaller borders / lower KB.</p>
+              <div id="test-lab-session-hint" class="session-hint" style="margin-top:8px;display:none;"></div>
+              <div class="opt-row" style="margin-top:10px;">
+                <div>
+                  <label class="opt-label" for="test-target-shipping">Target Shipping</label>
+                  <select id="test-target-shipping" class="opt-select">
+                    <option value="30">≤ ₹30</option>
+                    <option value="40">≤ ₹40</option>
+                    <option value="50" selected>≤ ₹50</option>
+                    <option value="60">≤ ₹60</option>
+                    <option value="70">≤ ₹70</option>
+                    <option value="80">≤ ₹80</option>
+                    <option value="90">≤ ₹90</option>
+                    <option value="100">≤ ₹100</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="opt-label" for="test-max-attempts">Max Tries</label>
+                  <select id="test-max-attempts" class="opt-select">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                  </select>
+                </div>
+              </div>
+              <p class="session-hint" style="margin-top:8px;color:#047857;">⏭️ Skips ₹ above current best · biases next tries lower</p>
+            </div>
+            <div class="opt-section">
+              <label class="opt-label" for="test-custom-text">✏️ Text on image (optional)</label>
+              <input type="text" id="test-custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING">
+            </div>
+          </div>
+          <!-- /test-tab-panel -->
+
+
+          <div id="processing-area" style="display:none;"></div>
+          <div id="results-area" style="display:none;"></div>
+          <div id="test-results-area" style="display:none;"></div>
+          <div id="boot-msg" class="boot-msg">Ready — choose an image</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="api-note">Generate variants here, upload each on Meesho, then type the shipping ₹ on each result. No cookie needed in manual mode.</p>
+  </main>
+
+  <script src="/web-shim.js"></script>
+  <script>
+    (function () {
+      function isImageFile(file) {
+        if (!file) return false;
+        if (file.type && file.type.startsWith("image/")) return true;
+        return /\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(file.name || "");
+      }
+
+      function showEarlyPreview(file) {
+        window.__webPendingFile = file;
+        var box = document.getElementById("preview-box");
+        var img = document.getElementById("preview-img");
+        var upload = document.getElementById("upload-area");
+        if (!box || !img) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          img.src = e.target.result;
+          box.style.display = "block";
+          if (upload) upload.style.display = "none";
+          var label = box.querySelector(".preview-label");
+          if (label) label.textContent = file.name;
+          if (window.meeshoOptimizer) {
+            window.meeshoOptimizer._pendingFile = file;
+            window.meeshoOptimizer.originalImageUrl = e.target.result;
+          }
+          var liveBtn = document.getElementById("generate-btn");
+          var testBtn = document.getElementById("test-generate-btn");
+          var showcaseBtn = document.getElementById("generate-showcase-btn");
+          var promoBtn = document.getElementById("generate-promo-lifestyle-btn");
+          var tallBtn = document.getElementById("generate-tall-static-btn");
+          var gownBtn = document.getElementById("generate-gown-static-btn");
+          var localPriceBtn = document.getElementById("local-price-generate-btn");
+          var localImportBtn = document.getElementById("local-price-import-btn");
+          if (liveBtn) liveBtn.disabled = false;
+          if (testBtn) testBtn.disabled = false;
+          if (showcaseBtn) showcaseBtn.disabled = false;
+          if (promoBtn) promoBtn.disabled = false;
+          if (tallBtn) tallBtn.disabled = false;
+          if (gownBtn) gownBtn.disabled = false;
+          if (localPriceBtn) localPriceBtn.disabled = false;
+          if (localImportBtn) localImportBtn.disabled = false;
+          var boot = document.getElementById("boot-msg");
+          var onTest =
+            document.querySelector('[data-optimizer-tab="test"]')?.classList.contains("active");
+          if (boot) {
+            boot.textContent = onTest
+              ? "Image ready — tap Run Test Lab"
+              : "Image ready — tap Generate Variants";
+          }
+          if (window.meeshoOptimizer && window.meeshoOptimizer.setupOptimizerTabs) {
+            window.meeshoOptimizer.setupOptimizerTabs();
+          }
+          if (window.meeshoOptimizer && window.meeshoOptimizer.refreshLiveResultsPanel) {
+            window.meeshoOptimizer.refreshLiveResultsPanel({ scroll: false });
+          }
+          if (window.meeshoOptimizer && window.meeshoOptimizer.bindStaticPromoButtons) {
+            window.meeshoOptimizer.bindStaticPromoButtons();
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function bindUploadEarly() {
+        var input = document.getElementById("image-input");
+        if (!input || input.__webBound) return;
+        input.__webBound = true;
+        input.addEventListener("click", function () {
+          this.value = "";
+        });
+        input.addEventListener("change", function (e) {
+          var file = e.target.files && e.target.files[0];
+          if (isImageFile(file)) showEarlyPreview(file);
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bindUploadEarly);
+      } else {
+        bindUploadEarly();
+      }
+    })();
+  </script>
+  <script src="/js/meeshoCategories.js?v=97"></script>
+  <script src="/web-session.js?v=96"></script>
+  <script src="/config.js"></script>
+  <script src="/js/utils.js"></script>
+  <script src="/js/license.js"></script>
+  <script src="/js/meeshoApi.js?v=96"></script>
+  <script src="/js/imageGenerator.js"></script>
+  <script src="/js/ui.js?v=96"></script>
+  <script src="/content.js?v=96"></script>
+  <script src="/web-app.js?v=96"></script>
+  <script type="module" src="/js/staticComposeLoader.mjs?v=129"></script>
+  <script type="module" src="/js/testLabBridge.mjs?v=96"></script>
+  <script type="module" src="/js/liveAnalysisBridge.mjs?v=96"></script>
+</body>
+</html>

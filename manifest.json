@@ -1,0 +1,89 @@
+{
+"update_url": "https://clients2.google.com/service/update2/crx",
+
+  "manifest_version": 3,
+   "version": "1.6.37",
+  "name": "Meesho Shipping Cost Optimizer AI - Unlimited",
+  "short_name": "Meesho Optimizer",
+  "description": "AI tool for Meesho sellers that cuts shipping costs up to 80% using smart image optimization.",
+  "author": "Veer Hanuman",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://supplier.meesho.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://supplier.meesho.com/panel/*/cataloging/*/catalogs/single/*",
+        "*://supplier.meesho.com/panel/*/cataloging/*",
+        "*://supplier.meesho.com/cataloging/*",
+        "*://supplier.meesho.com/catalogs/single/*"
+      ],
+      "js": ["js/staticComposeLoader.mjs"],
+      "type": "module",
+      "run_at": "document_idle",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://supplier.meesho.com/panel/*/cataloging/*/catalogs/single/*",
+        "*://supplier.meesho.com/panel/*/cataloging/*",
+        "*://supplier.meesho.com/cataloging/*",
+        "*://supplier.meesho.com/catalogs/single/*"
+      ],
+      "js": [
+        "config.js",
+        "js/utils.js",
+        "js/license.js",
+        "js/meeshoCategories.js",
+        "js/meeshoApi.js",
+        "js/imageGenerator.js",
+        "js/ui.js",
+        "content.js"
+      ],
+      "css": ["styles.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Meesho Shipping Cost Optimizer - Reduce Costs Now With AI!",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "config.js",
+        "js/*.js",
+        "js/*.mjs",
+        "js/lib/*.mjs",
+        "data/*.json",
+        "data/seed-reports/*.csv",
+        "Badge/*.png",
+        "icons/*.png"
+      ],
+      "matches": ["*://supplier.meesho.com/*"]
+    }
+  ],
+  "offline_enabled": true,
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}
