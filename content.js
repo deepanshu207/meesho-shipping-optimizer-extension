@@ -5111,11 +5111,16 @@ Please share payment details and license key.`;
       const hex = SFC.normalizeFrameColor(hexInput.value);
       if (!hex) return;
       this.updateStaticColorRowDisplay(container, fieldId, hex);
-      const cfg = this.getStaticColorFieldConfig(fieldId, container);
-      if (cfg) {
-        const patch = { [cfg.patchKey]: hex, gradientPreset: null };
-        if (cfg.frameType) patch.frameType = cfg.frameType;
-        void this.setStaticFrameColors(variantId, patch);
+      const customApply = container._staticColorPickerOnApply;
+      if (typeof customApply === "function") {
+        customApply(hex, fieldId);
+      } else {
+        const cfg = this.getStaticColorFieldConfig(fieldId, container);
+        if (cfg) {
+          const patch = { [cfg.patchKey]: hex, gradientPreset: null };
+          if (cfg.frameType) patch.frameType = cfg.frameType;
+          void this.setStaticFrameColors(variantId, patch);
+        }
       }
       overlay.style.display = "none";
     };
@@ -5282,6 +5287,8 @@ Please share payment details and license key.`;
         id: "text-1",
         text: legacy,
         position: layers._customTextPosition || "bottom",
+        posH: undefined,
+        posV: undefined,
         textColor: layers._customTextColor || "#ffffff",
         bgColor: layers._customTextBg || "#e67e22",
         fontSizePct: 100,
@@ -5320,22 +5327,13 @@ Please share payment details and license key.`;
   renderVariantTextControls(row, container) {
     if (!container || !row?.layers) return;
     const overlays = this.ensureTextOverlayState(row);
-    const positions = [
-      ["bottom", "Bottom center"],
-      ["top", "Top center"],
-      ["center", "Center"],
-      ["bottom-left", "Bottom left"],
-      ["bottom-right", "Bottom right"],
-      ["top-left", "Top left"],
-      ["top-right", "Top right"],
-    ];
 
     let html = `<details class="variant-text-accordion" open style="margin-bottom:10px;border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fafafa;">
       <summary style="font-size:12px;font-weight:700;color:#374151;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;">
         <span>✏️ Text on image</span>
         <span style="font-size:10px;color:#6b7280;font-weight:500;">${overlays.length} layer${overlays.length === 1 ? "" : "s"}</span>
       </summary>
-      <p style="font-size:10px;color:#6b7280;margin:8px 0;line-height:1.4;">Add promo text (e.g. FREE SHIPPING). Changes update preview only — shipping ₹ stays the same.</p>
+      <p style="font-size:10px;color:#6b7280;margin:8px 0;line-height:1.4;">Add promo text (e.g. FREE SHIPPING). Unlock position sliders to move text. Changes update preview only — shipping ₹ stays the same.</p>
       <div id="variant-text-list">`;
 
     if (!overlays.length) {
@@ -5343,12 +5341,12 @@ Please share payment details and license key.`;
     }
 
     overlays.forEach((overlay, index) => {
-      const posOpts = positions
-        .map(
-          ([val, label]) =>
-            `<option value="${val}"${overlay.position === val ? " selected" : ""}>${label}</option>`,
-        )
-        .join("");
+      const posH = overlay.posH ?? 50;
+      const posV = overlay.posV ?? 100;
+      const lockH = overlay.lockH !== false;
+      const lockV = overlay.lockV !== false;
+      const colorFieldId = `variant-text-color-${overlay.id}`;
+      const bgFieldId = `variant-text-bg-${overlay.id}`;
       html += `<div class="variant-text-card" data-text-id="${overlay.id}" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:8px;background:#fff;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <span style="font-size:11px;font-weight:600;">Text ${index + 1}</span>
@@ -5369,22 +5367,23 @@ Please share payment details and license key.`;
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")}" placeholder="e.g. FREE SHIPPING" style="width:100%;margin-top:4px;font-size:12px;padding:6px;">
         </label>
-        <label style="display:block;font-size:10px;margin-bottom:6px;">Position
-          <select class="variant-text-position opt-select" data-text-id="${overlay.id}" style="width:100%;margin-top:4px;font-size:11px;padding:5px;">${posOpts}</select>
-        </label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
-          <label style="font-size:10px;">Text color
-            <input type="color" class="variant-text-color" data-text-id="${overlay.id}" value="${
-        overlay.textColor || "#ffffff"
-      }" style="width:100%;height:32px;margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:2px;">
-          </label>
-          <label style="font-size:10px;">Background
-            <input type="color" class="variant-text-bg" data-text-id="${overlay.id}" value="${
-        overlay.bgColor || "#e67e22"
-      }" style="width:100%;height:32px;margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:2px;">
-          </label>
+        <div class="variant-text-pos-h-wrap${lockH ? " static-slider-locked" : ""}" data-text-id="${overlay.id}" style="margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <button type="button" class="variant-text-axis-lock" data-axis="h" data-text-id="${overlay.id}" aria-pressed="${lockH ? "true" : "false"}" title="${lockH ? "Unlock horizontal to adjust" : "Lock horizontal"}" style="border:none;background:transparent;font-size:14px;line-height:1;cursor:pointer;padding:0;">${lockH ? "🔒" : "🔓"}</button>
+            <span style="font-size:10px;">Horizontal <span class="variant-text-h-val" data-text-id="${overlay.id}">${posH}</span>%</span>
+          </div>
+          <input type="range" class="variant-text-pos-h" data-text-id="${overlay.id}" min="0" max="100" value="${posH}" style="width:100%;"${lockH ? " disabled" : ""}>
         </div>
-        <label style="display:block;font-size:10px;">Size <span class="variant-text-size-val" data-text-id="${overlay.id}">${
+        <div class="variant-text-pos-v-wrap${lockV ? " static-slider-locked" : ""}" data-text-id="${overlay.id}" style="margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <button type="button" class="variant-text-axis-lock" data-axis="v" data-text-id="${overlay.id}" aria-pressed="${lockV ? "true" : "false"}" title="${lockV ? "Unlock vertical to adjust" : "Lock vertical"}" style="border:none;background:transparent;font-size:14px;line-height:1;cursor:pointer;padding:0;">${lockV ? "🔒" : "🔓"}</button>
+            <span style="font-size:10px;">Vertical <span class="variant-text-v-val" data-text-id="${overlay.id}">${posV}</span>%</span>
+          </div>
+          <input type="range" class="variant-text-pos-v" data-text-id="${overlay.id}" min="0" max="100" value="${posV}" style="width:100%;"${lockV ? " disabled" : ""}>
+        </div>
+        ${this.buildStaticColorFieldHtml(colorFieldId, "Text color", overlay.textColor || "#ffffff", "#ffffff")}
+        ${this.buildStaticColorFieldHtml(bgFieldId, "Background", overlay.bgColor || "#e67e22", "#e67e22")}
+        <label style="display:block;font-size:10px;margin-top:4px;">Size <span class="variant-text-size-val" data-text-id="${overlay.id}">${
         overlay.fontSizePct || 100
       }</span>%
           <input type="range" class="variant-text-size" data-text-id="${overlay.id}" min="50" max="200" value="${
@@ -5405,28 +5404,48 @@ Please share payment details and license key.`;
   bindVariantTextControls(row, container) {
     if (!container || !row?.layers) return;
     const variantId = row.variantId;
+    const SFC = window.StaticFrameCompose;
 
     const readOverlaysFromDom = () => {
       const list = container.querySelector("#variant-text-list");
       if (!list) return [];
       return Array.from(list.querySelectorAll(".variant-text-card")).map((card) => {
         const id = card.dataset.textId;
+        const colorFieldId = `variant-text-color-${id}`;
+        const bgFieldId = `variant-text-bg-${id}`;
+        const existing = (row.layers._textOverlays || []).find((o) => o.id === id) || {};
         return {
           id,
           text: card.querySelector(`.variant-text-content[data-text-id="${id}"]`)?.value || "",
-          position:
-            card.querySelector(`.variant-text-position[data-text-id="${id}"]`)?.value || "bottom",
+          posH: parseInt(
+            card.querySelector(`.variant-text-pos-h[data-text-id="${id}"]`)?.value || "50",
+            10,
+          ),
+          posV: parseInt(
+            card.querySelector(`.variant-text-pos-v[data-text-id="${id}"]`)?.value || "100",
+            10,
+          ),
+          lockH: existing.lockH !== false,
+          lockV: existing.lockV !== false,
           textColor:
-            card.querySelector(`.variant-text-color[data-text-id="${id}"]`)?.value || "#ffffff",
+            this.readStaticColorField(container, colorFieldId) ||
+            existing.textColor ||
+            "#ffffff",
           bgColor:
-            card.querySelector(`.variant-text-bg[data-text-id="${id}"]`)?.value || "#e67e22",
+            this.readStaticColorField(container, bgFieldId) ||
+            existing.bgColor ||
+            "#e67e22",
           fontSizePct: parseInt(
             card.querySelector(`.variant-text-size[data-text-id="${id}"]`)?.value || "100",
             10,
           ),
           enabled: !!card.querySelector(`.variant-text-enabled[data-text-id="${id}"]`)?.checked,
         };
-      });
+      }).map((o, i) =>
+        typeof ImageGenerator !== "undefined" && ImageGenerator.normalizeTextOverlay
+          ? ImageGenerator.normalizeTextOverlay(o, i)
+          : o,
+      );
     };
 
     const commit = () => {
@@ -5440,6 +5459,11 @@ Please share payment details and license key.`;
       this.updateVariantEditorResetButton(row);
     };
 
+    container._staticColorPickerOnApply = (hex, fieldId) => {
+      if (!fieldId?.startsWith("variant-text-")) return;
+      commit();
+    };
+
     container.querySelector("#variant-text-add")?.addEventListener("click", (e) => {
       e.preventDefault();
       const overlays = readOverlaysFromDom();
@@ -5449,7 +5473,10 @@ Please share payment details and license key.`;
           : {
               id: `text-${Date.now()}`,
               text: "SALE",
-              position: "bottom",
+              posH: 50,
+              posV: 100,
+              lockH: true,
+              lockV: true,
               textColor: "#ffffff",
               bgColor: "#e67e22",
               fontSizePct: 100,
@@ -5479,12 +5506,6 @@ Please share payment details and license key.`;
     container.querySelectorAll(".variant-text-content").forEach((el) => {
       el.oninput = commit;
     });
-    container.querySelectorAll(".variant-text-position").forEach((el) => {
-      el.onchange = commit;
-    });
-    container.querySelectorAll(".variant-text-color, .variant-text-bg").forEach((el) => {
-      el.oninput = commit;
-    });
     container.querySelectorAll(".variant-text-enabled").forEach((el) => {
       el.onchange = commit;
     });
@@ -5494,6 +5515,98 @@ Please share payment details and license key.`;
           `.variant-text-size-val[data-text-id="${el.dataset.textId}"]`,
         );
         if (val) val.textContent = el.value;
+        commit();
+      };
+    });
+
+    container.querySelectorAll(".variant-text-axis-lock").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const textId = btn.dataset.textId;
+        const axis = btn.dataset.axis;
+        const overlays = readOverlaysFromDom();
+        const overlay = overlays.find((o) => o.id === textId);
+        if (!overlay) return;
+        if (axis === "h") overlay.lockH = !overlay.lockH;
+        else overlay.lockV = !overlay.lockV;
+        row.layers._textOverlays = overlays;
+        this.renderVariantTextControls(row, container);
+        row._textOverlaysEdited = this.textOverlaysChanged(row);
+        this.updateVariantEditorResetButton(row);
+      };
+    });
+
+    const bindAxisSlider = (cls, axis) => {
+      const timers = new Map();
+      container.querySelectorAll(cls).forEach((range) => {
+        range.oninput = () => {
+          if (range.disabled) return;
+          const textId = range.dataset.textId;
+          const valSpan = container.querySelector(
+            axis === "h"
+              ? `.variant-text-h-val[data-text-id="${textId}"]`
+              : `.variant-text-v-val[data-text-id="${textId}"]`,
+          );
+          if (valSpan) valSpan.textContent = range.value;
+          clearTimeout(timers.get(range));
+          timers.set(range, setTimeout(commit, 120));
+        };
+        const commitSlider = () => {
+          if (range.disabled) return;
+          clearTimeout(timers.get(range));
+          commit();
+        };
+        range.onchange = commitSlider;
+        range.addEventListener("pointerup", commitSlider);
+        range.addEventListener("touchend", commitSlider, { passive: true });
+      });
+    };
+    bindAxisSlider(".variant-text-pos-h", "h");
+    bindAxisSlider(".variant-text-pos-v", "v");
+
+    const colorTimers = new Map();
+    container.querySelectorAll(".variant-text-card").forEach((card) => {
+      const textId = card.dataset.textId;
+      for (const fieldId of [`variant-text-color-${textId}`, `variant-text-bg-${textId}`]) {
+        const swatchBtn = container.querySelector(
+          `.static-color-swatch-btn[data-color-id="${fieldId}"]`,
+        );
+        if (swatchBtn) {
+          swatchBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.openStaticColorPicker(container, fieldId, variantId);
+          };
+        }
+        const hexField = container.querySelector(`#${fieldId}-hex`);
+        if (hexField) {
+          hexField.oninput = () => {
+            clearTimeout(colorTimers.get(hexField));
+            colorTimers.set(
+              hexField,
+              setTimeout(() => {
+                if (this.syncStaticColorRowFromHex(container, fieldId)) commit();
+              }, 220),
+            );
+          };
+          hexField.onchange = () => {
+            clearTimeout(colorTimers.get(hexField));
+            if (this.syncStaticColorRowFromHex(container, fieldId)) commit();
+          };
+        }
+      }
+    });
+
+    container.querySelectorAll(".static-color-chip").forEach((chip) => {
+      const fieldId = chip.dataset.colorId;
+      if (!fieldId?.startsWith("variant-text-")) return;
+      chip.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const hex = SFC?.normalizeFrameColor?.(chip.dataset.hex);
+        if (!fieldId || !hex) return;
+        this.updateStaticColorRowDisplay(container, fieldId, hex);
         commit();
       };
     });
@@ -6386,7 +6499,7 @@ Please share payment details and license key.`;
       panel.remove();
       panel = null;
     }
-    if (panel && panel.dataset.staticEditorV !== "20") {
+    if (panel && panel.dataset.staticEditorV !== "21") {
       panel.remove();
       panel = null;
     }
@@ -6397,7 +6510,7 @@ Please share payment details and license key.`;
 
     panel = document.createElement("div");
     panel.id = "variant-edit-panel";
-    panel.dataset.staticEditorV = "20";
+    panel.dataset.staticEditorV = "21";
     panel.style.cssText =
       "display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2147483647;align-items:center;justify-content:center;padding:12px;";
     panel.innerHTML = `
