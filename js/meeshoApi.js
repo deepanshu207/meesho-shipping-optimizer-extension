@@ -534,10 +534,25 @@ const MeeshoAPI = {
     const scope = ctx.section || root;
 
     for (const btn of scope.querySelectorAll("button")) {
-      const label = (btn.textContent || "").trim();
-      if (/^upload$/i.test(label) || /\bupload\b/i.test(label)) {
+      const label = (btn.textContent || "").trim().replace(/\s+/g, " ");
+      if (label === "Upload" || /^upload$/i.test(label)) {
         ctx.uploadButton = btn;
         break;
+      }
+    }
+    if (!ctx.uploadButton && ctx.removeButton) {
+      let row = ctx.removeButton.parentElement;
+      for (let i = 0; i < 6 && row; i++) {
+        for (const btn of row.querySelectorAll("button")) {
+          const label = (btn.textContent || "").trim().replace(/\s+/g, " ");
+          if (label === "Upload" || /^upload$/i.test(label)) {
+            ctx.uploadButton = btn;
+            if (!ctx.section) ctx.section = row;
+            break;
+          }
+        }
+        if (ctx.uploadButton) break;
+        row = row.parentElement;
       }
     }
 
@@ -663,7 +678,212 @@ const MeeshoAPI = {
     return best && scoreInput(best) > 0 ? best : null;
   },
 
+  isOnCatalogAddProductStep: function () {
+    if (document.querySelector('#addProduct[aria-selected="true"]')) return true;
+    if (document.querySelector('[data-testid="removeImage"]')) return true;
+    const ctx = this.findFrontImageUploadContext();
+    return !!(
+      ctx.uploadButton &&
+      (ctx.section || /Front\s*Image/i.test(document.body?.textContent || ""))
+    );
+  },
+
+  _getReactFiber: function (el) {
+    if (!el) return null;
+    const key = Object.keys(el).find(
+      (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"),
+    );
+    return key ? el[key] : null;
+  },
+
+  _triggerReactHandlers: function (el, payloads) {
+    if (!el) return false;
+    const list = Array.isArray(payloads) ? payloads : [payloads];
+    let fiber = this._getReactFiber(el);
+    while (fiber) {
+      const props = fiber.memoizedProps || fiber.pendingProps || {};
+      for (const handlerName of [
+        "onChange",
+        "onInput",
+        "onUpload",
+        "onSuccess",
+        "onComplete",
+        "onDrop",
+      ]) {
+        const handler = props[handlerName];
+        if (typeof handler !== "function") continue;
+        for (const payload of list) {
+          try {
+            if (payload?.files) {
+              handler({ target: { files: payload.files }, currentTarget: el });
+              return true;
+            }
+            if (payload?.target) {
+              handler(payload);
+              return true;
+            }
+            handler(payload);
+            return true;
+          } catch (e) {
+            /* try next payload */
+          }
+        }
+      }
+      fiber = fiber.return;
+    }
+    return false;
+  },
+
+  _sleep: function (ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  },
+
+  _waitFrontImageUpdate: async function (ctx, options) {
+    options = options || {};
+    const timeout = options.timeout || 3500;
+    const previous =
+      options.previousUrl ||
+      ctx?.previewImg?.currentSrc ||
+      ctx?.previewImg?.src ||
+      "";
+    const want = options.url || "";
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const fresh = this.findFrontImageUploadContext();
+      const src = fresh.previewImg?.currentSrc || fresh.previewImg?.src || "";
+      if (want) {
+        const tail = want.split("/").pop();
+        if (src && (src === want || (tail && src.includes(tail)))) return true;
+      } else if (src && src !== previous) {
+        return true;
+      }
+      await this._sleep(200);
+    }
+    return !!want;
+  },
+
+  _setFormImageUrl: function (url, ctx) {
+    if (!url) return false;
+    let touched = false;
+    document
+      .querySelectorAll('input[type="hidden"], input[type="text"], textarea')
+      .forEach((inp) => {
+        if (inp.closest("#opt-modal, #optimizer-app, .opt-modal")) return;
+        const name = (inp.name || inp.id || "").toLowerCase();
+        if (
+          name.includes("image") ||
+          name.includes("photo") ||
+          name.includes("front") ||
+          name.includes("catalog")
+        ) {
+          inp.value = url;
+          inp.dispatchEvent(new Event("input", { bubbles: true }));
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
+          touched = true;
+        }
+      });
+    const preview = ctx?.previewImg;
+    if (preview) {
+      preview.src = url;
+      preview.dispatchEvent(new Event("load", { bubbles: true }));
+      touched = true;
+    }
+    return touched;
+  },
+
+  applyBlobToCatalogFrontImage: async function (blob, ctx) {
+    if (!(blob instanceof Blob) || !blob.size) return false;
+    ctx = ctx || this.findFrontImageUploadContext();
+    const file = new File([blob], "optimized-" + Date.now() + ".jpg", {
+      type: blob.type || "image/jpeg",
+    });
+    const previousUrl =
+      ctx.previewImg?.currentSrc || ctx.previewImg?.src || "";
+
+    let input = ctx.fileInput || this.findCatalogFileInput();
+    if (!input && ctx.removeButton) {
+      try {
+        ctx.removeButton.click();
+        await this._sleep(700);
+        input = this.findCatalogFileInput();
+      } catch (e) {
+        console.warn("Remove image before apply failed:", e);
+      }
+    }
+
+    if (input) {
+      const dt = new DataTransfer();
+      try {
+        dt.items.add(file);
+      } catch (e) {
+        /* continue to API path */
+      }
+      if (
+        this.assignFileToCatalogInput(input, file, { skipLabelClick: true }) &&
+        (await this._waitFrontImageUpdate(ctx, { previousUrl, timeout: 2500 }))
+      ) {
+        return true;
+      }
+      if (
+        dt.items?.length &&
+        this._triggerReactHandlers(input, [
+          { files: dt.files },
+          { target: { files: dt.files } },
+        ]) &&
+        (await this._waitFrontImageUpdate(ctx, { previousUrl, timeout: 2500 }))
+      ) {
+        return true;
+      }
+    }
+
+    const imageUrl = await this.uploadImage(blob, file.name);
+    if (!imageUrl) return false;
+
+    const payloads = [
+      imageUrl,
+      { image: imageUrl },
+      { imageUrl },
+      { url: imageUrl },
+      { data: { image: imageUrl } },
+      { target: { value: imageUrl } },
+    ];
+    const targets = [
+      ctx.uploadButton,
+      ctx.section,
+      ctx.removeButton,
+      ctx.previewImg,
+      ctx.previewImg?.parentElement,
+      document.querySelector("#addProduct"),
+    ].filter(Boolean);
+
+    for (const el of targets) {
+      if (this._triggerReactHandlers(el, payloads)) {
+        if (await this._waitFrontImageUpdate(ctx, { url: imageUrl, timeout: 3000 })) {
+          return true;
+        }
+      }
+    }
+
+    if (this._setFormImageUrl(imageUrl, ctx)) {
+      if (await this._waitFrontImageUpdate(ctx, { url: imageUrl, timeout: 2000 })) {
+        return true;
+      }
+    }
+
+    input = this.findCatalogFileInput();
+    if (
+      input &&
+      this.assignFileToCatalogInput(input, file, { skipLabelClick: true }) &&
+      (await this._waitFrontImageUpdate(ctx, { url: imageUrl, timeout: 2500 }))
+    ) {
+      return true;
+    }
+
+    return false;
+  },
+
   canApplyCatalogImage: function () {
+    if (!this.isOnCatalogAddProductStep()) return false;
     if (document.querySelector("#changeFrontImage")) return true;
     if (document.querySelector('[data-testid="removeImage"]')) return true;
 
@@ -689,8 +909,10 @@ const MeeshoAPI = {
     return !!this.findCatalogFileInput();
   },
 
-  assignFileToCatalogInput: function (input, file) {
+  assignFileToCatalogInput: function (input, file, options) {
+    options = options || {};
     if (!input || !file) return false;
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
     try {
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -701,14 +923,23 @@ const MeeshoAPI = {
     }
 
     try {
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
+      const tracker = input._valueTracker;
+      if (tracker && typeof tracker.setValue === "function") {
+        tracker.setValue("");
+      }
+    } catch (e) {}
+
+    try {
+      input.dispatchEvent(
+        new InputEvent("input", { bubbles: true, cancelable: true, composed: true }),
+      );
     } catch (e) {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     }
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
 
     const inputId = input.id;
-    if (inputId) {
+    if (inputId && !options.skipLabelClick && !isMobile) {
       document.querySelectorAll("label[for]").forEach((label) => {
         if (label.htmlFor === inputId) label.click();
       });
