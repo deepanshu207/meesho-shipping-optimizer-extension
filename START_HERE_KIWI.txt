@@ -1,7 +1,10 @@
-KIWI BROWSER (ANDROID) — INSTALL THIS EXTENSION
-================================================
+KIWI BROWSER (ANDROID) — INSTALL
+================================
 
-THIS FOLDER is the extension. manifest.json is HERE (same folder as this file).
+Developer: Deepanshu Arora
+Extension: Meesho Shipping Cost Optimizer
+
+THIS FOLDER is the extension. manifest.json is HERE.
 
 Before you zip, confirm you see:
   ✓ manifest.json
@@ -16,14 +19,11 @@ There must be NO file named _headers (Chrome/Kiwi block names starting with _).
 
 1. Zip THIS ENTIRE FOLDER (manifest.json at top level when unzipped).
 
-2. Or run from repo root:
-   bash scripts/build-extension-zip.sh
-
 --- ON ANDROID (KIWI) ---
 
 1. Copy zip to phone → unzip
 2. Kiwi → Extensions → Developer mode → Load unpacked
 3. Select the folder with manifest.json
-4. Open supplier.meesho.com → AI Optimizer button
+4. Open supplier.meesho.com → Shipping Optimizer button
 
-No license key needed — opens directly to Live generate / preview / apply.
+No license key needed — Live generate, preview, and apply.

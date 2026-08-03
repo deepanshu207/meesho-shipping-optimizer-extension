@@ -6,7 +6,7 @@ const ImageGenerator = {
         customText: '',
         textPosition: 'bottom',
         textColor: '#ffffff',
-        textBgColor: '#667eea'
+        textBgColor: '#e67e22'
     },
 
     badgeCache: {},
