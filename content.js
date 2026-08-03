@@ -553,7 +553,8 @@ class MeeshoShippingOptimizer {
       url.includes("/catalog/") ||
       url.includes("/catalogs/single/add") ||
       document.querySelector("#changeFrontImage") !== null ||
-      !!this.findMeeshoCatalogImageInput?.()
+      !!this.findMeeshoCatalogImageInput?.() ||
+      !!this.canApplyToMeeshoPage?.()
     );
   }
 
@@ -7470,29 +7471,25 @@ Please share payment details and license key.`;
       !!this.selectedVariantId &&
       target?.variantId === this.selectedVariantId &&
       target?.variantId !== best?.variantId;
+    const price = target?.shippingCost || target?.estShipping || "";
+    const labelBase = usingSelection ? "Apply Selected" : "Apply Best";
+
     if (window.WEB_OPTIMIZER_MODE) {
-      const price = target?.shippingCost || target?.estShipping || "";
       applyBestBtn.textContent = price ? `Download Best ₹${price}` : "Download Best";
       applyBestBtn.onclick = () => this.downloadImage(target);
       return;
     }
-    const price = target?.shippingCost || "";
-    const canApply = this.canApplyToMeeshoPage();
-    if (canApply) {
-      applyBestBtn.textContent = usingSelection
-        ? price
-          ? `Apply Selected ₹${price}`
-          : "Apply Selected"
-        : price
-        ? `Apply Best ₹${price}`
-        : "Apply Best Variant";
-      applyBestBtn.onclick = () => void this.applyImage(target);
-    } else {
+
+    if (this.isMeeshoPage()) {
       applyBestBtn.textContent = price
-        ? `Download Best ₹${price}`
-        : "Download Best";
-      applyBestBtn.onclick = () => this.downloadImage(target);
+        ? `${labelBase} ₹${price}`
+        : `${labelBase} Variant`;
+      applyBestBtn.onclick = () => void this.applyImage(target);
+      return;
     }
+
+    applyBestBtn.textContent = price ? `Download Best ₹${price}` : "Download Best";
+    applyBestBtn.onclick = () => this.downloadImage(target);
   }
 
   async downloadImage(result) {
@@ -7598,6 +7595,16 @@ Please share payment details and license key.`;
     return await resp.blob();
   }
 
+  async waitForMeeshoCatalogImageInput(maxMs = 4000) {
+    const deadline = Date.now() + maxMs;
+    while (Date.now() < deadline) {
+      const input = this.findMeeshoCatalogImageInput();
+      if (input) return input;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return null;
+  }
+
   async applyImage(result) {
     if (!result) {
       OptimizerUtils.showNotification("No variant selected to apply", "error");
@@ -7610,6 +7617,10 @@ Please share payment details and license key.`;
           ? MeeshoAPI.findFrontImageUploadContext()
           : { fileInput: null, removeButton: null, previewImg: null };
       let imageInput = ctx.fileInput || this.findMeeshoCatalogImageInput();
+
+      if (!imageInput && (ctx.removeButton || ctx.uploadButton || this.canApplyToMeeshoPage())) {
+        imageInput = await this.waitForMeeshoCatalogImageInput();
+      }
 
       if (!imageInput) {
         OptimizerUtils.showNotification(
