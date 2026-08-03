@@ -521,7 +521,7 @@ class MeeshoShippingOptimizer {
             <div style="display:flex;align-items:center;gap:10px;">
                 <span style="font-size:22px;">🚀</span>
                 <div>
-                    <div style="font-weight:800;font-size:15px;color:#3d2914;">meesho. Shipping Optimizer</div>
+                    <div style="font-weight:800;font-size:15px;color:#3d2914;">Shipping Optimizer</div>
                     <div style="font-size:11px;color:#3d2914;opacity:0.85;">Generate · Preview · Apply</div>
                 </div>
             </div>
