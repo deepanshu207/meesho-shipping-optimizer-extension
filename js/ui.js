@@ -295,7 +295,8 @@ const OptimizerUI = {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
-                    margin-top: 2px;
+                    margin-top: auto;
+                    width: 100%;
                 }
                 .result-card-price-row {
                     display: flex;
@@ -328,6 +329,36 @@ const OptimizerUI = {
                     font-size: 10px !important;
                     min-height: 28px;
                     border-radius: 6px !important;
+                    background: rgba(230,126,34,0.15);
+                    color: #c45f12;
+                    border: none;
+                    cursor: pointer;
+                    box-sizing: border-box;
+                }
+                .result-card-actions {
+                    display: flex;
+                    gap: 4px;
+                    width: 100%;
+                    margin-top: 4px;
+                }
+                .result-card-actions .dl-btn,
+                .result-card-actions .apply-btn {
+                    flex: 1 1 0;
+                    min-width: 0;
+                    max-width: 100%;
+                }
+                .result-card-actions-single .dl-btn {
+                    flex: 1 1 100%;
+                    width: 100%;
+                }
+                .result-card-actions .apply-btn {
+                    background: rgba(255,255,255,0.1);
+                    color: #1f2937;
+                    border: none;
+                    padding: 6px 4px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 10px;
                 }
                 .result-card-best {
                     border-color: #10b981 !important;
@@ -360,6 +391,7 @@ const OptimizerUI = {
                     overflow-y: auto;
                     overflow-x: hidden;
                     padding-top: 6px;
+                    align-items: stretch;
                 }
                 .results-actions-bar {
                     display: flex;
@@ -729,6 +761,9 @@ const OptimizerUI = {
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
     const isBest = !!options.isBest;
     const showPerCardApply = !isWeb && !isBest && !analysisMode;
+    const actionsClass = showPerCardApply
+      ? "result-card-actions"
+      : "result-card-actions result-card-actions-single";
     const vid = r.variantId || "var-" + i;
     const isSelected = options.selectedVariantId === vid;
     const staticEst =
@@ -847,13 +882,11 @@ const OptimizerUI = {
                           }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:0;padding:4px;font-size:12px;text-align:center;">`
                         : ""
                     }
-                    <div style="display:flex;gap:4px;">
-                        <button class="dl-btn result-card-save" data-variant-id="${vid}" style="${
-      showPerCardApply ? "flex:1;" : "width:100%;"
-    }background:rgba(230,126,34,0.15);color:#c45f12;border:none;cursor:pointer;">Save</button>
+                    <div class="${actionsClass}">
+                        <button class="dl-btn result-card-save" data-variant-id="${vid}">Save</button>
                         ${
                           showPerCardApply
-                            ? `<button class="apply-btn" data-variant-id="${vid}" style="flex:1;background:rgba(255,255,255,0.1);color:white;border:none;padding:6px 4px;border-radius:6px;cursor:pointer;font-size:10px;">${applyLabel}</button>`
+                            ? `<button class="apply-btn" data-variant-id="${vid}">${applyLabel}</button>`
                             : ""
                         }
                     </div>
