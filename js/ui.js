@@ -411,7 +411,6 @@ const OptimizerUI = {
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
-                    <div class="opt-developer">Built by <strong>Deepanshu Arora</strong></div>
                 </div>
             </div>
         `;
@@ -428,8 +427,8 @@ const OptimizerUI = {
                 <div class="opt-body">
                     <div style="text-align:center;padding:10px 0;">
                         <div style="font-size:40px;margin-bottom:8px;">🚀</div>
-                        <h3 style="margin:0 0 5px 0;color:#3d2914;">meesho. Shipping Cost Optimizer</h3>
-                        <p style="color:#6b7280;font-size:12px;margin-bottom:10px;">By Deepanshu Arora · Reduce shipping with smart image variants</p>
+                        <h3 style="margin:0 0 5px 0;color:#3d2914;">Shipping Optimizer</h3>
+                        <p style="color:#6b7280;font-size:12px;margin-bottom:10px;">Reduce shipping with smart image variants</p>
                     </div>
                     
                     <!-- Pricing Plans -->
@@ -488,7 +487,7 @@ const OptimizerUI = {
     return `
             <div class="opt-modal opt-modal-ext">
                 <div class="opt-header">
-                    <h2>meesho. Shipping Cost Optimizer</h2>
+                    <h2>Shipping Optimizer</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
@@ -577,7 +576,6 @@ const OptimizerUI = {
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
-                    <div class="opt-developer">Built by <strong>Deepanshu Arora</strong></div>
                 </div>
             </div>
         `;
