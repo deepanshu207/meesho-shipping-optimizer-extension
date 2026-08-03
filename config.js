@@ -1,5 +1,6 @@
 // ============================================
 // MEESHO SHIPPING OPTIMIZER - CONFIGURATION
+// Developer: Deepanshu Arora
 // ============================================
 
 const CONFIG = {
@@ -8,18 +9,13 @@ const CONFIG = {
   SERVER_URL_FALLBACK:
     "https://darkviolet-ostrich-615182.hostingersite.com/api",
 
-  // Default WhatsApp (Fallback)
-  DEFAULT_WHATSAPP: "918905811996",
-  DEFAULT_WHATSAPP_MESSAGE:
-    "Hi! I want to purchase Meesho AI Shipping Optimizer Cost license.",
-
   // Extension Settings
   EXTENSION_NAME: "Meesho Shipping Cost Optimizer",
-  VERSION: "1.1.0",
+  AUTHOR: "Deepanshu Arora",
+  VERSION: "1.8.0",
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 
-  // Demo keys are now fetched from server
   // Fallback demo key (only used if server unreachable)
   FALLBACK_DEMO_KEY: "MEESHO-DEMOFREE",
   FALLBACK_DEMO_DAYS: 1,
@@ -30,7 +26,6 @@ const CONFIG = {
 
   // Fetch demo keys from server
   getDemoKeys: async function () {
-    // Return cache if fresh (5 min)
     if (this._demoKeysCache && Date.now() - this._demoKeysCacheTime < 300000) {
       return this._demoKeysCache;
     }
@@ -47,10 +42,6 @@ const CONFIG = {
           if (data.success && data.demoKeys) {
             this._demoKeysCache = data.demoKeys;
             this._demoKeysCacheTime = Date.now();
-            console.log(
-              "✅ Demo keys fetched from server:",
-              Object.keys(data.demoKeys)
-            );
             return data.demoKeys;
           }
         }
@@ -59,8 +50,6 @@ const CONFIG = {
       }
     }
 
-    // Fallback
-    console.log("⚠️ Using fallback demo key");
     return { [this.FALLBACK_DEMO_KEY]: { days: this.FALLBACK_DEMO_DAYS } };
   },
 
@@ -76,4 +65,4 @@ const CONFIG = {
 };
 
 window.CONFIG = CONFIG;
-console.log("📋 Config loaded - Server:", CONFIG.SERVER_URL);
+console.log("Config loaded:", CONFIG.EXTENSION_NAME, "v" + CONFIG.VERSION);

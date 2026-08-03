@@ -468,24 +468,24 @@ class MeeshoShippingOptimizer {
     const fab = document.createElement("button");
     fab.id = "meesho-optimizer-fab";
     fab.type = "button";
-    fab.textContent = "AI Optimizer";
+    fab.textContent = "Shipping Optimizer";
     const isNarrow = window.matchMedia("(max-width: 640px)").matches;
     fab.style.cssText = `
       position: fixed;
       right: ${isNarrow ? "12px" : "18px"};
       bottom: ${isNarrow ? "12px" : "18px"};
       z-index: 2147483647;
-      background: linear-gradient(135deg, #FFD700, #C9A227);
-      color: #fff;
+      background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+      color: #3d2914;
       border: none;
       padding: ${isNarrow ? "14px 18px" : "12px 16px"};
       min-height: 48px;
       min-width: 48px;
-      border-radius: 999px;
+      border-radius: 14px;
       font-weight: 700;
       font-size: ${isNarrow ? "14px" : "13px"};
-      font-family: 'Segoe UI', sans-serif;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+      box-shadow: 0 10px 25px rgba(196,95,18,0.3);
       cursor: pointer;
     `;
 
@@ -520,32 +520,32 @@ class MeeshoShippingOptimizer {
             <div style="display:flex;align-items:center;gap:10px;">
                 <span style="font-size:22px;">🚀</span>
                 <div>
-                    <div style="font-weight:700;font-size:15px;">AI Shipping Cost Optimizer</div>
-                    <div style="font-size:11px;opacity:0.9;">Click to optimize images</div>
+                    <div style="font-weight:800;font-size:15px;color:#3d2914;">meesho. Shipping Optimizer</div>
+                    <div style="font-size:11px;color:#3d2914;opacity:0.85;">Generate · Preview · Apply</div>
                 </div>
             </div>
         `;
     btn.style.cssText = `
-            background: linear-gradient(135deg, #FFD700, #C9A227);
-            color: white;
+            background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+            color: #3d2914;
             border: none;
             padding: 15px 25px;
             border-radius: 12px;
             cursor: pointer;
             width: 100%;
             max-width: 350px;
-            box-shadow: 0 6px 20px rgba(102,126,234,0.4);
-            font-family: 'Segoe UI', sans-serif;
+            box-shadow: 0 6px 20px rgba(230,126,34,0.35);
+            font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
             margin: 10px 0;
             transition: transform 0.2s, box-shadow 0.2s;
         `;
     btn.onmouseenter = () => {
       btn.style.transform = "translateY(-2px)";
-      btn.style.boxShadow = "0 8px 25px rgba(102,126,234,0.5)";
+      btn.style.boxShadow = "0 8px 25px rgba(230,126,34,0.45)";
     };
     btn.onmouseleave = () => {
       btn.style.transform = "translateY(0)";
-      btn.style.boxShadow = "0 6px 20px rgba(102,126,234,0.4)";
+      btn.style.boxShadow = "0 6px 20px rgba(230,126,34,0.35)";
     };
     btn.onclick = () => this.openModal();
 
@@ -862,7 +862,7 @@ Please share payment details and license key.`;
       // Hover effects
       btn.onmouseenter = () => {
         btn.style.transform = "scale(1.03)";
-        btn.style.boxShadow = "0 4px 15px rgba(102,126,234,0.4)";
+        btn.style.boxShadow = "0 4px 15px rgba(230,126,34,0.35)";
       };
       btn.onmouseleave = () => {
         btn.style.transform = "scale(1)";
@@ -1091,14 +1091,14 @@ Please share payment details and license key.`;
     if (uploadArea) {
       uploadArea.ondragover = (e) => {
         e.preventDefault();
-        uploadArea.style.borderColor = "#667eea";
+        uploadArea.style.borderColor = "#e67e22";
       };
       uploadArea.ondragleave = () => {
-        uploadArea.style.borderColor = "rgba(102,126,234,0.5)";
+        uploadArea.style.borderColor = "rgba(230,126,34,0.45)";
       };
       uploadArea.ondrop = (e) => {
         e.preventDefault();
-        uploadArea.style.borderColor = "rgba(102,126,234,0.5)";
+        uploadArea.style.borderColor = "rgba(230,126,34,0.45)";
         if (e.dataTransfer.files.length && fileInput) {
           fileInput.files = e.dataTransfer.files;
           fileInput.dispatchEvent(new Event("change"));
@@ -2324,7 +2324,7 @@ Please share payment details and license key.`;
     // Only text settings - everything else is random
     ImageGenerator.updateSettings({
       customText: customText?.value || "",
-      textBgColor: textBgColor?.value || "#667eea",
+      textBgColor: textBgColor?.value || "#e67e22",
     });
 
     if (typeof ImageGenerator.preloadBadges === "function") {
@@ -2777,7 +2777,7 @@ Please share payment details and license key.`;
                 <p style="color:#9ca3af;font-size:11px;margin-bottom:5px;">${attempt} / ${maxAttempts}${
       noPidCount > 0 ? ` • ${noPidCount} no PID (kept)` : ""
     }${skipHigherCount > 0 ? ` • ${skipHigherCount} skipped higher` : ""}</p>
-                <p style="color:#667eea;font-size:12px;margin-bottom:12px;">⏱️ ${timeStr}${
+                <p style="color:#e67e22;font-size:12px;margin-bottom:12px;">⏱️ ${timeStr}${
       estRemaining ? ` • ${estRemaining}` : ""
     }</p>
                 
@@ -2787,15 +2787,15 @@ Please share payment details and license key.`;
                     <div style="background:${
                       bestSoFar <= target
                         ? "rgba(16,185,129,0.2)"
-                        : "rgba(102,126,234,0.15)"
+                        : "rgba(230,126,34,0.12)"
                     };border:2px solid ${
                         bestSoFar <= target
                           ? "#10b981"
-                          : "rgba(102,126,234,0.5)"
+                          : "rgba(230,126,34,0.45)"
                       };border-radius:12px;padding:12px;margin-bottom:12px;">
                         <div style="font-size:11px;color:#9ca3af;">Best Found</div>
                         <div style="font-size:32px;font-weight:700;color:${
-                          bestSoFar <= target ? "#10b981" : "#667eea"
+                          bestSoFar <= target ? "#059669" : "#e67e22"
                         };">₹${bestSoFar}</div>
                         ${
                           bestSoFar <= target
@@ -2805,17 +2805,17 @@ Please share payment details and license key.`;
                     </div>
                 `
                     : `
-                    <div style="background:rgba(102,126,234,0.15);border:1px solid rgba(102,126,234,0.3);border-radius:12px;padding:15px;margin-bottom:12px;">
-                        <div style="font-size:28px;color:#667eea;">🔍</div>
+                    <div style="background:rgba(230,126,34,0.12);border:1px solid rgba(230,126,34,0.28);border-radius:12px;padding:15px;margin-bottom:12px;">
+                        <div style="font-size:28px;color:#e67e22;">🔍</div>
                         <div style="font-size:11px;color:#9ca3af;margin-top:5px;">Searching...</div>
                     </div>
                 `
                 }
                 
                 <div style="background:rgba(255,255,255,0.1);border-radius:10px;height:10px;margin-bottom:8px;overflow:hidden;">
-                    <div style="width:${pct}%;background:linear-gradient(135deg, #FFD700, #C9A227);height:100%;border-radius:10px;transition:width 0.3s;"></div>
+                    <div style="width:${pct}%;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);height:100%;border-radius:10px;transition:width 0.3s;"></div>
                 </div>
-                <div style="font-size:11px;color:#a78bfa;margin-bottom:12px;">${pct}%</div>
+                <div style="font-size:11px;color:#c45f12;margin-bottom:12px;">${pct}%</div>
                 <button id="stop-btn" class="opt-btn opt-btn-danger" style="padding:10px 25px;font-size:13px;border-radius:10px;">⏹️ Stop</button>
             </div>
         `;

@@ -1,12 +1,10 @@
 {
-"update_url": "https://clients2.google.com/service/update2/crx",
-
   "manifest_version": 3,
-   "version": "1.7.0",
-  "name": "Meesho Shipping Cost Optimizer AI - Unlimited",
+  "version": "1.8.0",
+  "name": "Meesho Shipping Cost Optimizer",
   "short_name": "Meesho Optimizer",
-  "description": "AI tool for Meesho sellers that cuts shipping costs up to 80% using smart image optimization.",
-  "author": "Veer Hanuman",
+  "description": "Generate image variants, check live Meesho shipping, preview results, and apply the best image to your catalog.",
+  "author": "Deepanshu Arora",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -57,7 +55,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Meesho Shipping Cost Optimizer - Reduce Costs Now With AI!",
+    "default_title": "Meesho Shipping Cost Optimizer",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

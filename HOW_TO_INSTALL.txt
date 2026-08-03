@@ -1,30 +1,23 @@
-***** HOW TO INSTALL THE EXTENSION *****
+***** HOW TO INSTALL *****
 
-QUICK
------
-Zip folder:  app.suppliersden.com  (contains manifest.json at root)
-
-Build zip:   bash scripts/build-extension-zip.sh
-             → release/Meesho_Shipping_Cost_Optimizer_AI_-_Unlimited.zip
-
-No license required — extension opens directly.
+Developer: Deepanshu Arora
+Extension: Meesho Shipping Cost Optimizer v1.8.0
 
 DESKTOP (Chrome / Edge / Brave)
 --------------------------------
-1. Unpack or use app.suppliersden.com folder
-
-2. chrome://extensions → Developer mode → Load unpacked
-
-3. Select app.suppliersden.com (must contain manifest.json)
-
-4. Open supplier.meesho.com → catalog page → AI Optimizer
+1. Open chrome://extensions
+2. Enable Developer mode
+3. Click Load unpacked
+4. Select this folder (must contain manifest.json)
+5. Open supplier.meesho.com → catalog page → Shipping Optimizer
 
 MOBILE (Kiwi Browser — Android)
 --------------------------------
-1. Zip app.suppliersden.com → copy to phone → unzip
+1. Zip this folder (manifest.json at the root of the zip)
+2. Copy to phone → unzip
+3. Kiwi → Extensions → Developer mode → Load unpacked
+4. Pick the unzipped folder
+5. Open supplier.meesho.com → Shipping Optimizer
 
-2. Kiwi → Extensions → Developer mode → Load unpacked
-
-3. Pick unzipped folder (with manifest.json inside)
-
-See START_HERE_KIWI.txt in the extension folder for details.
+No license key required.
+See START_HERE_KIWI.txt for Kiwi details.
