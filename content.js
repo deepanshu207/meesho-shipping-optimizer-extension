@@ -469,25 +469,40 @@ class MeeshoShippingOptimizer {
     const fab = document.createElement("button");
     fab.id = "meesho-optimizer-fab";
     fab.type = "button";
-    fab.textContent = "Shipping Optimizer";
+    fab.title = "Shipping Optimizer";
+    fab.setAttribute("aria-label", "Shipping Optimizer");
+
+    const iconUrl =
+      typeof chrome !== "undefined" && chrome.runtime?.getURL
+        ? chrome.runtime.getURL("icons/icon48.png")
+        : "";
+
+    fab.innerHTML = iconUrl
+      ? `<img src="${iconUrl}" alt="" width="30" height="30" style="display:block;border-radius:8px;">`
+      : `<span style="font-size:22px;line-height:1;">📦</span>`;
+
     const isNarrow = window.matchMedia("(max-width: 640px)").matches;
+    const bottomOffset = isNarrow ? "88px" : "22px";
+    const size = isNarrow ? "52px" : "56px";
+
     fab.style.cssText = `
       position: fixed;
-      right: ${isNarrow ? "12px" : "18px"};
-      bottom: ${isNarrow ? "12px" : "18px"};
-      z-index: 2147483647;
+      right: ${isNarrow ? "14px" : "18px"};
+      bottom: ${bottomOffset};
+      z-index: 2147483646;
+      width: ${size};
+      height: ${size};
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
       color: #3d2914;
-      border: none;
-      padding: ${isNarrow ? "14px 18px" : "12px 16px"};
-      min-height: 48px;
-      min-width: 48px;
-      border-radius: 14px;
-      font-weight: 700;
-      font-size: ${isNarrow ? "14px" : "13px"};
-      font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
-      box-shadow: 0 10px 25px rgba(196,95,18,0.3);
+      border: 2px solid rgba(255,255,255,0.85);
+      border-radius: 50%;
+      box-shadow: 0 8px 22px rgba(196,95,18,0.38);
       cursor: pointer;
+      touch-action: manipulation;
     `;
 
     fab.onclick = () => this.openModal();
@@ -3473,6 +3488,9 @@ Please share payment details and license key.`;
       dataUrl: row.dataUrl,
       meta: row.meta,
     });
+    if (row.layers) {
+      this.ensureTextOverlayState(row);
+    }
     return row;
   }
 
@@ -3761,6 +3779,16 @@ Please share payment details and license key.`;
     row.editFlags = this.normalizeEditFlags({});
     row._badgesRepositioned = false;
     row._staticAppearanceEdited = false;
+    row._textOverlaysEdited = false;
+
+    if (row.layers._textOverlaysDefaults) {
+      row.layers._textOverlays = JSON.parse(
+        JSON.stringify(row.layers._textOverlaysDefaults),
+      );
+      if (typeof ImageGenerator !== "undefined" && ImageGenerator.syncLegacyTextFields) {
+        ImageGenerator.syncLegacyTextFields(row.layers, row.layers._textOverlays);
+      }
+    }
 
     let resetUrl = "";
     try {
@@ -3883,6 +3911,8 @@ Please share payment details and license key.`;
     const edited =
       !!row._badgesRepositioned ||
       !!row._staticAppearanceEdited ||
+      !!row._textOverlaysEdited ||
+      this.textOverlaysChanged(row) ||
       this.isVariantEdited(row.editFlags, row.layers, row) ||
       (hasAdvanced && window.StaticFrameCompose?.needsStaticCompose?.(row));
     resetBtn.style.display = edited ? "block" : "none";
@@ -3932,7 +3962,10 @@ Please share payment details and license key.`;
     if (!row?.layers || !window.StaticFrameCompose?.composeStaticPreview) {
       return this.resolveDownloadUrl(row);
     }
-    const edited = this.isVariantEdited(row.editFlags, row.layers, row);
+    const edited =
+      this.isVariantEdited(row.editFlags, row.layers, row) ||
+      !!row._textOverlaysEdited ||
+      this.textOverlaysChanged(row);
     if (!edited) return this.resolveDownloadUrl(row);
 
     await this.ensureRowComposeReady(row);
@@ -5237,6 +5270,235 @@ Please share payment details and license key.`;
     });
   }
 
+  normalizeTextOverlaysOnLayers(layers) {
+    if (!layers) return [];
+    if (typeof ImageGenerator !== "undefined" && ImageGenerator.normalizeTextOverlays) {
+      return ImageGenerator.normalizeTextOverlays(layers);
+    }
+    const legacy = String(layers._customText || "").trim();
+    if (!legacy) return [];
+    return [
+      {
+        id: "text-1",
+        text: legacy,
+        position: layers._customTextPosition || "bottom",
+        textColor: layers._customTextColor || "#ffffff",
+        bgColor: layers._customTextBg || "#e67e22",
+        fontSizePct: 100,
+        enabled: true,
+      },
+    ];
+  }
+
+  ensureTextOverlayState(row) {
+    if (!row?.layers) return [];
+    const overlays = this.normalizeTextOverlaysOnLayers(row.layers);
+    row.layers._textOverlays = overlays;
+    if (!row.layers._textOverlaysDefaults) {
+      row.layers._textOverlaysDefaults = JSON.parse(JSON.stringify(overlays));
+    }
+    if (typeof ImageGenerator !== "undefined" && ImageGenerator.syncLegacyTextFields) {
+      ImageGenerator.syncLegacyTextFields(row.layers, overlays);
+    }
+    return overlays;
+  }
+
+  textOverlaysChanged(row) {
+    if (!row?.layers) return false;
+    const current = JSON.stringify(this.normalizeTextOverlaysOnLayers(row.layers));
+    const defaults = JSON.stringify(row.layers._textOverlaysDefaults || []);
+    return current !== defaults;
+  }
+
+  scheduleTextOverlayPreview(variantId, delayMs = 180) {
+    clearTimeout(this._textOverlayPreviewTimer);
+    this._textOverlayPreviewTimer = setTimeout(() => {
+      void this.applyRowStaticPreview(variantId);
+    }, delayMs);
+  }
+
+  renderVariantTextControls(row, container) {
+    if (!container || !row?.layers) return;
+    const overlays = this.ensureTextOverlayState(row);
+    const positions = [
+      ["bottom", "Bottom center"],
+      ["top", "Top center"],
+      ["center", "Center"],
+      ["bottom-left", "Bottom left"],
+      ["bottom-right", "Bottom right"],
+      ["top-left", "Top left"],
+      ["top-right", "Top right"],
+    ];
+
+    let html = `<details class="variant-text-accordion" open style="margin-bottom:10px;border:1px solid #e5e7eb;border-radius:10px;padding:8px;background:#fafafa;">
+      <summary style="font-size:12px;font-weight:700;color:#374151;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;">
+        <span>✏️ Text on image</span>
+        <span style="font-size:10px;color:#6b7280;font-weight:500;">${overlays.length} layer${overlays.length === 1 ? "" : "s"}</span>
+      </summary>
+      <p style="font-size:10px;color:#6b7280;margin:8px 0;line-height:1.4;">Add promo text (e.g. FREE SHIPPING). Changes update preview only — shipping ₹ stays the same.</p>
+      <div id="variant-text-list">`;
+
+    if (!overlays.length) {
+      html += `<p style="font-size:11px;color:#9ca3af;margin:0 0 8px;">No text yet — tap Add text below.</p>`;
+    }
+
+    overlays.forEach((overlay, index) => {
+      const posOpts = positions
+        .map(
+          ([val, label]) =>
+            `<option value="${val}"${overlay.position === val ? " selected" : ""}>${label}</option>`,
+        )
+        .join("");
+      html += `<div class="variant-text-card" data-text-id="${overlay.id}" style="border:1px solid #e5e7eb;border-radius:8px;padding:8px;margin-bottom:8px;background:#fff;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <span style="font-size:11px;font-weight:600;">Text ${index + 1}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:10px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+              <input type="checkbox" class="variant-text-enabled" data-text-id="${overlay.id}"${
+        overlay.enabled !== false ? " checked" : ""
+      } style="width:14px;height:14px;">Show
+            </label>
+            <button type="button" class="variant-text-remove" data-text-id="${overlay.id}" style="border:none;background:#fee2e2;color:#b91c1c;font-size:10px;padding:4px 8px;border-radius:6px;cursor:pointer;">Remove</button>
+          </div>
+        </div>
+        <label style="display:block;font-size:10px;margin-bottom:6px;">Label
+          <input type="text" class="variant-text-content opt-input" data-text-id="${overlay.id}" value="${String(
+        overlay.text || "",
+      )
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")}" placeholder="e.g. FREE SHIPPING" style="width:100%;margin-top:4px;font-size:12px;padding:6px;">
+        </label>
+        <label style="display:block;font-size:10px;margin-bottom:6px;">Position
+          <select class="variant-text-position opt-select" data-text-id="${overlay.id}" style="width:100%;margin-top:4px;font-size:11px;padding:5px;">${posOpts}</select>
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+          <label style="font-size:10px;">Text color
+            <input type="color" class="variant-text-color" data-text-id="${overlay.id}" value="${
+        overlay.textColor || "#ffffff"
+      }" style="width:100%;height:32px;margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:2px;">
+          </label>
+          <label style="font-size:10px;">Background
+            <input type="color" class="variant-text-bg" data-text-id="${overlay.id}" value="${
+        overlay.bgColor || "#e67e22"
+      }" style="width:100%;height:32px;margin-top:4px;border:1px solid #e5e7eb;border-radius:6px;padding:2px;">
+          </label>
+        </div>
+        <label style="display:block;font-size:10px;">Size <span class="variant-text-size-val" data-text-id="${overlay.id}">${
+        overlay.fontSizePct || 100
+      }</span>%
+          <input type="range" class="variant-text-size" data-text-id="${overlay.id}" min="50" max="200" value="${
+        overlay.fontSizePct || 100
+      }" style="width:100%;">
+        </label>
+      </div>`;
+    });
+
+    html += `</div>
+      <button type="button" id="variant-text-add" style="width:100%;padding:8px;border:1px dashed #d1d5db;border-radius:8px;background:#fff;font-size:12px;font-weight:600;color:#c45f12;cursor:pointer;">+ Add text</button>
+    </details>`;
+
+    container.innerHTML = html;
+    this.bindVariantTextControls(row, container);
+  }
+
+  bindVariantTextControls(row, container) {
+    if (!container || !row?.layers) return;
+    const variantId = row.variantId;
+
+    const readOverlaysFromDom = () => {
+      const list = container.querySelector("#variant-text-list");
+      if (!list) return [];
+      return Array.from(list.querySelectorAll(".variant-text-card")).map((card) => {
+        const id = card.dataset.textId;
+        return {
+          id,
+          text: card.querySelector(`.variant-text-content[data-text-id="${id}"]`)?.value || "",
+          position:
+            card.querySelector(`.variant-text-position[data-text-id="${id}"]`)?.value || "bottom",
+          textColor:
+            card.querySelector(`.variant-text-color[data-text-id="${id}"]`)?.value || "#ffffff",
+          bgColor:
+            card.querySelector(`.variant-text-bg[data-text-id="${id}"]`)?.value || "#e67e22",
+          fontSizePct: parseInt(
+            card.querySelector(`.variant-text-size[data-text-id="${id}"]`)?.value || "100",
+            10,
+          ),
+          enabled: !!card.querySelector(`.variant-text-enabled[data-text-id="${id}"]`)?.checked,
+        };
+      });
+    };
+
+    const commit = () => {
+      const overlays = readOverlaysFromDom();
+      row.layers._textOverlays = overlays;
+      row._textOverlaysEdited = this.textOverlaysChanged(row);
+      if (typeof ImageGenerator !== "undefined" && ImageGenerator.syncLegacyTextFields) {
+        ImageGenerator.syncLegacyTextFields(row.layers, overlays);
+      }
+      this.scheduleTextOverlayPreview(variantId);
+      this.updateVariantEditorResetButton(row);
+    };
+
+    container.querySelector("#variant-text-add")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      const overlays = readOverlaysFromDom();
+      const next =
+        typeof ImageGenerator !== "undefined" && ImageGenerator.createTextOverlay
+          ? ImageGenerator.createTextOverlay({ text: "SALE" })
+          : {
+              id: `text-${Date.now()}`,
+              text: "SALE",
+              position: "bottom",
+              textColor: "#ffffff",
+              bgColor: "#e67e22",
+              fontSizePct: 100,
+              enabled: true,
+            };
+      overlays.push(next);
+      row.layers._textOverlays = overlays;
+      this.renderVariantTextControls(row, container);
+      row._textOverlaysEdited = true;
+      this.scheduleTextOverlayPreview(variantId, 60);
+      this.updateVariantEditorResetButton(row);
+    });
+
+    container.querySelectorAll(".variant-text-remove").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const id = btn.dataset.textId;
+        const overlays = readOverlaysFromDom().filter((o) => o.id !== id);
+        row.layers._textOverlays = overlays;
+        this.renderVariantTextControls(row, container);
+        row._textOverlaysEdited = this.textOverlaysChanged(row);
+        this.scheduleTextOverlayPreview(variantId, 60);
+        this.updateVariantEditorResetButton(row);
+      };
+    });
+
+    container.querySelectorAll(".variant-text-content").forEach((el) => {
+      el.oninput = commit;
+    });
+    container.querySelectorAll(".variant-text-position").forEach((el) => {
+      el.onchange = commit;
+    });
+    container.querySelectorAll(".variant-text-color, .variant-text-bg").forEach((el) => {
+      el.oninput = commit;
+    });
+    container.querySelectorAll(".variant-text-enabled").forEach((el) => {
+      el.onchange = commit;
+    });
+    container.querySelectorAll(".variant-text-size").forEach((el) => {
+      el.oninput = () => {
+        const val = container.querySelector(
+          `.variant-text-size-val[data-text-id="${el.dataset.textId}"]`,
+        );
+        if (val) val.textContent = el.value;
+        commit();
+      };
+    });
+  }
+
   renderStaticBadgePlacementControls(row, container) {
     const SFC = window.StaticFrameCompose;
     if (!SFC || !container) return;
@@ -6013,6 +6275,7 @@ Please share payment details and license key.`;
     const hasAdvanced = caps.canAdjustBadges || this.hasAdvancedEditor(row);
     const addSection = panel.querySelector("#variant-edit-add-section");
     const staticSection = panel.querySelector("#variant-edit-static-badges");
+    const textSection = panel.querySelector("#variant-edit-text-section");
     const resetBtn = panel.querySelector("#variant-edit-reset");
     const stickerSlots = (row.layers._badgePlacements || []).length;
     const needsStickerControls =
@@ -6022,6 +6285,19 @@ Please share payment details and license key.`;
       staticSection &&
       !staticSection.querySelector(".static-sticker-card");
     if (addSection) addSection.style.display = "block";
+    if (textSection && row.layers) {
+      textSection.style.display = "block";
+      const sameTextVariant = this._textControlsVariantId === row.variantId;
+      if (!sameTextVariant) {
+        this._textControlsVariantId = row.variantId;
+        this.renderVariantTextControls(row, textSection);
+      }
+    } else if (textSection) {
+      textSection.style.display = "none";
+      textSection.innerHTML = "";
+      this._textControlsVariantId = null;
+    }
+
     if (staticSection) {
       if (hasAdvanced) {
         staticSection.style.display = "block";
@@ -6084,8 +6360,8 @@ Please share payment details and license key.`;
     const footerNote = panel.querySelector("#variant-edit-footer-note");
     if (footerNote) {
       footerNote.textContent = hasAdvanced
-        ? "RGB colors, gradients, badge size/position — pricing unchanged on save."
-        : "6 preview options — edits update save only, not shipping ₹.";
+        ? "Frame, badges, text & colors — pricing unchanged on save."
+        : "Preview options + text overlays — edits update save only, not shipping ₹.";
     }
     if (resetBtn) {
       this.updateVariantEditorResetButton(row);
@@ -6106,11 +6382,11 @@ Please share payment details and license key.`;
       panel.remove();
       panel = null;
     }
-    if (panel && !panel.querySelector("#variant-edit-static-badges")) {
+    if (panel && !panel.querySelector("#variant-edit-text-section")) {
       panel.remove();
       panel = null;
     }
-    if (panel && panel.dataset.staticEditorV !== "19") {
+    if (panel && panel.dataset.staticEditorV !== "20") {
       panel.remove();
       panel = null;
     }
@@ -6121,7 +6397,7 @@ Please share payment details and license key.`;
 
     panel = document.createElement("div");
     panel.id = "variant-edit-panel";
-    panel.dataset.staticEditorV = "19";
+    panel.dataset.staticEditorV = "20";
     panel.style.cssText =
       "display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2147483647;align-items:center;justify-content:center;padding:12px;";
     panel.innerHTML = `
@@ -6196,6 +6472,7 @@ Please share payment details and license key.`;
               Remove border and stickers (clean product)
             </label>
           </div>
+          <div id="variant-edit-text-section" style="display:none;margin-bottom:10px;"></div>
           <div id="variant-edit-static-badges" style="display:none;margin-bottom:10px;"></div>
           <div id="variant-edit-add-section" style="margin-bottom:10px;">
             <div style="font-size:11px;font-weight:600;color:#6b7280;margin-bottom:6px;">Add</div>
@@ -6369,6 +6646,7 @@ Please share payment details and license key.`;
 
     this._editingVariantId = variantId;
     this.ensureFrozenPricing(row);
+    this.ensureTextOverlayState(row);
     const previewSrc = this.resolveVariantPreviewSrc(row);
     if (previewSrc) row.imageUrl = previewSrc;
 
@@ -6624,11 +6902,10 @@ Please share payment details and license key.`;
     const name = (result.name || "variant").replace(/\s+/g, "-");
     const filename = "meesho-" + name + "-" + Date.now() + ".jpg";
     let url = "";
-    const edited = this.isVariantEdited(
-      result.editFlags,
-      result.layers,
-      result,
-    );
+    const edited =
+      this.isVariantEdited(result.editFlags, result.layers, result) ||
+      !!result._textOverlaysEdited ||
+      this.textOverlaysChanged(result);
     if (edited && result.layers?._staticFrame) {
       try {
         url = await this.composeSaveForRow(result);

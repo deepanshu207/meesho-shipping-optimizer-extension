@@ -15,6 +15,7 @@ const ImageGenerator = {
         // Only keep text settings, rest is random
         if (newSettings.customText !== undefined) this.settings.customText = newSettings.customText;
         if (newSettings.textPosition !== undefined) this.settings.textPosition = newSettings.textPosition;
+        if (newSettings.textColor !== undefined) this.settings.textColor = newSettings.textColor;
         if (newSettings.textBgColor !== undefined) this.settings.textBgColor = newSettings.textBgColor;
         console.log('🔧 Settings updated');
     },
@@ -112,46 +113,151 @@ const ImageGenerator = {
         }
     },
 
-    // Draw custom text on image
-    drawText: function(ctx, w, h, borderSize) {
-        const text = this.settings.customText;
-        if (!text || text.trim() === '') return;
-
-        const fontSize = Math.max(16, Math.min(w / 15, 36));
-        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-        
-        const textWidth = ctx.measureText(text).width;
-        const padding = 12;
-        const boxHeight = fontSize + padding * 2;
-        const boxWidth = textWidth + padding * 2;
-        
-        let x, y;
-        switch(this.settings.textPosition) {
-            case 'top':
-                x = (w - boxWidth) / 2;
-                y = borderSize + 10;
-                break;
-            case 'bottom':
-            default:
-                x = (w - boxWidth) / 2;
-                y = h - borderSize - boxHeight - 10;
-                break;
+    normalizeTextOverlays: function (source) {
+        if (Array.isArray(source?._textOverlays)) {
+            return source._textOverlays.map((o, i) => ({
+                id: o.id || `text-${i + 1}`,
+                text: String(o.text || ""),
+                position: o.position || "bottom",
+                textColor: o.textColor || "#ffffff",
+                bgColor: o.bgColor || o.textBgColor || "#e67e22",
+                fontSizePct: Number(o.fontSizePct) > 0 ? Number(o.fontSizePct) : 100,
+                enabled: o.enabled !== false,
+            }));
         }
+        const legacy = String(source?._customText || source?.customText || "").trim();
+        if (!legacy) return [];
+        return [
+            {
+                id: "text-1",
+                text: legacy,
+                position: source?._customTextPosition || source?.textPosition || "bottom",
+                textColor: source?._customTextColor || "#ffffff",
+                bgColor: source?._customTextBg || source?.textBgColor || "#e67e22",
+                fontSizePct: 100,
+                enabled: true,
+            },
+        ];
+    },
 
-        // Draw background
-        ctx.fillStyle = this.settings.textBgColor;
+    createTextOverlay: function (partial = {}) {
+        const id =
+            partial.id ||
+            `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        return {
+            id,
+            text: String(partial.text || ""),
+            position: partial.position || "bottom",
+            textColor: partial.textColor || "#ffffff",
+            bgColor: partial.bgColor || "#e67e22",
+            fontSizePct: Number(partial.fontSizePct) > 0 ? Number(partial.fontSizePct) : 100,
+            enabled: partial.enabled !== false,
+        };
+    },
+
+    syncLegacyTextFields: function (layers, overlays) {
+        if (!layers) return;
+        const active = (overlays || []).filter(
+            (o) => o.enabled !== false && String(o.text || "").trim(),
+        );
+        layers._textOverlays = overlays || [];
+        if (active.length === 1) {
+            layers._customText = active[0].text;
+            layers._customTextBg = active[0].bgColor;
+            layers._customTextColor = active[0].textColor;
+            layers._customTextPosition = active[0].position;
+        } else {
+            layers._customText = active.map((o) => o.text).join(" · ");
+            if (!active.length) {
+                layers._customText = "";
+            }
+        }
+    },
+
+    computeTextBoxPosition: function (position, w, h, borderSize, boxWidth, boxHeight) {
+        const pad = Math.max(borderSize, 10) + 8;
+        const maxX = Math.max(pad, w - boxWidth - pad);
+        const maxY = Math.max(pad, h - boxHeight - pad);
+        switch (position) {
+            case "top":
+                return { x: (w - boxWidth) / 2, y: pad };
+            case "center":
+                return { x: (w - boxWidth) / 2, y: (h - boxHeight) / 2 };
+            case "top-left":
+                return { x: pad, y: pad };
+            case "top-right":
+                return { x: maxX, y: pad };
+            case "bottom-left":
+                return { x: pad, y: maxY };
+            case "bottom-right":
+                return { x: maxX, y: maxY };
+            case "bottom":
+            default:
+                return { x: (w - boxWidth) / 2, y: maxY };
+        }
+    },
+
+    drawTextOverlay: function (ctx, w, h, borderSize, overlay) {
+        if (!overlay || overlay.enabled === false) return;
+        const text = String(overlay.text || "").trim();
+        if (!text) return;
+
+        const scale = Math.max(0.5, Math.min(2, (Number(overlay.fontSizePct) || 100) / 100));
+        const fontSize = Math.max(12, Math.min(w / 15, 40)) * scale;
+        const padding = Math.max(8, fontSize * 0.35);
+        ctx.save();
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+
+        const textWidth = ctx.measureText(text).width;
+        const boxWidth = textWidth + padding * 2;
+        const boxHeight = fontSize + padding * 2;
+        const pos = this.computeTextBoxPosition(
+            overlay.position || "bottom",
+            w,
+            h,
+            borderSize,
+            boxWidth,
+            boxHeight,
+        );
+
+        ctx.fillStyle = overlay.bgColor || overlay.textBgColor || "#e67e22";
         ctx.beginPath();
         if (typeof ctx.roundRect === "function") {
-          ctx.roundRect(x, y, boxWidth, boxHeight, 8);
+            ctx.roundRect(pos.x, pos.y, boxWidth, boxHeight, 8);
         } else {
-          ctx.rect(x, y, boxWidth, boxHeight);
+            ctx.rect(pos.x, pos.y, boxWidth, boxHeight);
         }
         ctx.fill();
 
-        // Draw text
-        ctx.fillStyle = this.settings.textColor;
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, x + padding, y + boxHeight / 2);
+        ctx.fillStyle = overlay.textColor || "#ffffff";
+        ctx.textBaseline = "middle";
+        ctx.fillText(text, pos.x + padding, pos.y + boxHeight / 2);
+        ctx.restore();
+    },
+
+    drawTextOverlays: function (ctx, w, h, borderSize, overlays) {
+        const list = Array.isArray(overlays) ? overlays : this.normalizeTextOverlays(overlays);
+        list
+            .filter((o) => o && o.enabled !== false && String(o.text || "").trim())
+            .forEach((overlay) => this.drawTextOverlay(ctx, w, h, borderSize, overlay));
+    },
+
+    // Draw custom text on image (global settings — used at generation)
+    drawText: function (ctx, w, h, borderSize, overlays) {
+        if (Array.isArray(overlays)) {
+            this.drawTextOverlays(ctx, w, h, borderSize, overlays);
+            return;
+        }
+        const text = this.settings.customText;
+        if (!text || !String(text).trim()) return;
+        this.drawTextOverlay(ctx, w, h, borderSize, {
+            text,
+            position: this.settings.textPosition || "bottom",
+            textColor: this.settings.textColor || "#ffffff",
+            bgColor: this.settings.textBgColor || "#e67e22",
+            fontSizePct: 100,
+            enabled: true,
+        });
     },
 
     // Main generation - FAST, NO ROTATION

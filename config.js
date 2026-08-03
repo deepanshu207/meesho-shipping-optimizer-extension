@@ -12,7 +12,7 @@ const CONFIG = {
   // Extension Settings
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.8.1",
+  VERSION: "1.8.2",
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 
