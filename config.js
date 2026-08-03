@@ -10,9 +10,9 @@ const CONFIG = {
     "https://darkviolet-ostrich-615182.hostingersite.com/api",
 
   // Extension Settings
-  EXTENSION_NAME: "Meesho Shipping Cost Optimizer",
+  EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.8.0",
+  VERSION: "1.8.1",
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 

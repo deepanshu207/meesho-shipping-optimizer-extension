@@ -353,7 +353,7 @@ const OptimizerUI = {
     return `
             <div class="opt-modal">
                 <div class="opt-header">
-                    <h2>meesho. Upload &amp; Optimize</h2>
+                    <h2>Upload &amp; Optimize</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">

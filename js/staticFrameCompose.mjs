@@ -1582,7 +1582,25 @@ async function compressLifestyleToKb(canvas, targetKb) {
   return bestBlob || (await encodeJpeg(canvas, 14));
 }
 
-async function compressPreview(canvas, options = {}) {
+function applyCustomTextToCanvas(canvas, layers) {
+  const text = String(layers?._customText || "").trim();
+  if (!text || !canvas) return;
+  const IG = typeof ImageGenerator !== "undefined" ? ImageGenerator : null;
+  if (!IG?.drawText) return;
+  const border = Number(layers?._staticFrame?.border) || 0;
+  const saved = {
+    customText: IG.settings.customText,
+    textBgColor: IG.settings.textBgColor,
+  };
+  IG.settings.customText = text;
+  if (layers._customTextBg) IG.settings.textBgColor = layers._customTextBg;
+  IG.drawText(canvas.getContext("2d"), canvas.width, canvas.height, border);
+  IG.settings.customText = saved.customText;
+  IG.settings.textBgColor = saved.textBgColor;
+}
+
+async function compressPreview(canvas, options = {}, layers = null) {
+  if (layers) applyCustomTextToCanvas(canvas, layers);
   if (options.preview) {
     const q =
       options.jpegQuality > 0 && options.jpegQuality <= 1 ? options.jpegQuality : 0.92;
@@ -1852,24 +1870,32 @@ export async function composeStaticPreview(layers, flags = {}, options = {}) {
   }
 
   if (!hasStickers) {
-    return compressPreview(canvas, {
-      targetKb,
-      preserveKb: options.preserveKb,
-      jpegQuality: options.jpegQuality,
-      style,
-      preview,
-    });
+    return compressPreview(
+      canvas,
+      {
+        targetKb,
+        preserveKb: options.preserveKb,
+        jpegQuality: options.jpegQuality,
+        style,
+        preview,
+      },
+      layers,
+    );
   }
 
   const placements = visibleStickerPlacements(layers);
   if (!placements.length) {
-    return compressPreview(canvas, {
-      targetKb,
-      preserveKb: options.preserveKb,
-      jpegQuality: options.jpegQuality,
-      style,
-      preview,
-    });
+    return compressPreview(
+      canvas,
+      {
+        targetKb,
+        preserveKb: options.preserveKb,
+        jpegQuality: options.jpegQuality,
+        style,
+        preview,
+      },
+      layers,
+    );
   }
 
   for (const p of placements) {
@@ -1886,13 +1912,17 @@ export async function composeStaticPreview(layers, flags = {}, options = {}) {
   const ctx = canvas.getContext("2d");
   await drawPlacementsOnCtx(ctx, placements, frame);
 
-  return compressPreview(canvas, {
-    targetKb,
-    preserveKb: options.preserveKb,
-    jpegQuality: options.jpegQuality,
-    style,
-    preview,
-  });
+  return compressPreview(
+    canvas,
+    {
+      targetKb,
+      preserveKb: options.preserveKb,
+      jpegQuality: options.jpegQuality,
+      style,
+      preview,
+    },
+    layers,
+  );
 }
 
 export function updatePlacementAnchor(layers, placementId, anchor) {

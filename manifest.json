@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "version": "1.8.0",
-  "name": "Meesho Shipping Cost Optimizer",
-  "short_name": "Meesho Optimizer",
+  "version": "1.8.1",
+  "name": "Shipping Optimizer",
+  "short_name": "Shipping Optimizer",
   "description": "Generate image variants, check live Meesho shipping, preview results, and apply the best image to your catalog.",
   "author": "Deepanshu Arora",
   "icons": {
@@ -55,7 +55,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Meesho Shipping Cost Optimizer",
+    "default_title": "Shipping Optimizer",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
