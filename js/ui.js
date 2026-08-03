@@ -157,35 +157,6 @@ const OptimizerUI = {
     return styles + this.getMainHTML();
   },
 
-  /** Shared local price panel — used in extension modal and web fallback HTML. */
-  getLocalPricePanelHTML: function () {
-    return `
-                    <div class="local-price-panel" style="margin-top:10px;padding:10px;background:#f0fdf4;border:1px solid #a7f3d0;border-radius:10px;">
-                        <div style="font-size:11px;font-weight:700;color:#047857;margin-bottom:6px;">📦 Local Price History</div>
-                        <p id="local-price-hint" style="font-size:10px;color:#6b7280;margin:0 0 8px;line-height:1.4;">Floor band (e.g. ₹59+60) for new images even if live showed ₹68. Use 4 variants for two ₹59 + two ₹60 uploads.</p>
-                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                            <label style="font-size:10px;color:#047857;flex:1;">Variants to show</label>
-                            <select id="local-price-pick-count" class="opt-select" style="flex:1;font-size:12px;padding:6px 8px;">
-                                <option value="2" selected>2 lowest</option>
-                                <option value="3">3 lowest</option>
-                                <option value="4">4 lowest</option>
-                                <option value="5">5 lowest</option>
-                                <option value="6">6 lowest</option>
-                                <option value="8">8 lowest</option>
-                                <option value="10">10 lowest</option>
-                            </select>
-                        </div>
-                        <button type="button" id="local-price-generate-btn" disabled style="width:100%;padding:10px 8px;font-size:13px;font-weight:700;border:none;border-radius:8px;background:#047857;color:#fff;cursor:pointer;min-height:44px;touch-action:manipulation;margin-bottom:6px;">📍 Generate 2 Local Variants</button>
-                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-                            <button type="button" id="local-price-save-btn" style="flex:1;min-width:72px;padding:8px 6px;font-size:12px;font-weight:600;border:none;border-radius:8px;background:linear-gradient(135deg,#FFD700,#C9A227);color:#fff;cursor:pointer;min-height:40px;touch-action:manipulation;">💾 Save</button>
-                            <button type="button" id="local-price-view-btn" style="flex:1;min-width:72px;padding:8px 6px;font-size:12px;font-weight:600;border:none;border-radius:8px;background:#065f46;color:#fff;cursor:pointer;min-height:40px;touch-action:manipulation;">📊 View</button>
-                            <button type="button" id="local-price-download-btn" style="flex:1;min-width:72px;padding:8px 4px;font-size:11px;font-weight:600;border:1px solid #a7f3d0;border-radius:8px;background:#fff;color:#047857;cursor:pointer;min-height:40px;touch-action:manipulation;">📥 CSV</button>
-                            <button type="button" id="local-price-import-btn" style="flex:1;min-width:72px;padding:8px 4px;font-size:11px;font-weight:600;border:1px solid #a7f3d0;border-radius:8px;background:#fff;color:#047857;cursor:pointer;min-height:40px;touch-action:manipulation;">📤 Import</button>
-                            <button type="button" id="local-price-clear-btn" style="flex:0 0 auto;padding:8px;font-size:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;color:#374151;cursor:pointer;min-height:40px;">🗑️</button>
-                        </div>
-                        <input type="file" id="local-price-import-input" accept=".csv,text/csv" style="display:none;">
-                    </div>`;
-  },
 
   // Simplified web UI — upload only, no session/category setup
   getWebHTML: function () {
@@ -223,7 +194,7 @@ const OptimizerUI = {
                                 </select>
                             </div>
                         </div>
-                        <div style="font-size:10px;color:#6b7280;margin-top:6px;">For 🚀 Generate Variants only · Local uses pick count below</div>
+                        <div style="font-size:10px;color:#6b7280;margin-top:6px;">Live Meesho shipping checks using Target + Max Variants</div>
                     </div>
 
                     <div class="opt-section" style="padding:10px;">
@@ -247,8 +218,6 @@ const OptimizerUI = {
                     <div class="generate-sticky" id="generate-sticky">
                         <button type="button" id="generate-btn" class="generate-btn" disabled>🚀 Generate Variants</button>
                     </div>
-
-                    ${this.getLocalPricePanelHTML()}
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
@@ -322,50 +291,8 @@ const OptimizerUI = {
         `;
   },
 
-  getTestLabPanelHTML: function (options = {}) {
-    const ext = !!options.extension;
-    const sessionNote = ext
-      ? `<div id="test-lab-session-hint" class="session-hint session-status ok" style="margin-top:8px;display:block;">✅ Same Live pipeline + adaptive lowest-₹ hunt (skips higher once best is known)</div>`
-      : `<div id="test-lab-session-hint" class="session-hint" style="margin-top:8px;display:none;"></div>`;
-    return `
-                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, rgba(4,120,87,0.12), rgba(102,126,234,0.08));border:1px solid rgba(4,120,87,0.25);">
-                        <div class="opt-section-title" style="color:#047857;">🧪 Test Lab — Live logic + adaptive hunt</div>
-                        <p class="test-lab-note" style="margin-bottom:10px;">Mirrors Live tab (same generate, analysis, editor). Once a best ₹ is found, higher shipping variants are skipped and next tries bias smaller borders / lower KB.</p>
-                        ${sessionNote}
-                        <div class="opt-row" style="margin-bottom:10px;">
-                            <div>
-                                <label class="opt-label" for="test-target-shipping">Target Shipping</label>
-                                <select id="test-target-shipping" class="opt-select" style="font-size:13px;font-weight:600;">
-                                    <option value="30">≤ ₹30</option>
-                                    <option value="40">≤ ₹40</option>
-                                    <option value="50" selected>≤ ₹50</option>
-                                    <option value="60">≤ ₹60</option>
-                                    <option value="70">≤ ₹70</option>
-                                    <option value="80">≤ ₹80</option>
-                                    <option value="90">≤ ₹90</option>
-                                    <option value="100">≤ ₹100</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="opt-label" for="test-max-attempts">Max Tries</label>
-                                <select id="test-max-attempts" class="opt-select">
-                                    <option value="50">50</option>
-                                    <option value="100" selected>100</option>
-                                    <option value="200">200</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div style="font-size:10px;color:#047857;padding:6px;background:rgba(255,255,255,0.5);border-radius:4px;">
-                            ⏭️ Skips ₹ above current best · biases next tries lower
-                        </div>
-                    </div>
-                    <div class="opt-section" style="padding:10px;">
-                        <div class="opt-section-title">✏️ Text (Optional)</div>
-                        <input type="text" id="test-custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING" style="font-size:12px;">
-                    </div>`;
-  },
 
-  // Main optimizer HTML (after license) - Enhanced UI, Smart Mode Auto-Selected
+  // Main optimizer HTML — Live generate + preview + apply
   getMainHTML: function () {
     return `
             <div class="opt-modal opt-modal-ext">
@@ -373,12 +300,7 @@ const OptimizerUI = {
                     <h2><span>🚀</span> Meesho Shipping Cost AI Optimizer</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
-                <div class="opt-tabs" id="optimizer-tabs" role="tablist">
-                    <button type="button" class="opt-tab active" data-optimizer-tab="live" role="tab">Live</button>
-                    <button type="button" class="opt-tab" data-optimizer-tab="test" role="tab">Test Lab</button>
-                </div>
                 <div class="opt-body">
-                    <div id="live-tab-panel" class="opt-tab-panel active" data-optimizer-panel="live">
                     <div class="opt-shipping">
                         <div style="font-size:11px;color:#9ca3af;">Current Shipping</div>
                         <div class="opt-shipping-value" id="current-shipping">Detecting...</div>
@@ -436,18 +358,13 @@ const OptimizerUI = {
                             </div>
                         </div>
                         <div style="font-size:10px;color:#9ca3af;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">
-                            ⚡ Uses Target + Max Variants above · Local pick count is separate
+                            ⚡ Live Meesho shipping checks using Target + Max Variants
                         </div>
                     </div>
 
                     <div class="opt-section" style="padding:10px;">
                         <div class="opt-section-title">✏️ Text (Optional)</div>
                         <input type="text" id="custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING" style="font-size:12px;">
-                    </div>
-                    </div>
-
-                    <div id="test-tab-panel" class="opt-tab-panel" data-optimizer-panel="test">
-                        ${this.getTestLabPanelHTML({ extension: true })}
                     </div>
 
                     <div class="opt-upload-box" id="upload-area">
@@ -465,10 +382,7 @@ const OptimizerUI = {
 
                     <div class="generate-sticky" id="generate-sticky">
                         <button type="button" id="generate-btn" class="generate-btn" disabled>🚀 Generate Variants</button>
-                        <button type="button" id="test-generate-btn" class="generate-btn" disabled style="display:none;margin-top:8px;">🧪 Run Test Lab</button>
                     </div>
-
-                    ${this.getLocalPricePanelHTML()}
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
@@ -476,6 +390,7 @@ const OptimizerUI = {
             </div>
         `;
   },
+
 
 
   // Processing HTML
@@ -515,21 +430,16 @@ const OptimizerUI = {
         `;
   },
 
-  // Single result card — reused for main grid, framed extras, and Test Lab
+  // Single result card — live grid / framed extras
   renderResultCard: function (r, i, options) {
     options = options || {};
     const baseline = options.baselineShipping || 0;
     const manualMode = !!options.manualMode;
-    const testLabMode = !!options.testLabMode;
     const analysisMode = !!options.analysisMode || !!r.analysisMode;
-    const localPriceMode = !!options.localPriceMode;
     const isWeb = !!window.WEB_OPTIMIZER_MODE;
     const applyLabel = isWeb ? "Save" : "Apply";
-    const isLocalPick = !!r.localRecommended;
-    const localTargetTier =
-      Number(r.localEstShipping || r.meta?.localTier || 0) || 0;
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
-    const isBest = isLocalPick || !!options.isBest;
+    const isBest = !!options.isBest;
     const showPerCardApply = !isWeb && !isBest && !analysisMode;
     const staticEst =
       r.meta?.staticEst ??
@@ -542,13 +452,7 @@ const OptimizerUI = {
       r.meta?.kb ||
       (r.blob?.size ? Math.ceil(r.blob.size / 1024) : null);
     const frozenShip = r._frozenPricing?.shippingCost ?? r.shippingCost ?? 0;
-    const priceLabel = localPriceMode
-      ? isLocalPick
-        ? localTargetTier > 0
-          ? "★ target ₹" + localTargetTier
-          : "★ Local pick"
-        : r.name || "Variant"
-      : testLabMode || analysisMode
+    const priceLabel = analysisMode
       ? frozenShip > 0
         ? "₹" + frozenShip
         : "est ₹" + staticEst
@@ -563,7 +467,6 @@ const OptimizerUI = {
       baseline > 0 && r.shippingCost > 0 ? baseline - r.shippingCost : 0;
     const staticPromoEditor = OptimizerUI.isStaticPromoEditorRow(r);
     const canEdit =
-      !testLabMode &&
       !!(r.layers && (r.layers.full || r.layers.productOnly || staticPromoEditor));
     const edited =
       r._badgesRepositioned ||
@@ -576,23 +479,17 @@ const OptimizerUI = {
       r.editFlags?.borderAdded ||
       r.editFlags?.fullDecorationsAdded;
     const vid = r.variantId || "var-" + i;
-    const imgSrc = testLabMode
-      ? OptimizerUI.pickResultImageSrc(r)
-      : staticPromoEditor
+    const imgSrc = staticPromoEditor
       ? r.imageUrl || OptimizerUI.pickResultImageSrc(r)
       : analysisMode
       ? OptimizerUI.pickResultImageSrc(r)
       : r.imageUrl || OptimizerUI.pickResultImageSrc(r);
-    const styleTag = testLabMode
-      ? `<div style="font-size:8px;color:#2563eb;margin-bottom:2px;">${r.meta?.path || "test"} · ${r.meta?.kb || "?"}KB</div>`
-      : r.variantStyle === "framed"
+    const styleTag = r.variantStyle === "framed"
       ? `<div style="font-size:8px;color:#2563eb;margin-bottom:2px;">${r.meta?.productW || "?"}×${r.meta?.productH || "?"}px · ${r.meta?.actualKb || r.meta?.targetKb || "?"}KB</div>`
       : r.variantStyle === "product_only"
       ? `<div style="font-size:8px;color:#047857;margin-bottom:2px;">product only · ${r.meta?.kb || "?"}KB</div>`
       : r.variantStyle === "analysis" || r.analysisMode
       ? `<div style="font-size:8px;color:#2563eb;margin-bottom:2px;">${r.meta?.path || "analysis"} · ${r.meta?.kb || "?"}KB</div>`
-      : localPriceMode
-      ? `<div style="font-size:8px;color:#047857;margin-bottom:2px;">${r.meta?.path || "standard"} · ${kbLabel || "?"}KB</div>`
       : r.noPid
       ? `<div style="font-size:8px;color:#b45309;margin-bottom:2px;">no PID · kept</div>`
       : "";
@@ -604,9 +501,7 @@ const OptimizerUI = {
       isBest ? "#10b981" : "rgba(255,255,255,0.1)"
     };border-radius:8px;padding:8px;text-align:center;position:relative;">
                     ${
-                      isLocalPick
-                        ? '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#047857;color:white;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;">★ LOCAL PICK</div>'
-                        : isBest
+                      isBest
                         ? '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;">🏆 BEST</div>'
                         : isRecommended
                         ? '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#2563eb;color:white;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;">★ RECOMMEND</div>'
@@ -620,12 +515,10 @@ const OptimizerUI = {
         ? staticPromoEditor
           ? "Tap to edit colors, zoom, pan, and badges"
           : "Tap to edit border & stickers"
-        : testLabMode
-        ? "Tap to preview"
-        : ""
+        : "Tap to preview"
     }" style="width:100%;height:55px;object-fit:contain;border-radius:4px;background:rgba(0,0,0,0.2);margin-bottom:4px;margin-top:${
       isBest ? "4px" : "0"
-    };cursor:${canEdit || testLabMode ? "pointer" : "default"};" loading="lazy">
+    };cursor:pointer;" loading="lazy">
                     ${styleTag}
                     ${
                       canEdit
@@ -638,18 +531,12 @@ const OptimizerUI = {
                     ${
                       analysisMode
                         ? '<div style="font-size:8px;color:#2563eb;font-weight:600;">static est</div>'
-                        : localPriceMode
-                        ? localTargetTier > 0
-                        ? '<div style="font-size:8px;color:#047857;font-weight:600;">floor band — verify on Meesho</div>'
-                        : '<div style="font-size:8px;color:#047857;font-weight:600;">not live — verify on Meesho</div>'
-                        : testLabMode && r.shippingCost > 0
+                        : r.shippingCost > 0
                         ? '<div style="font-size:8px;color:#047857;font-weight:600;">✓ live Meesho</div>'
-                        : testLabMode && r.liveChecked
-                        ? '<div style="font-size:8px;color:#b45309;">checked</div>'
                         : ""
                     }
                     ${
-                      savings > 0 && !localPriceMode
+                      savings > 0
                         ? `<div style="font-size:9px;color:#10b981;">Save ₹${savings}</div>`
                         : ""
                     }
@@ -784,294 +671,20 @@ const OptimizerUI = {
     return html;
   },
 
-  renderStaticPromoHub: function (options) {
-    if (!window.WEB_OPTIMIZER_MODE || !options.staticPromoHubActive) return "";
 
-    options = options || {};
-    const showcase = options.showcaseResults || [];
-    const promo = options.promoLifestyleResults || [];
-    const tall = options.tallStaticResults || [];
-    const gown = options.gownStaticResults || [];
-    const genShowcase = !!options.isGeneratingShowcase;
-    const genPromo = !!options.isGeneratingPromoLifestyle;
-    const genTall = !!options.isGeneratingTallStatic;
-    const genGown = !!options.isGeneratingGownStatic;
-    const count = options.showcaseVariantCount || 25;
 
-    const bestEst = (list) => {
-      const s = [...list].sort(
-        (a, b) =>
-          (OptimizerUI.frozenEstShipping(a) || 999) -
-          (OptimizerUI.frozenEstShipping(b) || 999),
-      );
-      return OptimizerUI.frozenEstShipping(s[0]);
-    };
 
-    const chip = (label, n, best, doneColor) =>
-      n > 0
-        ? `<span style="display:inline-block;padding:4px 8px;border-radius:6px;background:${doneColor};font-size:10px;font-weight:600;">${label}: ${n} variants · est ₹${best}</span>`
-        : `<span style="display:inline-block;padding:4px 8px;border-radius:6px;background:#f3f4f6;color:#6b7280;font-size:10px;">${label}: not generated</span>`;
 
-    const btnStyle = (bg, busy) =>
-      `width:100%;padding:12px;font-size:13px;border:none;border-radius:8px;color:#fff;cursor:pointer;background:${bg};${
-        busy ? "opacity:0.65;pointer-events:none;" : ""
-      }`;
 
-    return `
-      <div id="static-promo-hub" style="margin-bottom:16px;border:1px solid rgba(0,0,0,0.08);border-radius:12px;padding:12px;background:linear-gradient(180deg,#fafafa,#fff);">
-        <div style="font-size:13px;font-weight:700;margin-bottom:4px;text-align:center;">🎨 Static Promo Studio</div>
-        <p style="font-size:10px;color:#6b7280;text-align:center;margin:0 0 10px;">Generate showcase, lifestyle, tall, or gown promo — same image, no refresh needed</p>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
-          <button type="button" data-static-gen="showcase" class="generate-btn" style="${btnStyle("linear-gradient(135deg,#ff9800,#4caf50)", genShowcase)}" ${genShowcase ? "disabled" : ""}>
-            ${genShowcase ? "Generating showcase frames…" : `🖼️ Generate Showcase Frames (${count})`}
-          </button>
-          <button type="button" data-static-gen="lifestyle" class="generate-btn" style="${btnStyle("#22c55e", genPromo)}" ${genPromo ? "disabled" : ""}>
-            ${genPromo ? "Generating lifestyle promo…" : `🏷️ Generate Lifestyle Promo (${count})`}
-          </button>
-          <button type="button" data-static-gen="tall" class="generate-btn" style="${btnStyle("#7c3aed", genTall)}" ${genTall ? "disabled" : ""}>
-            ${genTall ? "Generating tall promo…" : `📐 Generate Tall Promo (${count})`}
-          </button>
-          <button type="button" data-static-gen="gown" class="generate-btn" style="${btnStyle("#0d9488", genGown)}" ${genGown ? "disabled" : ""}>
-            ${genGown ? "Generating gown promo…" : `👗 Generate Gown Promo (${count})`}
-          </button>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">
-          ${chip("Showcase", showcase.length, bestEst(showcase), "rgba(255,152,0,0.15)")}
-          ${chip("Lifestyle", promo.length, bestEst(promo), "rgba(34,197,94,0.15)")}
-          ${chip("Tall", tall.length, bestEst(tall), "rgba(124,58,237,0.15)")}
-          ${chip("Gown", gown.length, bestEst(gown), "rgba(13,148,136,0.15)")}
-        </div>
-      </div>`;
-  },
-
-  renderShowcaseSection: function (options) {
-    if (!window.WEB_OPTIMIZER_MODE) return "";
-
-    options = options || {};
-    const showcase = options.showcaseResults || [];
-    const showPanel = !!options.showShowcaseResults;
-    const generating = !!options.isGeneratingShowcase;
-    const baseline = options.baselineShipping || 0;
-    const count = options.showcaseVariantCount || 25;
-    const sorted = [...showcase].sort(
-      (a, b) =>
-        (a.estShipping || a.meta?.estInr || 999) -
-        (b.estShipping || b.meta?.estInr || 999),
-    );
-    const bestEst =
-      sorted[0]?.estShipping || sorted[0]?.meta?.estInr || 0;
-
-    let html = `
-            <div style="margin-bottom:15px;border-top:1px solid rgba(0,0,0,0.08);padding-top:12px;">
-                <div style="background:rgba(255,152,0,0.1);border:1px solid rgba(76,175,80,0.35);border-radius:10px;padding:12px;margin-bottom:10px;text-align:center;">
-                    <div style="font-size:11px;color:#e65100;">🖼️ Showcase Promo Frames</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:4px;">Tight portrait frame · orange→green gradient · 3 quality badges</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:2px;">Static only — no Meesho session · tap image to edit colors, zoom, pan, and badges</div>
-                </div>
-        `;
-
-    if (showcase.length > 0) {
-      html += `
-                <button type="button" id="toggle-showcase-results" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;font-size:12px;margin-bottom:6px;">
-                    ${showPanel ? "▼" : "▶"} See more showcase variants (${showcase.length}) — best est ₹${bestEst}
-                </button>
-                <div id="showcase-results-panel" style="display:${showPanel ? "block" : "none"};">
-                    <div class="showcase-results-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:520px;overflow-y:auto;">
-        `;
-      sorted.forEach((r, i) => {
-        html += this.renderResultCard(r, i, {
-          baselineShipping: baseline,
-          manualMode: false,
-          analysisMode: true,
-          isBest: i === 0,
-        });
-      });
-      html += `
-                    </div>
-                </div>
-        `;
-    }
-
-    html += `</div>`;
-    return html;
-  },
-
-  renderPromoLifestyleSection: function (options) {
-    if (!window.WEB_OPTIMIZER_MODE) return "";
-
-    options = options || {};
-    const promo = options.promoLifestyleResults || [];
-    const showPanel = !!options.showPromoLifestyleResults;
-    const generating = !!options.isGeneratingPromoLifestyle;
-    const baseline = options.baselineShipping || 0;
-    const count = options.promoLifestyleVariantCount || 25;
-    const sorted = [...promo].sort(
-      (a, b) =>
-        (a.estShipping || a.meta?.estInr || 999) -
-        (b.estShipping || b.meta?.estInr || 999),
-    );
-    const bestEst =
-      sorted[0]?.estShipping || sorted[0]?.meta?.estInr || 0;
-
-    let html = `
-            <div style="margin-bottom:15px;border-top:1px solid rgba(0,0,0,0.08);padding-top:12px;">
-                <div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.35);border-radius:10px;padding:12px;margin-bottom:10px;text-align:center;">
-                    <div style="font-size:11px;color:#15803d;">🏷️ Lifestyle Promo (₹54 band)</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:4px;">Keeps trellis/lifestyle scene · solid green frame · HOT/FLASH sale</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:2px;">48–54 KB · competitor-style · tap image to edit colors, zoom, pan, and badges</div>
-                </div>
-        `;
-
-    if (promo.length > 0) {
-      html += `
-                <button type="button" id="toggle-promo-lifestyle-results" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;font-size:12px;margin-bottom:6px;">
-                    ${showPanel ? "▼" : "▶"} See lifestyle promo variants (${promo.length}) — best est ₹${bestEst}
-                </button>
-                <div id="promo-lifestyle-results-panel" style="display:${showPanel ? "block" : "none"};">
-                    <div class="promo-lifestyle-results-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:520px;overflow-y:auto;">
-        `;
-      sorted.forEach((r, i) => {
-        html += this.renderResultCard(r, i, {
-          baselineShipping: baseline,
-          manualMode: false,
-          analysisMode: true,
-          isBest: i === 0,
-        });
-      });
-      html += `
-                    </div>
-                </div>
-        `;
-    }
-
-    html += `</div>`;
-    return html;
-  },
-
-  renderTallStaticSection: function (options) {
-    if (!window.WEB_OPTIMIZER_MODE) return "";
-
-    options = options || {};
-    const tall = options.tallStaticResults || [];
-    const showPanel = !!options.showTallStaticResults;
-    const generating = !!options.isGeneratingTallStatic;
-    const baseline = options.baselineShipping || 0;
-    const count = options.tallStaticVariantCount || 25;
-    const sorted = [...tall].sort(
-      (a, b) =>
-        (a.estShipping || a.meta?.estInr || 999) -
-        (b.estShipping || b.meta?.estInr || 999),
-    );
-    const bestEst =
-      sorted[0]?.estShipping || sorted[0]?.meta?.estInr || 0;
-
-    let html = `
-            <div style="margin-bottom:15px;border-top:1px solid rgba(0,0,0,0.08);padding-top:12px;">
-                <div style="background:rgba(124,58,237,0.1);border:1px solid rgba(173,216,230,0.5);border-radius:10px;padding:12px;margin-bottom:10px;text-align:center;">
-                    <div style="font-size:11px;color:#5b21b6;">📐 Tall Promo Frames</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:4px;">703×1024 · blue frame · price tag + arrow + truck</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:2px;">Static only — tap image to edit colors, zoom, pan, and badges · est ₹50 band</div>
-                </div>
-        `;
-
-    if (tall.length > 0) {
-      html += `
-                <button type="button" id="toggle-tall-static-results" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;font-size:12px;margin-bottom:6px;">
-                    ${showPanel ? "▼" : "▶"} See more tall promo variants (${tall.length}) — best est ₹${bestEst}
-                </button>
-                <div id="tall-static-results-panel" style="display:${showPanel ? "block" : "none"};">
-                    <div class="tall-static-results-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:520px;overflow-y:auto;">
-        `;
-      sorted.forEach((r, i) => {
-        html += this.renderResultCard(r, i, {
-          baselineShipping: baseline,
-          manualMode: false,
-          analysisMode: true,
-          isBest: i === 0,
-        });
-      });
-      html += `
-                    </div>
-                </div>
-        `;
-    }
-
-    html += `</div>`;
-    return html;
-  },
-
-  renderGownStaticSection: function (options) {
-    if (!window.WEB_OPTIMIZER_MODE) return "";
-
-    options = options || {};
-    const gown = options.gownStaticResults || [];
-    const showPanel = !!options.showGownStaticResults;
-    const baseline = options.baselineShipping || 0;
-    const sorted = [...gown].sort(
-      (a, b) =>
-        (OptimizerUI.frozenEstShipping(a) || 999) -
-        (OptimizerUI.frozenEstShipping(b) || 999),
-    );
-    const bestEst = OptimizerUI.frozenEstShipping(sorted[0]);
-
-    let html = `
-            <div style="margin-bottom:15px;border-top:1px solid rgba(0,0,0,0.08);padding-top:12px;">
-                <div style="background:rgba(13,148,136,0.1);border:1px solid rgba(94,196,200,0.5);border-radius:10px;padding:12px;margin-bottom:10px;text-align:center;">
-                    <div style="font-size:11px;color:#0f766e;">👗 Gown Promo Frames</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:4px;">773×1094 · thin teal · lifestyle scene · thick white mat</div>
-                    <div style="font-size:10px;color:#6b7280;margin-top:2px;">38–48 KB · Best/Flash/Popular · tap image to edit colors, zoom, pan, and badges</div>
-                </div>
-        `;
-
-    if (gown.length > 0) {
-      html += `
-                <button type="button" id="toggle-gown-static-results" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;font-size:12px;margin-bottom:6px;">
-                    ${showPanel ? "▼" : "▶"} See more gown promo variants (${gown.length}) — best est ₹${bestEst}
-                </button>
-                <div id="gown-static-results-panel" style="display:${showPanel ? "block" : "none"};">
-                    <div class="gown-static-results-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:520px;overflow-y:auto;">
-        `;
-      sorted.forEach((r, i) => {
-        html += this.renderResultCard(r, i, {
-          baselineShipping: baseline,
-          manualMode: false,
-          analysisMode: true,
-          isBest: i === 0,
-        });
-      });
-      html += `
-                    </div>
-                </div>
-        `;
-    }
-
-    html += `</div>`;
-    return html;
-  },
-
-  // Results HTML - Only accurate results
+  // Results HTML — live variants + preview + apply/download
   getResultsHTML: function (results, options) {
     options = options || {};
     const baseline = options.baselineShipping || 0;
     const analysisPrimary = options.analysisPrimary || [];
-    const showcaseResults =
-      window.WEB_OPTIMIZER_MODE ? options.showcaseResults || [] : [];
-    const promoLifestyleResults =
-      window.WEB_OPTIMIZER_MODE ? options.promoLifestyleResults || [] : [];
-    const tallStaticResults =
-      window.WEB_OPTIMIZER_MODE ? options.tallStaticResults || [] : [];
-    const gownStaticResults =
-      window.WEB_OPTIMIZER_MODE ? options.gownStaticResults || [] : [];
-    const hasShowcase = showcaseResults.length > 0;
-    const hasPromoLifestyle = promoLifestyleResults.length > 0;
-    const hasTallStatic = tallStaticResults.length > 0;
-    const hasGownStatic = gownStaticResults.length > 0;
     const hasLive = results.length > 0;
     const hasAnalysis = analysisPrimary.length > 0;
 
-    const staticPromoHubActive = !!options.staticPromoHubActive;
-
-    if (!hasLive && !hasAnalysis && !hasShowcase && !hasPromoLifestyle && !hasTallStatic && !hasGownStatic && !staticPromoHubActive) {
+    if (!hasLive && !hasAnalysis) {
       return `
                 <div style="text-align:center;padding:30px;">
                     <div style="font-size:50px;margin-bottom:15px;">😔</div>
@@ -1085,90 +698,9 @@ const OptimizerUI = {
 
     const isWeb = !!window.WEB_OPTIMIZER_MODE;
     const manualMode = !!options.manualMode;
-    const localPriceMode = !!options.localPriceMode;
-    const localProfile = options.localPriceProfile || null;
-    const livePricedResults = options.livePricedResults || [];
     let html = "";
 
-    if (localPriceMode && results.length > 0) {
-      const best = results[0];
-      const bestKb =
-        best.meta?.kb ||
-        (best.blob?.size ? Math.ceil(best.blob.size / 1024) : "—");
-      const liveTier =
-        (localProfile?.tiers?.length
-          ? Math.min(...localProfile.tiers.map((p) => Number(p)).filter((n) => n > 0))
-          : null) ||
-        LocalPriceDB.resolveLearnedTier(
-          String(localProfile?.categoryId || ""),
-        ) ||
-        null;
-      const tierText = liveTier
-        ? `matched to live ₹${liveTier} pattern (KB/border)`
-        : "run Live first to learn ₹ pattern";
-      html += `
-            <div style="background:rgba(4,120,87,0.12);border:1px solid rgba(4,120,87,0.35);border-radius:10px;padding:12px;margin-bottom:12px;text-align:center;">
-                <div style="font-size:11px;color:#047857;">📍 Local variants (from live learn — not a Meesho check)</div>
-                <div style="font-size:22px;font-weight:700;color:#047857;">${results.length} picks · ~${bestKb} KB</div>
-                <div style="font-size:10px;color:#666;margin-top:4px;">${tierText}</div>
-                <div style="font-size:9px;color:#6b7280;margin-top:6px;line-height:1.35;">Same image + same live ₹ tier → we copy KB/border from your live winners. Confirm with Live generate.</div>
-                ${
-                  localProfile?.strategyReason
-                    ? `<div style="font-size:9px;color:#6b7280;margin-top:4px;line-height:1.3;">${localProfile.strategyReason}</div>`
-                    : ""
-                }
-            </div>`;
-    }
-
-    if (!hasLive && !hasAnalysis && hasShowcase && !hasPromoLifestyle && !hasTallStatic) {
-      const sortedShowcase = [...showcaseResults].sort(
-        (a, b) =>
-          (a.estShipping || a.meta?.estInr || 999) -
-          (b.estShipping || b.meta?.estInr || 999),
-      );
-      const bestShowcaseOnly =
-        sortedShowcase[0]?.estShipping || sortedShowcase[0]?.meta?.estInr || 0;
-      html += `
-            <div style="background:rgba(255,152,0,0.12);border:1px solid rgba(76,175,80,0.35);border-radius:10px;padding:12px;margin-bottom:12px;text-align:center;">
-                <div style="font-size:11px;color:#e65100;">🖼️ Showcase Promo Frames</div>
-                <div style="font-size:24px;font-weight:700;color:#047857;">est ₹${bestShowcaseOnly}</div>
-                <div style="font-size:10px;color:#666;margin-top:4px;">${showcaseResults.length} static variants · tight frame · no Meesho session</div>
-            </div>`;
-    }
-
-    if (!hasLive && !hasAnalysis && !hasShowcase && hasPromoLifestyle && !hasTallStatic) {
-      const sortedPromo = [...promoLifestyleResults].sort(
-        (a, b) =>
-          (a.estShipping || a.meta?.estInr || 999) -
-          (b.estShipping || b.meta?.estInr || 999),
-      );
-      const bestPromoOnly =
-        sortedPromo[0]?.estShipping || sortedPromo[0]?.meta?.estInr || 0;
-      html += `
-            <div style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.35);border-radius:10px;padding:12px;margin-bottom:12px;text-align:center;">
-                <div style="font-size:11px;color:#15803d;">🏷️ Lifestyle Promo Frames</div>
-                <div style="font-size:24px;font-weight:700;color:#047857;">est ₹${bestPromoOnly}</div>
-                <div style="font-size:10px;color:#666;margin-top:4px;">${promoLifestyleResults.length} variants · green frame · 48–54 KB</div>
-            </div>`;
-    }
-
-    if (!hasLive && !hasAnalysis && !hasShowcase && !hasPromoLifestyle && hasTallStatic) {
-      const sortedTall = [...tallStaticResults].sort(
-        (a, b) =>
-          (a.estShipping || a.meta?.estInr || 999) -
-          (b.estShipping || b.meta?.estInr || 999),
-      );
-      const bestTallOnly =
-        sortedTall[0]?.estShipping || sortedTall[0]?.meta?.estInr || 0;
-      html += `
-            <div style="background:rgba(124,58,237,0.12);border:1px solid rgba(173,216,230,0.5);border-radius:10px;padding:12px;margin-bottom:12px;text-align:center;">
-                <div style="font-size:11px;color:#5b21b6;">📐 Tall Promo Frames</div>
-                <div style="font-size:24px;font-weight:700;color:#047857;">est ₹${bestTallOnly}</div>
-                <div style="font-size:10px;color:#666;margin-top:4px;">${tallStaticResults.length} variants · 703×1024 · ₹50 band</div>
-            </div>`;
-    }
-
-    if (hasLive && !localPriceMode) {
+    if (hasLive) {
       const pricedLive = results.filter((r) => Number(r.shippingCost) > 0);
       const lowestLivePrice = pricedLive.length
         ? Math.min(...pricedLive.map((r) => Number(r.shippingCost)))
@@ -1180,8 +712,7 @@ const OptimizerUI = {
           : results[0];
       const totalResults = results.length;
       const testedCount = pricedLive.length;
-      const bestPrice =
-        best.shippingCost > 0 ? best.shippingCost : null;
+      const bestPrice = best.shippingCost > 0 ? best.shippingCost : null;
       const bestVariantId = best.variantId || "";
 
       html += `
@@ -1207,7 +738,7 @@ const OptimizerUI = {
                     ? best.liveVerified
                       ? "✓ Live customer shipping"
                       : "✓ Meesho price"
-                    : "Tap Save to download"
+                    : "Tap image to preview / edit"
                 }</div>
                 ${
                   baseline > 0
@@ -1237,21 +768,6 @@ const OptimizerUI = {
       html += `</div>`;
     }
 
-    if (hasLive && localPriceMode) {
-      html += `
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px;max-height:480px;overflow-y:auto;">
-        `;
-      results.forEach((r, i) => {
-        html += this.renderResultCard(r, i, {
-          baselineShipping: baseline,
-          manualMode,
-          localPriceMode: true,
-          isBest: r.localRecommended,
-        });
-      });
-      html += `</div>`;
-    }
-
     const framedExtras = options.framedExtras || [];
     if (framedExtras.length > 0) {
       const showFramed = !!options.showFramedExtras;
@@ -1270,7 +786,7 @@ const OptimizerUI = {
                 <button type="button" id="toggle-framed-extras" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;font-size:12px;margin-bottom:6px;">
                     ${showFramed ? "▼" : "▶"} See more low-shipping variants (${framedExtras.length})${framedHint}
                 </button>
-                <p style="font-size:10px;color:#6b7280;margin-bottom:8px;text-align:center;">16 variants: try <strong>low_38–48</strong> / <strong>low_*_tall</strong> first for ₹49. Full-size product + thick blue frame. Card shows actual file KB after compression.</p>
+                <p style="font-size:10px;color:#6b7280;margin-bottom:8px;text-align:center;">Extra framed variants for lower shipping. Tap image to preview or edit.</p>
                 <div id="framed-extras-panel" style="display:${showFramed ? "block" : "none"};">
                     <div class="framed-extras-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:480px;overflow-y:auto;">
         `;
@@ -1290,63 +806,16 @@ const OptimizerUI = {
         `;
     }
 
-    if (hasAnalysis && !localPriceMode) {
+    if (hasAnalysis) {
       html += this.renderAnalysisSection(options, { standalone: !hasLive });
     }
 
-    if (staticPromoHubActive) {
-      html += this.renderStaticPromoHub(options);
-      html += this.renderShowcaseSection(options);
-      html += this.renderPromoLifestyleSection(options);
-      html += this.renderTallStaticSection(options);
-      html += this.renderGownStaticSection(options);
-    } else if (hasLive || hasAnalysis || hasShowcase || hasPromoLifestyle || hasTallStatic || hasGownStatic) {
-      html += this.renderGownStaticSection(options);
-      html += this.renderTallStaticSection(options);
-      html += this.renderPromoLifestyleSection(options);
-      html += this.renderShowcaseSection(options);
-    }
-
-    const bestTall = hasTallStatic
-      ? [...tallStaticResults].sort(
-          (a, b) =>
-            (a.estShipping || a.meta?.estInr || 999) -
-            (b.estShipping || b.meta?.estInr || 999),
-        )[0]
+    const pricedForBest = hasLive
+      ? results.filter((r) => Number(r.shippingCost) > 0)
+      : [];
+    const bestLive = pricedForBest.length
+      ? Math.min(...pricedForBest.map((r) => Number(r.shippingCost)))
       : null;
-    const bestTallEst =
-      bestTall?.estShipping || bestTall?.meta?.estInr || 0;
-
-    const bestPromo = hasPromoLifestyle
-      ? [...promoLifestyleResults].sort(
-          (a, b) =>
-            (a.estShipping || a.meta?.estInr || 999) -
-            (b.estShipping || b.meta?.estInr || 999),
-        )[0]
-      : null;
-    const bestPromoEst =
-      bestPromo?.estShipping || bestPromo?.meta?.estInr || 0;
-
-    const bestShowcase = hasShowcase
-      ? [...showcaseResults].sort(
-          (a, b) =>
-            (a.estShipping || a.meta?.estInr || 999) -
-            (b.estShipping || b.meta?.estInr || 999),
-        )[0]
-      : null;
-    const bestShowcaseEst =
-      bestShowcase?.estShipping || bestShowcase?.meta?.estInr || 0;
-
-    const bestGown = hasGownStatic
-      ? [...gownStaticResults].sort(
-          (a, b) =>
-            (a.estShipping || a.meta?.estInr || 999) -
-            (b.estShipping || b.meta?.estInr || 999),
-        )[0]
-      : null;
-    const bestGownEst = bestGown ? OptimizerUI.frozenEstShipping(bestGown) : 0;
-
-    const bestLive = hasLive && results[0]?.shippingCost > 0 ? results[0].shippingCost : null;
     const analysisSorted = hasAnalysis
       ? [...analysisPrimary].sort(
           (a, b) =>
@@ -1358,45 +827,21 @@ const OptimizerUI = {
       ? analysisSorted[0].estShipping || analysisSorted[0].meta?.estInr || 0
       : 0;
 
-    const bestStaticEst =
-      bestGownEst || bestTallEst || bestPromoEst || bestShowcaseEst;
-
-    const livePricedCount = hasLive
-      ? results.filter((r) => r.shippingCost > 0).length
-      : 0;
-    const cachedLivePricedCount = (livePricedResults || []).filter(
-      (r) => Number(r.shippingCost) > 0,
-    ).length;
-    const canCreateReport =
-      livePricedCount > 0 || cachedLivePricedCount > 0;
-    const localCsvBtn =
-      localPriceMode && results.length > 0
-        ? `<button id="local-price-download-btn" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;margin-bottom:8px;font-size:12px;">📥 Download Local CSV (full pool + picks)</button>`
-        : "";
-    const liveFromLocalBtn =
-      localPriceMode && results.length > 0
-        ? `<button id="generate-live-from-results-btn" class="opt-btn opt-btn-primary" style="width:100%;padding:12px;margin-bottom:8px;font-size:13px;font-weight:700;">🚀 Generate Live Variants (learn for local)</button>`
-        : "";
-    const reportBtn = canCreateReport
-        ? `<button id="create-report-btn" class="opt-btn opt-btn-secondary" style="width:100%;padding:10px;margin-bottom:8px;font-size:12px;">📊 Create Report (from live ₹)</button>`
-        : "";
+    const applyLabel = isWeb
+      ? bestLive
+        ? "Download Best ₹" + bestLive
+        : bestEst
+        ? "Download Best est ₹" + bestEst
+        : "Download Best Variant"
+      : bestLive
+      ? "Apply Best ₹" + bestLive
+      : bestEst
+      ? "Apply Best est ₹" + bestEst
+      : "Apply Best Variant";
 
     html += `
-            ${liveFromLocalBtn}
-            ${localCsvBtn}
-            ${reportBtn}
             <div style="display:flex;gap:8px;">
-                <button id="apply-best-btn" class="opt-btn opt-btn-success" style="flex:1;padding:10px;">${
-                  localPriceMode
-                    ? "Download Best Local Pick"
-                    : bestLive
-                    ? "Download Best ₹" + bestLive
-                    : bestEst
-                    ? "Download Best est ₹" + bestEst
-                    : bestStaticEst
-                    ? "Download Best est ₹" + bestStaticEst
-                    : "Download Best Variant"
-                }</button>
+                <button id="apply-best-btn" class="opt-btn opt-btn-success" style="flex:1;padding:10px;">${applyLabel}</button>
                 <button id="restart-btn" class="opt-btn opt-btn-primary" style="flex:1;padding:10px;">New Search</button>
             </div>
         `;
@@ -1437,96 +882,6 @@ const OptimizerUI = {
     return "";
   },
 
-  getTestLabResultsHTML: function (results, options) {
-    options = options || {};
-    const analysis = options.analysis || {};
-    const baseline = options.baselineShipping || 0;
-
-    if (!results.length) {
-      return `
-        <div style="text-align:center;padding:30px;">
-          <div style="font-size:50px;margin-bottom:15px;">🧪</div>
-          <h3 style="color:#ef4444;margin:0 0 10px 0;">No Test Lab Variants</h3>
-          <p style="color:#9ca3af;font-size:12px;margin-bottom:15px;">Try Smart Auto or another category group.</p>
-          <button id="restart-btn" class="opt-btn opt-btn-primary" style="margin-top:15px;padding:10px 25px;">Try Again</button>
-        </div>`;
-    }
-
-    const best = results[0];
-    const totalResults = results.length;
-    const bestEst = best.meta?.estInr || best.estShipping || 0;
-    const bestLive = best.shippingCost > 0 ? best.shippingCost : null;
-    const liveCount = results.filter((r) => r.shippingCost > 0).length;
-    const groupLabel = analysis.resolvedCategory || analysis.category || "auto";
-    const phase2 = options.phase2 || {};
-    const phase2Note =
-      phase2.verifiedCount > 0
-        ? ` · ${phase2.verifiedCount} live checked${
-            phase2.refineCount > 0 ? ` · ${phase2.refineCount} refined` : ""
-          }`
-        : phase2.framedCount > 0
-        ? ` · Phase 2: ${phase2.framedCount} ₹49 frames added`
-        : liveCount
-        ? ` · ${liveCount} live checked`
-        : "";
-
-    const livePriceNote = bestLive
-      ? "✅ Live customer shipping (same at any Meesho Price)"
-      : "Download → upload on Meesho → compare ₹";
-    const panelGap =
-      baseline > 0 && bestLive && baseline !== bestLive
-        ? `<div style="font-size:10px;color:#047857;margin-top:4px;">Panel shows ₹${baseline} · best found ₹${bestLive}${
-            bestLive < baseline ? ` (−₹${baseline - bestLive})` : ""
-          }</div>`
-        : "";
-
-    let html = `
-      <div style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:15px;margin-bottom:15px;text-align:center;">
-        <div style="font-size:11px;color:#9ca3af;">🧪 Test Lab — live customer shipping ranking</div>
-        <div style="font-size:28px;font-weight:700;color:#10b981;">${
-          bestLive ? "₹" + bestLive : "est ₹" + bestEst
-        }</div>
-        <div style="font-size:10px;color:#10b981;margin-top:2px;">${livePriceNote}</div>
-        ${panelGap}
-        ${
-          baseline > 0
-            ? `<div style="font-size:10px;color:#666;margin-top:4px;">Your current shipping: ₹${baseline}</div>`
-            : ""
-        }
-        <div style="font-size:10px;color:#0f0f10;margin-top:4px;">${totalResults} variants · ${groupLabel}${phase2Note}</div>
-        ${
-          analysis.suggested
-            ? `<div style="font-size:10px;color:#6b7280;margin-top:6px;">${analysis.suggested}${
-                analysis.width ? ` · ${analysis.width}×${analysis.height}px` : ""
-              }</div>`
-            : ""
-        }
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px;max-height:480px;overflow-y:auto;">
-    `;
-
-    results.forEach((r, i) => {
-      html += this.renderResultCard(r, i, {
-        baselineShipping: baseline,
-        manualMode: false,
-        testLabMode: true,
-        isBest: i === 0,
-      });
-    });
-
-    html += `
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button id="apply-best-btn" class="opt-btn opt-btn-success" style="flex:1;padding:10px;">${
-          bestLive
-            ? "Download Best ₹" + bestLive
-            : "Download Best est ₹" + bestEst
-        }</button>
-        <button id="restart-btn" class="opt-btn opt-btn-primary" style="flex:1;padding:10px;">New Search</button>
-      </div>
-    `;
-    return html;
-  },
 };
 
 window.OptimizerUI = OptimizerUI;
