@@ -516,6 +516,13 @@ class MeeshoShippingOptimizer {
     fab.onclick = () => this.openModal();
 
     document.documentElement.appendChild(fab);
+    this._optimizerFab = fab;
+  }
+
+  setOptimizerFabVisible(visible) {
+    const fab = this._optimizerFab || document.getElementById("meesho-optimizer-fab");
+    if (!fab) return;
+    fab.style.display = visible ? "flex" : "none";
   }
 
   async checkLicense() {
@@ -758,6 +765,7 @@ class MeeshoShippingOptimizer {
 
     this.modal.appendChild(content);
     document.documentElement.appendChild(this.modal);
+    this.setOptimizerFabVisible(false);
 
     this._categoryPageSyncedThisModal = false;
     this._categoryAcPinned = false;
@@ -816,6 +824,7 @@ class MeeshoShippingOptimizer {
       this.modal.remove();
       this.modal = null;
     }
+    this.setOptimizerFabVisible(true);
   }
 
   isCategoryAutocompleteActive() {
