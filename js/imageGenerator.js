@@ -113,22 +113,58 @@ const ImageGenerator = {
         }
     },
 
+    positionToSliders: function (position) {
+        switch (position) {
+            case "top":
+                return { posH: 50, posV: 0 };
+            case "center":
+                return { posH: 50, posV: 50 };
+            case "top-left":
+                return { posH: 0, posV: 0 };
+            case "top-right":
+                return { posH: 100, posV: 0 };
+            case "bottom-left":
+                return { posH: 0, posV: 100 };
+            case "bottom-right":
+                return { posH: 100, posV: 100 };
+            case "bottom":
+            default:
+                return { posH: 50, posV: 100 };
+        }
+    },
+
+    normalizeTextOverlay: function (o, i = 0) {
+        const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+        let posH = o?.posH;
+        let posV = o?.posV;
+        if (posH == null || posV == null) {
+            const sliders = this.positionToSliders(o?.position || "bottom");
+            if (posH == null) posH = sliders.posH;
+            if (posV == null) posV = sliders.posV;
+        }
+        return {
+            id: o?.id || `text-${i + 1}`,
+            text: String(o?.text || ""),
+            position: o?.position || "bottom",
+            posH: Math.round(clamp(Number(posH), 0, 100)),
+            posV: Math.round(clamp(Number(posV), 0, 100)),
+            lockH: o?.lockH !== false,
+            lockV: o?.lockV !== false,
+            textColor: o?.textColor || "#ffffff",
+            bgColor: o?.bgColor || o?.textBgColor || "#e67e22",
+            fontSizePct: Number(o?.fontSizePct) > 0 ? Number(o.fontSizePct) : 100,
+            enabled: o?.enabled !== false,
+        };
+    },
+
     normalizeTextOverlays: function (source) {
         if (Array.isArray(source?._textOverlays)) {
-            return source._textOverlays.map((o, i) => ({
-                id: o.id || `text-${i + 1}`,
-                text: String(o.text || ""),
-                position: o.position || "bottom",
-                textColor: o.textColor || "#ffffff",
-                bgColor: o.bgColor || o.textBgColor || "#e67e22",
-                fontSizePct: Number(o.fontSizePct) > 0 ? Number(o.fontSizePct) : 100,
-                enabled: o.enabled !== false,
-            }));
+            return source._textOverlays.map((o, i) => this.normalizeTextOverlay(o, i));
         }
         const legacy = String(source?._customText || source?.customText || "").trim();
         if (!legacy) return [];
         return [
-            {
+            this.normalizeTextOverlay({
                 id: "text-1",
                 text: legacy,
                 position: source?._customTextPosition || source?.textPosition || "bottom",
@@ -136,7 +172,7 @@ const ImageGenerator = {
                 bgColor: source?._customTextBg || source?.textBgColor || "#e67e22",
                 fontSizePct: 100,
                 enabled: true,
-            },
+            }),
         ];
     },
 
@@ -144,15 +180,19 @@ const ImageGenerator = {
         const id =
             partial.id ||
             `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-        return {
+        return this.normalizeTextOverlay({
             id,
             text: String(partial.text || ""),
             position: partial.position || "bottom",
+            posH: partial.posH,
+            posV: partial.posV,
+            lockH: partial.lockH,
+            lockV: partial.lockV,
             textColor: partial.textColor || "#ffffff",
             bgColor: partial.bgColor || "#e67e22",
-            fontSizePct: Number(partial.fontSizePct) > 0 ? Number(partial.fontSizePct) : 100,
+            fontSizePct: partial.fontSizePct || 100,
             enabled: partial.enabled !== false,
-        };
+        });
     },
 
     syncLegacyTextFields: function (layers, overlays) {
@@ -174,27 +214,33 @@ const ImageGenerator = {
         }
     },
 
-    computeTextBoxPosition: function (position, w, h, borderSize, boxWidth, boxHeight) {
+    computeTextBoxPosition: function (overlayOrPosition, w, h, borderSize, boxWidth, boxHeight) {
         const pad = Math.max(borderSize, 10) + 8;
         const maxX = Math.max(pad, w - boxWidth - pad);
         const maxY = Math.max(pad, h - boxHeight - pad);
-        switch (position) {
-            case "top":
-                return { x: (w - boxWidth) / 2, y: pad };
-            case "center":
-                return { x: (w - boxWidth) / 2, y: (h - boxHeight) / 2 };
-            case "top-left":
-                return { x: pad, y: pad };
-            case "top-right":
-                return { x: maxX, y: pad };
-            case "bottom-left":
-                return { x: pad, y: maxY };
-            case "bottom-right":
-                return { x: maxX, y: maxY };
-            case "bottom":
-            default:
-                return { x: (w - boxWidth) / 2, y: maxY };
+        const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+        let posH;
+        let posV;
+        if (overlayOrPosition && typeof overlayOrPosition === "object") {
+            const overlay = overlayOrPosition;
+            if (overlay.posH != null || overlay.posV != null) {
+                posH = overlay.posH ?? 50;
+                posV = overlay.posV ?? 100;
+            } else {
+                const sliders = this.positionToSliders(overlay.position || "bottom");
+                posH = sliders.posH;
+                posV = sliders.posV;
+            }
+        } else {
+            const sliders = this.positionToSliders(overlayOrPosition || "bottom");
+            posH = sliders.posH;
+            posV = sliders.posV;
         }
+        const rangeX = Math.max(0, maxX - pad);
+        const rangeY = Math.max(0, maxY - pad);
+        const x = pad + Math.round((clamp(Number(posH), 0, 100) / 100) * rangeX);
+        const y = pad + Math.round((clamp(Number(posV), 0, 100) / 100) * rangeY);
+        return { x, y };
     },
 
     drawTextOverlay: function (ctx, w, h, borderSize, overlay) {
@@ -211,14 +257,7 @@ const ImageGenerator = {
         const textWidth = ctx.measureText(text).width;
         const boxWidth = textWidth + padding * 2;
         const boxHeight = fontSize + padding * 2;
-        const pos = this.computeTextBoxPosition(
-            overlay.position || "bottom",
-            w,
-            h,
-            borderSize,
-            boxWidth,
-            boxHeight,
-        );
+        const pos = this.computeTextBoxPosition(overlay, w, h, borderSize, boxWidth, boxHeight);
 
         ctx.fillStyle = overlay.bgColor || overlay.textBgColor || "#e67e22";
         ctx.beginPath();
