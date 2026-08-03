@@ -25,6 +25,24 @@ async function ensureStaticComposeLoaded() {
   return false;
 }
 
+/** Safe fetch timeout — AbortSignal.timeout is missing on Kiwi / older WebViews. */
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const ms = Math.max(1000, Number(timeoutMs) || 30000);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function describeFetchError(err) {
+  if (!err) return "unknown";
+  if (err.name === "AbortError") return "request timed out";
+  return err.message || String(err);
+}
+
 const MeeshoAPI = {
   MAX_RESULT_VARIANTS: 200,
   // Borders outward around full-size product — profiles tuned toward ₹49 (38–48KB slabs)
@@ -967,99 +985,126 @@ const MeeshoAPI = {
   },
 
   uploadImage: async function (blob, filename) {
-    const formData = new FormData();
-    formData.append("file", blob, filename || "img-" + Date.now() + ".jpg");
-    formData.append("data", "undefined");
-    try {
-      const resp = await fetch(
-        this.apiUrl(
-          "/api/cataloging/singleCatalogUpload/uploadSingleCatalogImages",
-        ),
-        {
-        method: "POST",
-        headers: {
-          accept: "application/json, text/plain, */*",
-          "browser-id": this.cache.browserId || "",
-          "client-type": "d-web",
-          "client-package-version": "1.0.1",
-          identifier: this.cache.supplierTag || "",
-          "supplier-id": this.cache.supplierId
-            ? String(this.cache.supplierId)
-            : "",
-          ...(window.WEB_OPTIMIZER_MODE &&
-          (() => {
-            try {
-              let c = window.WebSession
-                ? WebSession.get().cookie
-                : JSON.parse(localStorage.getItem("meesho_web_session_v1") || "{}").cookie;
-              if (c && window.WebSession?.normalizeCookie) {
-                c = WebSession.normalizeCookie(c);
-              }
-              return c ? { "x-meesho-cookie": c } : {};
-            } catch (e) {
-              return {};
+    this.detectAllValues();
+
+    const buildFormData = () => {
+      if (!(blob instanceof Blob) || !blob.size) return null;
+      const name = filename || "img-" + Date.now() + ".jpg";
+      const fileBlob =
+        blob.type && blob.type.startsWith("image/")
+          ? blob
+          : new Blob([blob], { type: "image/jpeg" });
+      const formData = new FormData();
+      formData.append("file", fileBlob, name);
+      formData.append("data", "undefined");
+      return formData;
+    };
+
+    const buildHeaders = () => {
+      this.detectAllValues();
+      return {
+        accept: "application/json, text/plain, */*",
+        "browser-id": this.cache.browserId || "",
+        "client-type": "d-web",
+        "client-package-version": "1.0.1",
+        identifier: this.cache.supplierTag || "",
+        "supplier-id": this.cache.supplierId
+          ? String(this.cache.supplierId)
+          : "",
+        ...(window.WEB_OPTIMIZER_MODE &&
+        (() => {
+          try {
+            let c = window.WebSession
+              ? WebSession.get().cookie
+              : JSON.parse(localStorage.getItem("meesho_web_session_v1") || "{}")
+                  .cookie;
+            if (c && window.WebSession?.normalizeCookie) {
+              c = WebSession.normalizeCookie(c);
             }
-          })()),
-        },
-        body: formData,
-        credentials: window.WEB_OPTIMIZER_MODE ? "same-origin" : "include",
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!resp.ok) {
-        const fallback = await fetch(
-          this.apiUrl(
-            "/catalogingapi/api/singleCatalogUpload/uploadSingleCatalogImages",
-          ),
-          {
-            method: "POST",
-            headers: {
-              accept: "application/json, text/plain, */*",
-              "browser-id": this.cache.browserId || "",
-              "client-type": "d-web",
-              "client-package-version": "1.0.1",
-              identifier: this.cache.supplierTag || "",
-              "supplier-id": this.cache.supplierId
-                ? String(this.cache.supplierId)
-                : "",
-              ...(window.WEB_OPTIMIZER_MODE &&
-              (() => {
-                try {
-                  let c = window.WebSession
-                    ? WebSession.get().cookie
-                    : JSON.parse(
-                        localStorage.getItem("meesho_web_session_v1") || "{}"
-                      ).cookie;
-                  if (c && window.WebSession?.normalizeCookie) {
-                    c = WebSession.normalizeCookie(c);
-                  }
-                  return c ? { "x-meesho-cookie": c } : {};
-                } catch (e) {
-                  return {};
-                }
-              })()),
-            },
-            body: formData,
-            credentials: window.WEB_OPTIMIZER_MODE ? "same-origin" : "include",
-            signal: AbortSignal.timeout(20000),
+            return c ? { "x-meesho-cookie": c } : {};
+          } catch (e) {
+            return {};
           }
+        })()),
+      };
+    };
+
+    const parseUploadJson = async (resp) => {
+      if (!resp?.ok) return null;
+      try {
+        const result = await resp.json();
+        return (
+          result?.image ||
+          result?.data?.image ||
+          result?.data?.image_url ||
+          result?.imageUrl ||
+          null
         );
-        if (!fallback.ok) return null;
-        const fb = await fallback.json();
-        return fb.image || null;
+      } catch (e) {
+        return null;
       }
-      const result = await resp.json();
-      console.log("📤 Image uploaded:", result.image);
-      return result.image;
-    } catch (e) {
-      console.error("Upload error:", e);
+    };
+
+    const urls = [
+      this.apiUrl(
+        "/api/cataloging/singleCatalogUpload/uploadSingleCatalogImages",
+      ),
+      this.apiUrl(
+        "/catalogingapi/api/singleCatalogUpload/uploadSingleCatalogImages",
+      ),
+      this.endpoints.uploadImage,
+      this.endpoints.uploadImageFallback,
+    ].filter(Boolean);
+    const uniqueUrls = [...new Set(urls)];
+
+    if (!buildFormData()) {
+      console.warn("Upload skipped: empty or invalid image blob");
       return null;
     }
+
+    let lastErr = null;
+    const credentials = window.WEB_OPTIMIZER_MODE ? "same-origin" : "include";
+
+    for (let round = 0; round < 3; round++) {
+      if (round > 0) {
+        await new Promise((r) => setTimeout(r, 400 * round));
+      }
+      for (const url of uniqueUrls) {
+        const formData = buildFormData();
+        if (!formData) return null;
+        try {
+          const resp = await fetchWithTimeout(
+            url,
+            {
+              method: "POST",
+              headers: buildHeaders(),
+              body: formData,
+              credentials,
+            },
+            30000,
+          );
+          const image = await parseUploadJson(resp);
+          if (image) {
+            console.log("📤 Image uploaded:", image);
+            return image;
+          }
+          if (!resp.ok) {
+            lastErr = new Error(`HTTP ${resp.status} from upload`);
+          }
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+    }
+
+    console.error("Upload error:", describeFetchError(lastErr));
+    return null;
   },
 
   fetchDuplicatePid: async function (imageUrl, categoryId) {
     const sscatId = categoryId || this.cache.categoryId || 18044;
     try {
-      const resp = await fetch(
+      const resp = await fetchWithTimeout(
         this.apiUrl(
           "/api/cataloging/priceRecommendation/fetchDuplicatePid",
         ),
@@ -1072,7 +1117,9 @@ const MeeshoAPI = {
           image_url: imageUrl,
         }),
         credentials: window.WEB_OPTIMIZER_MODE ? "same-origin" : "include",
-      });
+      },
+        25000,
+      );
       if (!resp.ok) return null;
       const result = await resp.json();
       const pid =
@@ -1194,7 +1241,7 @@ const MeeshoAPI = {
       `price=${price}`,
     );
 
-    const resp = await fetch(
+    const resp = await fetchWithTimeout(
       this.apiUrl("/api/cataloging/singleCatalogUpload/getTransferPrice"),
       {
         method: "POST",
@@ -1202,6 +1249,7 @@ const MeeshoAPI = {
         body: JSON.stringify(body),
         credentials: window.WEB_OPTIMIZER_MODE ? "same-origin" : "include",
       },
+      25000,
     );
     if (!resp.ok) return null;
     const result = await resp.json();
