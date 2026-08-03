@@ -284,18 +284,43 @@ const OptimizerUI = {
                     box-shadow: 0 2px 8px rgba(61,41,20,0.06);
                     display: flex;
                     flex-direction: column;
+                    height: 100%;
+                    box-sizing: border-box;
                 }
                 .result-card-body {
                     display: flex;
                     flex-direction: column;
-                    flex: 1;
+                    flex: 1 1 auto;
                     min-width: 0;
+                    width: 100%;
+                }
+                .result-card-img-wrap {
+                    width: 100%;
+                    height: 78px;
+                    border-radius: 6px;
+                    background: #f3f4f6;
+                    border: 1px solid #ece7df;
+                    overflow: hidden;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 6px;
+                    box-sizing: border-box;
+                }
+                .result-card-img-wrap .result-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    display: block;
+                    cursor: pointer;
                 }
                 .result-card-foot {
                     display: flex;
                     flex-direction: column;
                     gap: 6px;
-                    margin-top: 2px;
+                    margin-top: auto;
+                    width: 100%;
+                    box-sizing: border-box;
                 }
                 .result-card-price-row {
                     display: flex;
@@ -322,12 +347,58 @@ const OptimizerUI = {
                     line-height: 1.2;
                     flex-shrink: 0;
                 }
+                #opt-modal .result-card-save,
                 .result-card-save {
-                    width: 100%;
-                    padding: 6px 4px !important;
-                    font-size: 10px !important;
-                    min-height: 28px;
+                    display: block !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    padding: 8px 4px !important;
+                    font-size: 11px !important;
+                    font-weight: 700 !important;
+                    min-height: 30px;
                     border-radius: 6px !important;
+                    background: rgba(230,126,34,0.15) !important;
+                    color: #c45f12 !important;
+                    border: none !important;
+                    cursor: pointer;
+                    box-sizing: border-box !important;
+                    flex: none !important;
+                    align-self: stretch !important;
+                    margin: 0 !important;
+                    text-align: center !important;
+                }
+                #opt-modal .result-card-actions,
+                .result-card-actions {
+                    display: flex;
+                    gap: 4px;
+                    width: 100%;
+                    margin-top: 2px;
+                    box-sizing: border-box;
+                }
+                #opt-modal .result-card-actions-single,
+                .result-card-actions-single {
+                    display: block !important;
+                    width: 100% !important;
+                }
+                .result-card-actions:not(.result-card-actions-single) .result-card-save,
+                .result-card-actions:not(.result-card-actions-single) .result-card-apply {
+                    flex: 1 1 0;
+                    min-width: 0;
+                    width: auto !important;
+                    display: inline-block !important;
+                }
+                .result-card-apply {
+                    flex: 1 1 0;
+                    min-width: 0;
+                    background: rgba(255,255,255,0.1);
+                    color: #1f2937;
+                    border: none;
+                    padding: 8px 4px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 11px;
+                    font-weight: 600;
+                    box-sizing: border-box;
                 }
                 .result-card-best {
                     border-color: #10b981 !important;
@@ -360,6 +431,7 @@ const OptimizerUI = {
                     overflow-y: auto;
                     overflow-x: hidden;
                     padding-top: 6px;
+                    align-items: stretch;
                 }
                 .results-actions-bar {
                     display: flex;
@@ -729,6 +801,9 @@ const OptimizerUI = {
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
     const isBest = !!options.isBest;
     const showPerCardApply = !isWeb && !isBest && !analysisMode;
+    const actionsClass = showPerCardApply
+      ? "result-card-actions"
+      : "result-card-actions result-card-actions-single";
     const vid = r.variantId || "var-" + i;
     const isSelected = options.selectedVariantId === vid;
     const staticEst =
@@ -802,7 +877,7 @@ const OptimizerUI = {
       : "";
 
     return `
-                <div class="${cardClass}" data-variant-id="${vid}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:10px;padding:8px 8px 10px;text-align:center;position:relative;min-width:0;">
+                <div class="${cardClass}" data-variant-id="${vid}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:10px;padding:8px;text-align:center;position:relative;min-width:0;box-sizing:border-box;">
                     ${
                       isBest
                         ? '<div class="result-card-badge result-card-badge-best">🏆 BEST</div>'
@@ -814,14 +889,17 @@ const OptimizerUI = {
       edited ? "block" : "none"
     };position:absolute;top:6px;right:6px;background:#e67e22;color:#fff;font-size:8px;padding:2px 5px;border-radius:4px;z-index:2;">✂️</span>
                     <div class="result-card-body">
+                    <div class="result-card-img-wrap">
                     <img src="${imgSrc}" class="result-img" data-variant-id="${vid}" title="${
       canEdit
         ? staticPromoEditor
           ? "Tap to edit text, colors, zoom, pan, and badges"
           : "Tap to edit text, border & stickers"
         : "Tap to preview"
-    }" style="width:100%;height:72px;object-fit:contain;border-radius:6px;background:#f3f4f6;border:1px solid #ece7df;margin-bottom:4px;cursor:pointer;" loading="lazy">
+    }" loading="lazy">
+                    </div>
                     ${styleTag}
+                    </div>
                     <div class="result-card-foot">
                     <div class="result-card-price-row">
                     <div class="result-price-label" style="color:${
@@ -844,19 +922,16 @@ const OptimizerUI = {
                       manualMode
                         ? `<input type="number" class="manual-price-input opt-input" data-variant-id="${vid}" value="${
                             r.shippingCost > 0 ? r.shippingCost : ""
-                          }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:0;padding:4px;font-size:12px;text-align:center;">`
+                          }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:0;padding:4px;font-size:12px;text-align:center;box-sizing:border-box;">`
                         : ""
                     }
-                    <div style="display:flex;gap:4px;">
-                        <button class="dl-btn result-card-save" data-variant-id="${vid}" style="${
-      showPerCardApply ? "flex:1;" : "width:100%;"
-    }background:rgba(230,126,34,0.15);color:#c45f12;border:none;cursor:pointer;">Save</button>
+                    <div class="${actionsClass}">
+                        <button type="button" class="result-card-save" data-variant-id="${vid}">Save</button>
                         ${
                           showPerCardApply
-                            ? `<button class="apply-btn" data-variant-id="${vid}" style="flex:1;background:rgba(255,255,255,0.1);color:white;border:none;padding:6px 4px;border-radius:6px;cursor:pointer;font-size:10px;">${applyLabel}</button>`
+                            ? `<button type="button" class="result-card-apply apply-btn" data-variant-id="${vid}">${applyLabel}</button>`
                             : ""
                         }
-                    </div>
                     </div>
                     </div>
                 </div>

@@ -7324,7 +7324,7 @@ Please share payment details and license key.`;
       card.onclick = (e) => {
         if (
           e.target.closest(
-            ".apply-btn, .dl-btn, .manual-price-input, button, input",
+            ".apply-btn, .result-card-save, .manual-price-input, button, input",
           )
         ) {
           return;
@@ -7372,8 +7372,9 @@ Please share payment details and license key.`;
       });
     }
 
-    document.querySelectorAll(".dl-btn").forEach((btn) => {
-      btn.onclick = () => {
+    document.querySelectorAll(".result-card-save").forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
         const row = this.findResultRow(btn.dataset.variantId);
         if (row) this.downloadImage(row);
       };
@@ -7600,8 +7601,9 @@ Please share payment details and license key.`;
 
       const inputId = imageInput.id;
       if (inputId) {
-        const label = document.querySelector(`label[for="${CSS.escape(inputId)}"]`);
-        label?.click();
+        document.querySelectorAll("label[for]").forEach((label) => {
+          if (label.htmlFor === inputId) label.click();
+        });
       }
 
       this.closeModal();
