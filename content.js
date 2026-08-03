@@ -486,7 +486,7 @@ class MeeshoShippingOptimizer {
         : "";
 
     fab.innerHTML = iconUrl
-      ? `<img src="${iconUrl}" alt="" width="30" height="30" style="display:block;border-radius:8px;">`
+      ? `<img src="${iconUrl}" alt="" width="32" height="32" style="display:block;border-radius:9px;">`
       : `<span style="font-size:22px;line-height:1;">📦</span>`;
 
     const isNarrow = window.matchMedia("(max-width: 640px)").matches;
@@ -549,7 +549,7 @@ class MeeshoShippingOptimizer {
             <div style="display:flex;align-items:center;gap:10px;">
                 ${
                   iconUrl
-                    ? `<img src="${iconUrl}" alt="" width="28" height="28" style="display:block;border-radius:8px;">`
+                    ? `<img src="${iconUrl}" alt="" width="30" height="30" style="display:block;border-radius:9px;box-shadow:0 2px 6px rgba(61,41,20,0.15);">`
                     : `<span style="font-size:22px;">📦</span>`
                 }
                 <div>

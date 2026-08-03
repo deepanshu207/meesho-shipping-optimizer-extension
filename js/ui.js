@@ -3,9 +3,9 @@
 const OptimizerUI = {
   brandLogoUrl: function () {
     if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      return chrome.runtime.getURL("icons/icon32.png");
+      return chrome.runtime.getURL("icons/icon48.png");
     }
-    if (window.WEB_OPTIMIZER_MODE) return "/icons/icon32.png";
+    if (window.WEB_OPTIMIZER_MODE) return "/icons/icon48.png";
     return "";
   },
 
@@ -13,7 +13,7 @@ const OptimizerUI = {
     const safeTitle = title || "Shipping Optimizer";
     const url = this.brandLogoUrl();
     const logo = url
-      ? `<img src="${url}" alt="" width="28" height="28" style="display:block;border-radius:8px;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.12);">`
+      ? `<img src="${url}" alt="" width="30" height="30" style="display:block;border-radius:9px;flex-shrink:0;box-shadow:0 2px 8px rgba(61,41,20,0.18);">`
       : `<span aria-hidden="true" style="font-size:24px;line-height:1;">📦</span>`;
     return `<div class="opt-brand-header">${logo}<h2>${safeTitle}</h2></div>`;
   },
