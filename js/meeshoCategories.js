@@ -147,6 +147,35 @@ const MeeshoCategories = {
     return this.getWomenClothRelatedFromList(this.getList());
   },
 
+  getBrowseListFrom(sourceList) {
+    const list = sourceList || this.getList();
+    const ROOT_ORDER = {
+      "Women Fashion": 0,
+      "Men Fashion": 1,
+      Women: 2,
+      "Kids & Toys": 3,
+    };
+    return list.slice().sort((a, b) => {
+      const ra = ROOT_ORDER[a.rootName] ?? 99;
+      const rb = ROOT_ORDER[b.rootName] ?? 99;
+      if (ra !== rb) return ra - rb;
+      const raName = String(a.rootName || "");
+      const rbName = String(b.rootName || "");
+      if (raName !== rbName) return raName.localeCompare(rbName);
+      const sa = String(a.sectionName || "");
+      const sb = String(b.sectionName || "");
+      if (sa !== sb) return sa.localeCompare(sb);
+      const pa = String(a.parentName || "");
+      const pb = String(b.parentName || "");
+      if (pa !== pb) return pa.localeCompare(pb);
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  },
+
+  getBrowseList() {
+    return this.getBrowseListFrom(this.getList());
+  },
+
   getDefaultListFrom(sourceList, limit) {
     const cloth = this.getClothRelatedFromList(sourceList);
     if (!cloth.length) {
@@ -229,7 +258,8 @@ const MeeshoCategories = {
     }
 
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit).map((row) => row.cat);
+    const rows = limit > 0 ? scored.slice(0, limit) : scored;
+    return rows.map((row) => row.cat);
   },
 
   search(query, limit = 100) {

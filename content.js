@@ -1203,25 +1203,42 @@ Please share payment details and license key.`;
     return { status: "ambiguous", hits, query };
   }
 
-  /** Women apparel shortcuts on empty focus — keep small for fast open on mobile */
-  static CATEGORY_QUICK_PICK_LIMIT = 60;
+  /** 0 = show all search matches; full list shown on empty focus */
+  static CATEGORY_SEARCH_RESULT_LIMIT = 0;
 
-  getCategoryQuickPickList() {
-    if (this._categoryQuickPicksCache?.length) return this._categoryQuickPicksCache;
-    const women = this.getWomenClothCategoryList();
-    this._categoryQuickPicksCache = women.slice(
-      0,
-      MeeshoShippingOptimizer.CATEGORY_QUICK_PICK_LIMIT,
-    );
-    return this._categoryQuickPicksCache;
+  getCategoryBrowseList() {
+    const list = this.getActiveCategoryList();
+    if (!list.length) return [];
+
+    if (this._categoryBrowseCache?.sourceLength === list.length) {
+      return this._categoryBrowseCache.list;
+    }
+
+    let browse;
+    if (typeof MeeshoCategories !== "undefined" && MeeshoCategories.getBrowseListFrom) {
+      browse = MeeshoCategories.getBrowseListFrom(list);
+    } else {
+      browse = list.slice().sort((a, b) => {
+        const pa = String(a.path || a.name || "");
+        const pb = String(b.path || b.name || "");
+        return pa.localeCompare(pb);
+      });
+    }
+
+    this._categoryBrowseCache = { sourceLength: list.length, list: browse };
+    return browse;
   }
 
-  filterCategoriesForSearch(raw, limit = 100) {
+  filterCategoriesForSearch(raw, limit) {
     const parsed = this.parseCategorySearchQuery(raw);
     const list = this.getActiveCategoryList();
+    const resultLimit =
+      limit !== undefined
+        ? limit
+        : MeeshoShippingOptimizer.CATEGORY_SEARCH_RESULT_LIMIT;
 
     if (!parsed.text && parsed.mode !== "id") {
-      return this.getCategoryQuickPickList();
+      return this.getCategoryBrowseList();
     }
 
     if (parsed.mode === "id") {
@@ -1230,18 +1247,17 @@ Please share payment details and license key.`;
     }
 
     if (typeof MeeshoCategories !== "undefined" && MeeshoCategories.searchInList) {
-      return MeeshoCategories.searchInList(parsed.text, list, limit);
+      return MeeshoCategories.searchInList(parsed.text, list, resultLimit);
     }
 
     if (typeof MeeshoCategories !== "undefined" && MeeshoCategories.search) {
       this.syncCategoryListToMeeshoCategories(list);
-      return MeeshoCategories.search(parsed.text, limit);
+      return MeeshoCategories.search(parsed.text, resultLimit);
     }
 
     const query = parsed.text.toLowerCase();
-    return list
-      .filter((cat) => this.categoryMatchesQuery(cat, query))
-      .slice(0, limit);
+    const matches = list.filter((cat) => this.categoryMatchesQuery(cat, query));
+    return resultLimit > 0 ? matches.slice(0, resultLimit) : matches;
   }
 
   applyPageCategoryIfAvailable(options = {}) {
@@ -1571,7 +1587,7 @@ Please share payment details and license key.`;
     MeeshoCategories._list = categories;
     window.MEESHO_EMBEDDED_CATEGORIES = categories;
     this._clothCategoryCache = null;
-    this._categoryQuickPicksCache = null;
+    this._categoryBrowseCache = null;
   }
 
   getDefaultCategorySlice(limit) {
@@ -1630,13 +1646,7 @@ Please share payment details and license key.`;
 
   getCategoryPickerHintText() {
     const total = this.getActiveCategoryList().length || MeeshoCategories?.COUNT || 3777;
-    const quick = this.getCategoryQuickPickList().length;
-    const women =
-      typeof MeeshoCategories !== "undefined" &&
-      MeeshoCategories.WOMEN_CLOTH_RELATED_COUNT
-        ? MeeshoCategories.WOMEN_CLOTH_RELATED_COUNT
-        : this.getWomenClothCategoryList().length;
-    return `${total} categories searchable · ${quick} quick picks (${women} women apparel)`;
+    return `${total} categories in dropdown — search by name or ID`;
   }
 
   getCategoryAutocompleteQuery() {
@@ -1657,24 +1667,19 @@ Please share payment details and license key.`;
     const allTotal = list.length || MeeshoCategories?.COUNT || 3777;
 
     if (!query) {
-      const quick = this.getCategoryQuickPickList();
-      const womenTotal =
-        typeof MeeshoCategories !== "undefined" &&
-        MeeshoCategories.WOMEN_CLOTH_RELATED_COUNT
-          ? MeeshoCategories.WOMEN_CLOTH_RELATED_COUNT
-          : this.getWomenClothCategoryList().length;
+      const browse = this.getCategoryBrowseList();
       return {
-        results: quick,
+        results: browse,
         meta: {
-          kind: "women",
-          womenTotal,
-          quickCount: quick.length,
+          kind: "browse",
+          browseCount: browse.length,
           allTotal,
         },
       };
     }
 
-    const results = this.filterCategoriesForSearch(query, 100);
+    const limit = MeeshoShippingOptimizer.CATEGORY_SEARCH_RESULT_LIMIT;
+    const results = this.filterCategoriesForSearch(query, limit);
     return {
       results,
       meta: {
@@ -1682,6 +1687,8 @@ Please share payment details and license key.`;
         query,
         matchCount: results.length,
         allTotal,
+        capped: limit > 0 && results.length >= limit,
+        capLimit: limit,
       },
     };
   }
@@ -1721,14 +1728,11 @@ Please share payment details and license key.`;
     }
 
     let html = "";
-    if (meta.kind === "women") {
-      const shown = meta.quickCount ?? meta.womenTotal;
-      html += `<li class="category-ac-header">Quick picks (${shown} women apparel) — type to search all ${meta.allTotal}</li>`;
+    if (meta.kind === "browse") {
+      const shown = meta.browseCount ?? meta.allTotal;
+      html += `<li class="category-ac-header">All ${shown} categories — type to filter</li>`;
     } else if (meta.kind === "search") {
-      const more =
-        meta.matchCount >= 100
-          ? " — type more to narrow"
-          : "";
+      const more = meta.capped ? " — type more to narrow" : "";
       html += `<li class="category-ac-header">${meta.matchCount} match${meta.matchCount === 1 ? "" : "es"} for “${this.escapeCategoryHtml(meta.query)}”${more}</li>`;
     }
 
@@ -1746,8 +1750,8 @@ Please share payment details and license key.`;
       })
       .join("");
 
-    if (meta.kind === "search" && meta.matchCount >= 100) {
-      html += `<li class="category-ac-footer">Showing top 100 of ${meta.allTotal} — refine your search</li>`;
+    if (meta.kind === "search" && meta.capped) {
+      html += `<li class="category-ac-footer">Showing top ${meta.capLimit} of ${meta.allTotal} — refine your search</li>`;
     }
 
     listEl.innerHTML = html + itemsHtml;
@@ -2023,7 +2027,7 @@ Please share payment details and license key.`;
 
     this.allCategories = categories;
     this.syncCategoryListToMeeshoCategories(categories);
-    this._categoryQuickPicksCache = null;
+    this._categoryBrowseCache = null;
 
     const embedded = MeeshoAPI?._lastCategoryFetchWasEmbedded;
     const previousId = parseInt(
@@ -2052,8 +2056,8 @@ Please share payment details and license key.`;
       "✅ Loaded",
       categories.length,
       "categories ·",
-      this.getCategoryQuickPickList().length,
-      "quick picks · type to search all",
+      this.getCategoryBrowseList().length,
+      "in dropdown",
     );
 
     if (!window.WEB_OPTIMIZER_MODE) {
