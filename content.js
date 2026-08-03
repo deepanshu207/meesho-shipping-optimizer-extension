@@ -3489,6 +3489,7 @@ Please share payment details and license key.`;
       meta: row.meta,
     });
     if (row.layers) {
+      this.captureTextOverlayDefaults(row);
       this.ensureTextOverlayState(row);
     }
     return row;
@@ -3781,13 +3782,17 @@ Please share payment details and license key.`;
     row._staticAppearanceEdited = false;
     row._textOverlaysEdited = false;
 
-    if (row.layers._textOverlaysDefaults) {
-      row.layers._textOverlays = JSON.parse(
-        JSON.stringify(row.layers._textOverlaysDefaults),
-      );
-      if (typeof ImageGenerator !== "undefined" && ImageGenerator.syncLegacyTextFields) {
-        ImageGenerator.syncLegacyTextFields(row.layers, row.layers._textOverlays);
-      }
+    if (!Array.isArray(row.layers._textOverlaysDefaults)) {
+      const fromStatic = row.layers._staticDefaults?.textOverlays;
+      row.layers._textOverlaysDefaults = Array.isArray(fromStatic)
+        ? JSON.parse(JSON.stringify(fromStatic))
+        : [];
+    }
+    row.layers._textOverlays = JSON.parse(
+      JSON.stringify(row.layers._textOverlaysDefaults),
+    );
+    if (typeof ImageGenerator !== "undefined" && ImageGenerator.syncLegacyTextFields) {
+      ImageGenerator.syncLegacyTextFields(row.layers, row.layers._textOverlays);
     }
 
     let resetUrl = "";
@@ -3810,6 +3815,7 @@ Please share payment details and license key.`;
 
     if (this._editingVariantId === variantId) {
       this._staticControlsVariantId = null;
+      this._textControlsVariantId = null;
       this.applyStaticPreviewToRow(row, resetUrl, variantId);
       this.renderVariantEditorPanel(row);
     } else {
@@ -5297,13 +5303,16 @@ Please share payment details and license key.`;
     ];
   }
 
+  captureTextOverlayDefaults(row) {
+    if (!row?.layers || row.layers._textOverlaysDefaults !== undefined) return;
+    const overlays = this.normalizeTextOverlaysOnLayers(row.layers);
+    row.layers._textOverlaysDefaults = JSON.parse(JSON.stringify(overlays));
+  }
+
   ensureTextOverlayState(row) {
     if (!row?.layers) return [];
     const overlays = this.normalizeTextOverlaysOnLayers(row.layers);
     row.layers._textOverlays = overlays;
-    if (!row.layers._textOverlaysDefaults) {
-      row.layers._textOverlaysDefaults = JSON.parse(JSON.stringify(overlays));
-    }
     if (typeof ImageGenerator !== "undefined" && ImageGenerator.syncLegacyTextFields) {
       ImageGenerator.syncLegacyTextFields(row.layers, overlays);
     }
@@ -5312,8 +5321,16 @@ Please share payment details and license key.`;
 
   textOverlaysChanged(row) {
     if (!row?.layers) return false;
-    const current = JSON.stringify(this.normalizeTextOverlaysOnLayers(row.layers));
-    const defaults = JSON.stringify(row.layers._textOverlaysDefaults || []);
+    const normalize =
+      typeof ImageGenerator !== "undefined" && ImageGenerator.normalizeTextOverlay
+        ? (o, i) => ImageGenerator.normalizeTextOverlay(o, i)
+        : (o) => o;
+    const current = JSON.stringify(
+      this.normalizeTextOverlaysOnLayers(row.layers).map(normalize),
+    );
+    const defaults = JSON.stringify(
+      (row.layers._textOverlaysDefaults || []).map(normalize),
+    );
     return current !== defaults;
   }
 
@@ -6349,6 +6366,7 @@ Please share payment details and license key.`;
     clearTimeout(this._gownPhotoPanTimer);
     this._gownPhotoPanTimer = null;
     this._staticControlsVariantId = null;
+    this._textControlsVariantId = null;
     this._editingVariantId = null;
   }
 
@@ -6759,6 +6777,7 @@ Please share payment details and license key.`;
 
     this._editingVariantId = variantId;
     this.ensureFrozenPricing(row);
+    this.captureTextOverlayDefaults(row);
     this.ensureTextOverlayState(row);
     const previewSrc = this.resolveVariantPreviewSrc(row);
     if (previewSrc) row.imageUrl = previewSrc;
