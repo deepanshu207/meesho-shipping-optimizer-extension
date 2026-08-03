@@ -2,7 +2,7 @@ KIWI BROWSER (ANDROID) — INSTALL
 ================================
 
 Developer: Deepanshu Arora
-Extension: Meesho Shipping Cost Optimizer
+Extension: Shipping Optimizer v1.8.2
 
 THIS FOLDER is the extension. manifest.json is HERE.
 

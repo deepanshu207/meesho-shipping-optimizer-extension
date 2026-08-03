@@ -24,4 +24,4 @@ See `START_HERE_KIWI.txt`.
 
 ## Version
 
-1.8.0
+1.8.2
