@@ -2046,6 +2046,17 @@ const MeeshoAPI = {
           this.addNoise(noBorderCtx, w, h, seed + 1);
           const noBorder = noBorderCanvas.toDataURL("image/jpeg", quality);
           const stickersRendered = badgePlacements.some((p) => p.drawn);
+          const customTextStamp = (() => {
+            const text =
+              typeof ImageGenerator !== "undefined" && ImageGenerator.settings?.customText
+                ? String(ImageGenerator.settings.customText).trim()
+                : "";
+            if (!text) return {};
+            return {
+              _customText: text,
+              _customTextBg: ImageGenerator.settings.textBgColor || "#e67e22",
+            };
+          })();
 
           canvas.toBlob(
             (blob) =>
@@ -2076,6 +2087,7 @@ const MeeshoAPI = {
                   productOnly,
                   _stickersRendered: stickersRendered,
                   _badgePlacements: badgePlacements,
+                  ...customTextStamp,
                   _staticFrame: {
                     style: "live_standard",
                     frameType: gradType === 0 ? "solid" : "gradient",
