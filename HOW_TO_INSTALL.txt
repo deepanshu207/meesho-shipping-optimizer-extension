@@ -1,7 +1,7 @@
 ***** HOW TO INSTALL *****
 
 Developer: Deepanshu Arora
-Extension: Meesho Shipping Cost Optimizer v1.8.0
+Extension: Shipping Optimizer v1.8.2
 
 DESKTOP (Chrome / Edge / Brave)
 --------------------------------

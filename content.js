@@ -3388,6 +3388,12 @@ Please share payment details and license key.`;
   }
 
   isVariantEdited(editFlags, layers, row) {
+    if (
+      row?._textOverlaysEdited ||
+      (row && typeof this.textOverlaysChanged === "function" && this.textOverlaysChanged(row))
+    ) {
+      return true;
+    }
     if (!editFlags && !row?._badgesRepositioned && !row?._staticAppearanceEdited)
       return false;
     if (row?._badgesRepositioned || row?._staticAppearanceEdited) return true;
@@ -4063,7 +4069,23 @@ Please share payment details and license key.`;
   }
 
   async composeSaveForRow(row) {
+    const textEdited =
+      !!row?._textOverlaysEdited ||
+      (row && typeof this.textOverlaysChanged === "function" && this.textOverlaysChanged(row));
+
+    if (!row?.layers?._staticFrame) {
+      if (textEdited) {
+        const textUrl = await this.composeTextOverlayPreview(row);
+        if (textUrl) return textUrl;
+      }
+      return this.resolveDownloadUrl(row);
+    }
+
     if (!row?.layers || !window.StaticFrameCompose?.composeStaticPreview) {
+      if (textEdited) {
+        const textUrl = await this.composeTextOverlayPreview(row);
+        if (textUrl) return textUrl;
+      }
       return this.resolveDownloadUrl(row);
     }
     const edited =
@@ -4209,6 +4231,54 @@ Please share payment details and license key.`;
     this.updatePhotoControlsLockUI(container, frame);
   }
 
+  async composeTextOverlayPreview(row) {
+    if (typeof ImageGenerator === "undefined" || !row?.layers) return "";
+    const overlays = ImageGenerator.normalizeTextOverlays(row.layers);
+    const hasText = overlays.some(
+      (o) => o.enabled !== false && String(o.text || "").trim(),
+    );
+    if (!hasText) return "";
+    const baseUrl =
+      row.imageUrl ||
+      row.layers.full ||
+      row.pricingImageUrl ||
+      row.dataUrl ||
+      row.layers.noStickers ||
+      "";
+    if (!baseUrl) return "";
+
+    const quality =
+      row.meta?.jpegQuality > 0 && row.meta?.jpegQuality <= 1
+        ? row.meta.jpegQuality
+        : 0.92;
+    const border = Number(row.layers?._staticFrame?.border) || 0;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve("");
+            return;
+          }
+          ctx.drawImage(img, 0, 0);
+          ImageGenerator.drawTextOverlays(ctx, canvas.width, canvas.height, border, overlays);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } catch (e) {
+          console.warn("Text overlay preview failed:", e);
+          resolve("");
+        }
+      };
+      img.onerror = () => resolve("");
+      img.src = baseUrl;
+    });
+  }
+
   async applyRowStaticPreview(variantId, row = null) {
     const target = row || this.findResultRow(variantId);
     if (!target?.layers) return "";
@@ -4221,6 +4291,11 @@ Please share payment details and license key.`;
       }
     }
     if (!target.layers._staticFrame) {
+      const textUrl = await this.composeTextOverlayPreview(target);
+      if (textUrl) {
+        this.applyStaticPreviewToRow(target, textUrl, variantId);
+        return textUrl;
+      }
       const fallback = this.resolveVariantPreviewSrc(target);
       if (fallback) this.applyStaticPreviewToRow(target, fallback, variantId);
       return fallback;
@@ -5528,20 +5603,16 @@ Please share payment details and license key.`;
         const id = card.dataset.textId;
         const colorFieldId = `variant-text-color-${id}`;
         const bgFieldId = `variant-text-bg-${id}`;
+        const posHInput = card.querySelector(`.variant-text-pos-h[data-text-id="${id}"]`);
+        const posVInput = card.querySelector(`.variant-text-pos-v[data-text-id="${id}"]`);
         const existing = (row.layers._textOverlays || []).find((o) => o.id === id) || {};
         return {
           id,
           text: card.querySelector(`.variant-text-content[data-text-id="${id}"]`)?.value || "",
-          posH: parseInt(
-            card.querySelector(`.variant-text-pos-h[data-text-id="${id}"]`)?.value || "50",
-            10,
-          ),
-          posV: parseInt(
-            card.querySelector(`.variant-text-pos-v[data-text-id="${id}"]`)?.value || "100",
-            10,
-          ),
-          lockH: existing.lockH !== false,
-          lockV: existing.lockV !== false,
+          posH: parseInt(posHInput?.value || "50", 10),
+          posV: parseInt(posVInput?.value || "100", 10),
+          lockH: !!posHInput?.disabled,
+          lockV: !!posVInput?.disabled,
           textColor:
             this.readStaticColorField(container, colorFieldId) ||
             existing.textColor ||
@@ -5643,8 +5714,8 @@ Please share payment details and license key.`;
         const overlays = readOverlaysFromDom();
         const overlay = overlays.find((o) => o.id === textId);
         if (!overlay) return;
-        if (axis === "h") overlay.lockH = !overlay.lockH;
-        else overlay.lockV = !overlay.lockV;
+        if (axis === "h") overlay.lockH = overlay.lockH === false;
+        else overlay.lockV = overlay.lockV === false;
         row.layers._textOverlays = overlays;
         this.renderVariantTextControls(row, container);
         row._textOverlaysEdited = this.textOverlaysChanged(row);

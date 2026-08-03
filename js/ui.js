@@ -646,6 +646,7 @@ const OptimizerUI = {
     const edited =
       r._badgesRepositioned ||
       r._staticAppearanceEdited ||
+      r._textOverlaysEdited ||
       r.editFlags?.stickersRemoved ||
       r.editFlags?.borderOnlyRemoved ||
       r.editFlags?.cleanProduct ||
@@ -688,8 +689,8 @@ const OptimizerUI = {
                     <img src="${imgSrc}" class="result-img" data-variant-id="${vid}" title="${
       canEdit
         ? staticPromoEditor
-          ? "Tap to edit colors, zoom, pan, and badges"
-          : "Tap to edit border & stickers"
+          ? "Tap to edit text, colors, zoom, pan, and badges"
+          : "Tap to edit text, border & stickers"
         : "Tap to preview"
     }" style="width:100%;height:55px;object-fit:contain;border-radius:4px;background:rgba(0,0,0,0.2);margin-bottom:4px;margin-top:${
       isBest ? "4px" : "0"
@@ -697,7 +698,7 @@ const OptimizerUI = {
                     ${styleTag}
                     ${
                       canEdit
-                        ? `<div style="font-size:9px;color:#6b7280;margin-bottom:2px;">${staticPromoEditor ? "Tap image to edit colors, zoom, pan, and badges" : "Tap image to edit"}</div>`
+                        ? `<div style="font-size:9px;color:#6b7280;margin-bottom:2px;">${staticPromoEditor ? "Tap image to edit text, colors & badges" : "Tap image to edit text & stickers"}</div>`
                         : ""
                     }
                     <div class="result-price-label" style="font-size:14px;font-weight:700;color:${
