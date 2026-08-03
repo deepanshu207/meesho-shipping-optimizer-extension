@@ -1,6 +1,43 @@
 // UI components for Meesho Shipping Optimizer v6.0.0
 
 const OptimizerUI = {
+  brandLogoUrl: function () {
+    if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
+      return chrome.runtime.getURL("icons/icon48.png");
+    }
+    if (window.WEB_OPTIMIZER_MODE) return "/icons/icon48.png";
+    return "";
+  },
+
+  brandHeaderHtml: function (title) {
+    const safeTitle = title || "Shipping Optimizer";
+    const url = this.brandLogoUrl();
+    const logo = url
+      ? `<img src="${url}" alt="" width="30" height="30" style="display:block;border-radius:9px;flex-shrink:0;box-shadow:0 2px 8px rgba(61,41,20,0.18);">`
+      : `<span aria-hidden="true" style="font-size:24px;line-height:1;">📦</span>`;
+    return `<div class="opt-brand-header">${logo}<h2>${safeTitle}</h2></div>`;
+  },
+
+  smartModeMaxVariantsHtml: function () {
+    return `
+                        <input type="hidden" id="target-shipping" value="100">
+                        <div class="opt-row" style="margin-bottom:10px;">
+                            <div style="grid-column:1 / -1;">
+                                <label class="opt-label">Max Variants</label>
+                                <select id="max-attempts" class="opt-select">
+                                    <option value="10">10</option>
+                                    <option value="20" selected>20</option>
+                                    <option value="50">50</option>
+                                    <option value="80">80</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
+                            ⚡ Live Meesho shipping checks — finds the lowest ₹ from generated variants
+                        </div>`;
+  },
+
   frozenEstShipping: function (r) {
     return (
       r?._frozenPricing?.estShipping ??
@@ -26,24 +63,26 @@ const OptimizerUI = {
                     background: #fff8ee;
                 }
                 .opt-header {
-                    background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
-                    padding: 16px 18px;
-                    border-radius: 16px 16px 0 0;
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    gap: 10px;
+                    padding: 16px 18px;
+                    background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+                    color: #3d2914;
+                    border-radius: 12px 12px 0 0;
                 }
-                .opt-header h2 {
+                .opt-brand-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    min-width: 0;
+                }
+                .opt-brand-header h2 {
                     margin: 0;
                     font-size: 17px;
                     font-weight: 800;
                     color: #3d2914;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    letter-spacing: -0.01em;
-                    line-height: 1.25;
+                    line-height: 1.2;
                 }
                 .opt-close {
                     background: rgba(61,41,20,0.12);
@@ -240,6 +279,41 @@ const OptimizerUI = {
                 }
                 .result-card {
                     min-width: 0;
+                    overflow: visible;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 8px rgba(61,41,20,0.06);
+                }
+                .result-card-best {
+                    border-color: #10b981 !important;
+                    box-shadow: 0 0 0 1px rgba(16,185,129,0.2), 0 3px 10px rgba(16,185,129,0.12);
+                }
+                .result-card-badge {
+                    display: inline-block;
+                    margin: 0 auto 6px;
+                    padding: 2px 8px;
+                    border-radius: 10px;
+                    font-size: 9px;
+                    font-weight: 700;
+                    line-height: 1.35;
+                    white-space: nowrap;
+                }
+                .result-card-badge-best {
+                    background: #10b981;
+                    color: #fff;
+                }
+                .result-card-badge-recommend {
+                    background: #2563eb;
+                    color: #fff;
+                }
+                .results-variant-grid {
+                    display: grid;
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                    gap: 10px;
+                    margin-bottom: 15px;
+                    max-height: 480px;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    padding-top: 6px;
                 }
                 .result-card-selected {
                     border: 2px solid #e67e22 !important;
@@ -377,38 +451,13 @@ const OptimizerUI = {
     return `
             <div class="opt-modal">
                 <div class="opt-header">
-                    <h2>Upload &amp; Optimize</h2>
+                    ${this.brandHeaderHtml("Shipping Optimizer")}
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
                     <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, rgba(255,215,0,0.14) 0%, rgba(245,166,35,0.1) 55%, rgba(230,126,34,0.08) 100%);border:1px solid #f0e0c8;">
-                        <div class="opt-section-title" style="color:#c45f12;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
-                        <div class="opt-row" style="margin-bottom:10px;">
-                            <div>
-                                <label class="opt-label">Target Shipping</label>
-                                <select id="target-shipping" class="opt-select" style="font-size:13px;font-weight:600;">
-                                    <option value="30">≤ ₹30</option>
-                                    <option value="40">≤ ₹40</option>
-                                    <option value="50">≤ ₹50</option>
-                                    <option value="60">≤ ₹60</option>
-                                    <option value="70">≤ ₹70</option>
-                                    <option value="80" selected>≤ ₹80</option>
-                                    <option value="90">≤ ₹90</option>
-                                    <option value="100">≤ ₹100</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="opt-label">Max Variants</label>
-                                <select id="max-attempts" class="opt-select">
-                                    <option value="10">10</option>
-                                    <option value="20">20</option>
-                                    <option value="50" selected>50</option>
-                                    <option value="80">80</option>
-                                    <option value="100">100</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div style="font-size:10px;color:#6b7280;margin-top:6px;">Live Meesho shipping checks using Target + Max Variants</div>
+                        <div class="opt-section-title" style="color:#c45f12;">⚡ Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(Generate Variants)</span></div>
+                        ${this.smartModeMaxVariantsHtml()}
                     </div>
 
                     <div class="opt-upload-box" id="upload-area">
@@ -506,7 +555,7 @@ const OptimizerUI = {
     return `
             <div class="opt-modal opt-modal-ext">
                 <div class="opt-header">
-                    <h2>Shipping Optimizer</h2>
+                    ${this.brandHeaderHtml("Shipping Optimizer")}
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
@@ -535,35 +584,8 @@ const OptimizerUI = {
                     </div>
 
                     <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, rgba(255,215,0,0.14) 0%, rgba(245,166,35,0.1) 55%, rgba(230,126,34,0.08) 100%);border:1px solid #f0e0c8;">
-                        <div class="opt-section-title" style="color:#c45f12;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
-                        <div class="opt-row" style="margin-bottom:10px;">
-                            <div>
-                                <label class="opt-label">Target Shipping</label>
-                                <select id="target-shipping" class="opt-select" style="font-size:13px;font-weight:600;">
-                                    <option value="30" style="color:black">≤ ₹30</option>
-                                    <option value="40" style="color:black">≤ ₹40</option>
-                                    <option value="50" style="color:black">≤ ₹50</option>
-                                    <option value="60" style="color:black">≤ ₹60</option>
-                                    <option value="70" style="color:black">≤ ₹70</option>
-                                    <option value="80" selected style="color:black">≤ ₹80</option>
-                                    <option value="90" style="color:black">≤ ₹90</option>
-                                    <option value="100" style="color:black">≤ ₹100</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="opt-label">Max Variants</label>
-                                <select id="max-attempts" class="opt-select">
-                                    <option value="20">20</option>
-                                    <option value="50">50</option>
-                                    <option value="80" selected>80</option>
-                                    <option value="100">100</option>
-                                    <option value="200">200</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
-                            ⚡ Live Meesho shipping checks using Target + Max Variants
-                        </div>
+                        <div class="opt-section-title" style="color:#c45f12;">⚡ Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(Generate Variants)</span></div>
+                        ${this.smartModeMaxVariantsHtml()}
                     </div>
 
                     <div class="opt-upload-box" id="upload-area">
@@ -680,17 +702,23 @@ const OptimizerUI = {
       r.editFlags?.stickersAdded ||
       r.editFlags?.borderAdded ||
       r.editFlags?.fullDecorationsAdded;
-    const cardClass = isSelected ? "result-card result-card-selected" : "result-card";
+    const cardClass = [
+      "result-card",
+      isSelected ? "result-card-selected" : "",
+      isBest ? "result-card-best" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     const cardBorder = isSelected
       ? "#e67e22"
       : isBest
       ? "#10b981"
-      : "rgba(255,255,255,0.1)";
+      : "#e8d5b8";
     const cardBg = isSelected
       ? "rgba(255,215,0,0.14)"
       : isBest
-      ? "rgba(16,185,129,0.15)"
-      : "rgba(255,255,255,0.03)";
+      ? "rgba(16,185,129,0.12)"
+      : "#fff";
     const imgSrc = staticPromoEditor
       ? r.imageUrl || OptimizerUI.pickResultImageSrc(r)
       : analysisMode
@@ -707,30 +735,28 @@ const OptimizerUI = {
       : "";
 
     return `
-                <div class="${cardClass}" data-variant-id="${vid}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:8px;padding:8px;text-align:center;position:relative;min-width:0;">
+                <div class="${cardClass}" data-variant-id="${vid}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:10px;padding:8px 8px 10px;text-align:center;position:relative;min-width:0;">
                     ${
                       isBest
-                        ? '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;">🏆 BEST</div>'
+                        ? '<div class="result-card-badge result-card-badge-best">🏆 BEST</div>'
                         : isRecommended
-                        ? '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#2563eb;color:white;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;">★ RECOMMEND</div>'
+                        ? '<div class="result-card-badge result-card-badge-recommend">★ RECOMMEND</div>'
                         : ""
                     }
                     <span class="result-edit-badge" data-variant-id="${vid}" style="display:${
       edited ? "block" : "none"
-    };position:absolute;top:4px;right:4px;background:#e67e22;color:#fff;font-size:8px;padding:2px 5px;border-radius:4px;">✂️</span>
+    };position:absolute;top:6px;right:6px;background:#e67e22;color:#fff;font-size:8px;padding:2px 5px;border-radius:4px;z-index:2;">✂️</span>
                     <img src="${imgSrc}" class="result-img" data-variant-id="${vid}" title="${
       canEdit
         ? staticPromoEditor
           ? "Tap to edit text, colors, zoom, pan, and badges"
           : "Tap to edit text, border & stickers"
         : "Tap to preview"
-    }" style="width:100%;height:55px;object-fit:contain;border-radius:4px;background:rgba(0,0,0,0.2);margin-bottom:4px;margin-top:${
-      isBest ? "4px" : "0"
-    };cursor:pointer;" loading="lazy">
+    }" style="width:100%;height:62px;object-fit:contain;border-radius:6px;background:#f3f4f6;border:1px solid #ece7df;margin-bottom:6px;cursor:pointer;" loading="lazy">
                     ${styleTag}
-                    <div class="result-price-label" style="font-size:14px;font-weight:700;color:${
-                      isBest ? "#10b981" : "black"
-                    };">${priceLabel}</div>
+                    <div class="result-price-label" style="font-size:15px;font-weight:800;color:${
+                      isBest ? "#059669" : "#1f2937"
+                    };line-height:1.2;">${priceLabel}</div>
                     ${
                       analysisMode
                         ? '<div style="font-size:8px;color:#2563eb;font-weight:600;">static est</div>'
@@ -946,7 +972,7 @@ const OptimizerUI = {
       }</div>
             </div>
             <p class="result-card-hint-global">Tap a variant to select · tap image to edit text, colors &amp; badges</p>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px;max-height:480px;overflow-y:auto;">
+            <div class="results-variant-grid">
         `;
 
       results.forEach((r, i) => {

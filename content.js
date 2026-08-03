@@ -21,30 +21,33 @@ function pickLiveStrategy(prices) {
   };
 }
 
+const LIVE_SMART_DEFAULTS = {
+  targetShipping: 100,
+  maxAttempts: 20,
+  maxVariantsCap: 100,
+};
+
 const LiveSmart = {
   readMainSmartModeSettings() {
-    const targetShipping =
-      parseInt(document.getElementById("target-shipping")?.value, 10) || 80;
     const maxAttempts = Math.min(
       Math.max(
-        parseInt(document.getElementById("max-attempts")?.value, 10) || 80,
+        parseInt(document.getElementById("max-attempts")?.value, 10) ||
+          LIVE_SMART_DEFAULTS.maxAttempts,
         1,
       ),
-      200,
+      LIVE_SMART_DEFAULTS.maxVariantsCap,
     );
     return {
       purpose: "main",
-      targetShipping,
+      targetShipping: LIVE_SMART_DEFAULTS.targetShipping,
       maxAttempts,
-      maxShippingCap: targetShipping,
+      maxShippingCap: LIVE_SMART_DEFAULTS.targetShipping,
     };
   },
 
-  /** Cap = Smart Mode target shipping dropdown (no local history). */
+  /** Internal cap for recommendations — not shown in UI. */
   getShippingCap() {
-    const target =
-      parseInt(document.getElementById("target-shipping")?.value, 10) || 80;
-    return target > 0 ? target : null;
+    return LIVE_SMART_DEFAULTS.targetShipping;
   },
 
   scoreLiveVariant(v) {
@@ -483,7 +486,7 @@ class MeeshoShippingOptimizer {
         : "";
 
     fab.innerHTML = iconUrl
-      ? `<img src="${iconUrl}" alt="" width="30" height="30" style="display:block;border-radius:8px;">`
+      ? `<img src="${iconUrl}" alt="" width="32" height="32" style="display:block;border-radius:9px;">`
       : `<span style="font-size:22px;line-height:1;">📦</span>`;
 
     const isNarrow = window.matchMedia("(max-width: 640px)").matches;
@@ -537,9 +540,18 @@ class MeeshoShippingOptimizer {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "shipping-optimizer-btn";
+    const iconUrl =
+      typeof chrome !== "undefined" && chrome.runtime?.getURL
+        ? chrome.runtime.getURL("icons/icon32.png")
+        : "";
+
     btn.innerHTML = `
             <div style="display:flex;align-items:center;gap:10px;">
-                <span style="font-size:22px;">🚀</span>
+                ${
+                  iconUrl
+                    ? `<img src="${iconUrl}" alt="" width="30" height="30" style="display:block;border-radius:9px;box-shadow:0 2px 6px rgba(61,41,20,0.15);">`
+                    : `<span style="font-size:22px;">📦</span>`
+                }
                 <div>
                     <div style="font-weight:800;font-size:15px;color:#3d2914;">Shipping Optimizer</div>
                     <div style="font-size:11px;color:#3d2914;opacity:0.85;">Generate · Preview · Apply</div>
@@ -2788,19 +2800,19 @@ Please share payment details and license key.`;
     const smartSearchCap = runSettings.maxShippingCap;
 
     OptimizerUtils.showNotification(
-      `🚀 Generate Variants · up to ${maxAttempts} · target ≤ ₹${targetShipping}`,
+      `🚀 Generating up to ${maxAttempts} variants`,
       "info",
       4000,
     );
 
     console.log(
-      `🎯 Target ≤ ₹${targetShipping}, Max: ${maxAttempts}${smartSearchCap ? `, live cap ≤₹${smartSearchCap}` : ""}`,
+      `🔍 Smart search · max ${maxAttempts}${smartSearchCap ? ` · cap ≤₹${smartSearchCap}` : ""}`,
     );
 
     if (processingArea) {
       processingArea.style.display = "block";
       processingArea.innerHTML = "";
-      this.mountSmartModeProgress(processingArea, maxAttempts, targetShipping);
+      this.mountSmartModeProgress(processingArea, maxAttempts);
       this.updateSmartModeProgressUI(
         processingArea,
         0,
@@ -3028,7 +3040,7 @@ Please share payment details and license key.`;
         );
       } else if (result.targetReached) {
         OptimizerUtils.showNotification(
-          `🎯 Target! ₹${result.bestResult.shippingCost}`,
+          `✅ Best shipping: ₹${result.bestResult.shippingCost}`,
           "success",
         );
       } else if (this.shouldStop) {
@@ -3058,22 +3070,28 @@ Please share payment details and license key.`;
    * Pool uses live-pattern variants only (standard generateVariation — no ultra/analysis).
    */
 
-  mountSmartModeProgress(processingArea, maxAttempts, target) {
+  mountSmartModeProgress(processingArea, maxAttempts) {
     if (!processingArea) return null;
     processingArea.style.display = "block";
     const compact = (this.currentResults || []).length > 0;
+    const logoUrl =
+      typeof OptimizerUI !== "undefined" && OptimizerUI.brandLogoUrl
+        ? OptimizerUI.brandLogoUrl()
+        : "";
+    const logoHtml = logoUrl
+      ? `<img src="${logoUrl}" alt="" width="${compact ? 32 : 44}" height="${compact ? 32 : 44}" style="display:block;margin:0 auto ${compact ? "6px" : "10px"};border-radius:10px;">`
+      : `<div style="font-size:${compact ? "28px" : "44px"};margin-bottom:${compact ? "6px" : "10px"};">📦</div>`;
     let root = processingArea.querySelector("#smart-mode-progress");
     if (!root) {
       processingArea.innerHTML = `
         <div id="smart-mode-progress" class="${compact ? "processing-banner" : ""}" style="text-align:center;padding:${compact ? "12px 14px" : "20px"};">
-          <div style="font-size:${compact ? "28px" : "50px"};margin-bottom:${compact ? "6px" : "10px"};">🎯</div>
+          ${logoHtml}
           <h3 style="margin:0 0 5px 0;color:#059669;font-size:${compact ? "15px" : "18px"};">${compact ? "Searching again…" : "Finding best shipping"}</h3>
-          <p id="smp-target" style="color:#1f2937;font-size:14px;margin-bottom:3px;">Target: ≤ ₹${target}</p>
           <p id="smp-attempts" style="color:#9ca3af;font-size:11px;margin-bottom:5px;">0 / ${maxAttempts}</p>
           <p id="smp-time" style="color:#e67e22;font-size:12px;margin-bottom:12px;">⏱️ 0s</p>
-          <div id="smp-best-wrap" style="background:rgba(230,126,34,0.12);border:1px solid rgba(230,126,34,0.28);border-radius:12px;padding:15px;margin-bottom:12px;">
+          <div id="smp-best-wrap" style="background:rgba(230,126,34,0.12);border:1px solid rgba(230,126,34,0.28);border-radius:12px;padding:14px 12px 12px;margin-bottom:12px;overflow:visible;">
             <div style="font-size:28px;color:#e67e22;">🔍</div>
-            <div id="smp-best-label" style="font-size:11px;color:#9ca3af;margin-top:5px;">Searching…</div>
+            <div id="smp-best-label" style="font-size:11px;color:#9ca3af;margin-top:5px;line-height:1.45;">Searching…</div>
           </div>
           <div style="background:#f0e0c8;border-radius:10px;height:10px;margin-bottom:8px;overflow:hidden;">
             <div id="smp-bar" style="width:0%;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);height:100%;border-radius:10px;transition:width 0.25s ease;"></div>
@@ -3094,8 +3112,6 @@ Please share payment details and license key.`;
     } else if (root) {
       root.classList.toggle("processing-banner", compact);
     }
-    const targetEl = root?.querySelector("#smp-target");
-    if (targetEl) targetEl.textContent = `Target: ≤ ₹${target}`;
     return root;
   }
 
@@ -3128,7 +3144,7 @@ Please share payment details and license key.`;
       this.markSmartModeStopping(processingArea);
       return;
     }
-    this.mountSmartModeProgress(processingArea, maxAttempts, target);
+    this.mountSmartModeProgress(processingArea, maxAttempts);
     const pct = maxAttempts > 0 ? Math.round((attempt / maxAttempts) * 100) : 0;
     const mins = Math.floor(elapsedTime / 60);
     const secs = elapsedTime % 60;
@@ -3158,19 +3174,12 @@ Please share payment details and license key.`;
 
     if (bestWrap) {
       if (bestSoFar) {
-        const reached = bestSoFar <= target;
-        bestWrap.style.background = reached
-          ? "rgba(5,150,105,0.12)"
-          : "rgba(230,126,34,0.12)";
-        bestWrap.style.borderColor = reached
-          ? "rgba(5,150,105,0.35)"
-          : "rgba(230,126,34,0.28)";
+        bestWrap.style.background = "rgba(5,150,105,0.12)";
+        bestWrap.style.borderColor = "rgba(5,150,105,0.35)";
         bestWrap.innerHTML = `
-          <div style="font-size:11px;color:#6b7280;">Best found</div>
-          <div style="font-size:32px;font-weight:700;color:${reached ? "#059669" : "#e67e22"};">₹${bestSoFar}</div>
-          <div style="font-size:11px;color:${reached ? "#059669" : "#6b7280"};margin-top:3px;">${
-          reached ? "✅ Target reached" : "✓ Live Meesho API"
-        }</div>`;
+          <div style="font-size:11px;color:#6b7280;line-height:1.45;padding-top:2px;">Best so far</div>
+          <div style="font-size:32px;font-weight:700;color:#059669;line-height:1.15;">₹${bestSoFar}</div>
+          <div style="font-size:11px;color:#059669;margin-top:4px;line-height:1.4;">✓ Live Meesho shipping</div>`;
       } else if (!bestWrap.querySelector("#smp-best-label")) {
         bestWrap.innerHTML = `
           <div style="font-size:28px;color:#e67e22;">🔍</div>
