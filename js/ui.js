@@ -230,6 +230,30 @@ const OptimizerUI = {
                 .session-status.ok { color: #059669; }
                 .session-status.warn { color: #b45309; }
                 .optimizer-chrome-hidden { display: none !important; }
+                .results-during-run { opacity: 1; pointer-events: auto; }
+                .processing-banner {
+                    margin-bottom: 10px;
+                    border: 1px solid #f0e0c8;
+                    border-radius: 12px;
+                    background: linear-gradient(135deg, rgba(255,215,0,0.12) 0%, rgba(255,248,238,0.95) 100%);
+                    box-shadow: 0 4px 14px rgba(196,95,18,0.1);
+                }
+                .result-card {
+                    min-width: 0;
+                }
+                .result-card-selected {
+                    border: 2px solid #e67e22 !important;
+                    background: rgba(255,215,0,0.14) !important;
+                    box-shadow: 0 0 0 2px rgba(230,126,34,0.18);
+                }
+                .result-card-hint-global {
+                    font-size: 10px;
+                    color: #6b7280;
+                    margin: 0 0 10px;
+                    text-align: center;
+                    line-height: 1.45;
+                    padding: 0 4px;
+                }
                 .category-picker-hint { font-size: 10px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
                 #category-ac-wrap { position: relative; z-index: 10000; min-height: 44px; }
                 #category-ac-wrap.category-loading { opacity: 0.72; }
@@ -616,6 +640,8 @@ const OptimizerUI = {
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
     const isBest = !!options.isBest;
     const showPerCardApply = !isWeb && !isBest && !analysisMode;
+    const vid = r.variantId || "var-" + i;
+    const isSelected = options.selectedVariantId === vid;
     const staticEst =
       r.meta?.staticEst ??
       r._frozenPricing?.estShipping ??
@@ -654,7 +680,17 @@ const OptimizerUI = {
       r.editFlags?.stickersAdded ||
       r.editFlags?.borderAdded ||
       r.editFlags?.fullDecorationsAdded;
-    const vid = r.variantId || "var-" + i;
+    const cardClass = isSelected ? "result-card result-card-selected" : "result-card";
+    const cardBorder = isSelected
+      ? "#e67e22"
+      : isBest
+      ? "#10b981"
+      : "rgba(255,255,255,0.1)";
+    const cardBg = isSelected
+      ? "rgba(255,215,0,0.14)"
+      : isBest
+      ? "rgba(16,185,129,0.15)"
+      : "rgba(255,255,255,0.03)";
     const imgSrc = staticPromoEditor
       ? r.imageUrl || OptimizerUI.pickResultImageSrc(r)
       : analysisMode
@@ -671,11 +707,7 @@ const OptimizerUI = {
       : "";
 
     return `
-                <div class="result-card" data-variant-id="${vid}" style="background:${
-                  isBest ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.03)"
-                };border:1px solid ${
-      isBest ? "#10b981" : "rgba(255,255,255,0.1)"
-    };border-radius:8px;padding:8px;text-align:center;position:relative;">
+                <div class="${cardClass}" data-variant-id="${vid}" style="background:${cardBg};border:1px solid ${cardBorder};border-radius:8px;padding:8px;text-align:center;position:relative;min-width:0;">
                     ${
                       isBest
                         ? '<div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#10b981;color:white;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;">🏆 BEST</div>'
@@ -696,11 +728,6 @@ const OptimizerUI = {
       isBest ? "4px" : "0"
     };cursor:pointer;" loading="lazy">
                     ${styleTag}
-                    ${
-                      canEdit
-                        ? `<div style="font-size:9px;color:#6b7280;margin-bottom:2px;">${staticPromoEditor ? "Tap image to edit text, colors & badges" : "Tap image to edit text & stickers"}</div>`
-                        : ""
-                    }
                     <div class="result-price-label" style="font-size:14px;font-weight:700;color:${
                       isBest ? "#10b981" : "black"
                     };">${priceLabel}</div>
@@ -851,6 +878,7 @@ const OptimizerUI = {
   getResultsHTML: function (results, options) {
     options = options || {};
     const baseline = options.baselineShipping || 0;
+    const selectedVariantId = options.selectedVariantId || null;
     const analysisPrimary = options.analysisPrimary || [];
     const hasLive = results.length > 0;
     const hasAnalysis = analysisPrimary.length > 0;
@@ -917,7 +945,7 @@ const OptimizerUI = {
           : ""
       }</div>
             </div>
-            <p style="font-size:10px;color:#6b7280;margin:0 0 10px;text-align:center;line-height:1.4;">Tap any variant to edit text, colors &amp; badges — shipping ₹ stays unchanged on save.</p>
+            <p class="result-card-hint-global">Tap a variant to select · tap image to edit text, colors &amp; badges</p>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px;max-height:480px;overflow-y:auto;">
         `;
 
@@ -925,6 +953,7 @@ const OptimizerUI = {
         html += this.renderResultCard(r, i, {
           baselineShipping: baseline,
           manualMode,
+          selectedVariantId,
           isBest:
             lowestLivePrice != null &&
             Number(r.shippingCost) === lowestLivePrice &&
@@ -962,6 +991,7 @@ const OptimizerUI = {
         html += this.renderResultCard(r, i, {
           baselineShipping: baseline,
           manualMode,
+          selectedVariantId,
           isBest: i === 0 && r.shippingCost > 0,
         });
       });
