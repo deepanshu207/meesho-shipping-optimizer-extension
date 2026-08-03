@@ -496,6 +496,16 @@ const MeeshoAPI = {
         }
         node = node.parentElement;
       }
+      if (!ctx.section) {
+        node = removeEl.parentElement;
+        for (let i = 0; i < 12 && node; i++) {
+          if (/Front\s*Image/i.test(node.textContent || "")) {
+            ctx.section = node;
+            break;
+          }
+          node = node.parentElement;
+        }
+      }
       const previewHost = removeEl.parentElement;
       if (previewHost) {
         const img = previewHost.querySelector("img[src]");
@@ -654,11 +664,28 @@ const MeeshoAPI = {
   },
 
   canApplyCatalogImage: function () {
+    if (document.querySelector("#changeFrontImage")) return true;
+    if (document.querySelector('[data-testid="removeImage"]')) return true;
+
     const ctx = this.findFrontImageUploadContext();
     if (ctx.fileInput) return true;
-    if (ctx.uploadButton && /Front\s*Image/i.test(ctx.section?.textContent || "")) {
-      return true;
+    if (ctx.removeButton) return true;
+    if (ctx.uploadButton) {
+      if (ctx.section && /Front\s*Image/i.test(ctx.section.textContent || "")) {
+        return true;
+      }
+      if (/Front\s*Image/i.test(document.body?.textContent || "")) {
+        return true;
+      }
     }
+
+    for (const img of document.querySelectorAll('img[src*="meeshosupplyassets.com"]')) {
+      if (img.closest("#opt-modal, #optimizer-app, .opt-modal")) continue;
+      const h = Number(img.getAttribute("height") || img.height || 0);
+      const w = Number(img.getAttribute("width") || img.width || 0);
+      if ((h >= 48 && h <= 120) || (w >= 48 && w <= 120)) return true;
+    }
+
     return !!this.findCatalogFileInput();
   },
 
