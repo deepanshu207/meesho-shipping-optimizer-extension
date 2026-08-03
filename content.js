@@ -450,6 +450,13 @@ class MeeshoShippingOptimizer {
 
   /** Find Meesho product image file input (legacy #changeFrontImage or new panel). */
   findMeeshoCatalogImageInput() {
+    if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.findCatalogFileInput) {
+      const input = MeeshoAPI.findCatalogFileInput();
+      if (input && !input.closest("#opt-modal, #optimizer-app, .opt-modal")) {
+        return input;
+      }
+    }
+
     const scoreInput = (input) => {
       if (!input || input.type !== "file") return -1;
       if (input.closest("#opt-modal, #optimizer-app, .opt-modal")) return -1;
@@ -504,6 +511,9 @@ class MeeshoShippingOptimizer {
   }
 
   canApplyToMeeshoPage() {
+    if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.canApplyCatalogImage) {
+      return MeeshoAPI.canApplyCatalogImage();
+    }
     return !!this.findMeeshoCatalogImageInput();
   }
 
@@ -613,7 +623,11 @@ class MeeshoShippingOptimizer {
     }
 
     const imageInput = this.findMeeshoCatalogImageInput();
-    if (!imageInput) {
+    const frontCtx =
+      typeof MeeshoAPI !== "undefined" && MeeshoAPI.findFrontImageUploadContext
+        ? MeeshoAPI.findFrontImageUploadContext()
+        : null;
+    if (!imageInput && !this.canApplyToMeeshoPage()) {
       console.log("Image input not found on page yet");
       return;
     }
@@ -669,7 +683,13 @@ class MeeshoShippingOptimizer {
     wrapper.style.margin = "10px 0";
     wrapper.appendChild(btn);
 
-    const parent = imageInput.closest("div") || imageInput.parentElement;
+    const parent =
+      imageInput?.closest("div") ||
+      imageInput?.parentElement ||
+      frontCtx?.section ||
+      frontCtx?.uploadButton?.closest("div") ||
+      document.querySelector('[data-testid="removeImage"]')?.closest(".MuiBox-root")
+        ?.parentElement;
     if (parent) {
       parent.appendChild(wrapper);
       console.log("Button added successfully");
@@ -7585,10 +7605,15 @@ Please share payment details and license key.`;
     }
 
     try {
-      const imageInput = this.findMeeshoCatalogImageInput();
+      const ctx =
+        typeof MeeshoAPI !== "undefined" && MeeshoAPI.findFrontImageUploadContext
+          ? MeeshoAPI.findFrontImageUploadContext()
+          : { fileInput: null, removeButton: null, previewImg: null };
+      let imageInput = ctx.fileInput || this.findMeeshoCatalogImageInput();
+
       if (!imageInput) {
         OptimizerUtils.showNotification(
-          "Open Add Product (image upload step) on Meesho, then tap Apply again — downloading best image for now",
+          "Open Add Product (Front Image upload) on Meesho, then tap Apply again — downloading image for now",
           "info",
           7000,
         );
@@ -7608,14 +7633,49 @@ Please share payment details and license key.`;
         type: blob.type || "image/jpeg",
       });
 
-      try {
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        imageInput.files = dt.files;
-      } catch (assignErr) {
-        console.warn("File assign failed:", assignErr);
+      const assignToInput = (input) => {
+        if (!input) return false;
+        if (
+          typeof MeeshoAPI !== "undefined" &&
+          MeeshoAPI.assignFileToCatalogInput
+        ) {
+          return MeeshoAPI.assignFileToCatalogInput(input, file);
+        }
+        try {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          return true;
+        } catch (assignErr) {
+          console.warn("File assign failed:", assignErr);
+          return false;
+        }
+      };
+
+      const previousPreview =
+        ctx.previewImg?.currentSrc || ctx.previewImg?.src || "";
+
+      let applied = assignToInput(imageInput);
+
+      if (!applied && ctx.removeButton) {
+        try {
+          ctx.removeButton.click();
+          await new Promise((r) => setTimeout(r, 700));
+          imageInput =
+            MeeshoAPI.findCatalogFileInput?.() ||
+            ctx.fileInput ||
+            this.findMeeshoCatalogImageInput();
+          applied = assignToInput(imageInput);
+        } catch (removeErr) {
+          console.warn("Remove existing image before apply failed:", removeErr);
+        }
+      }
+
+      if (!applied) {
         OptimizerUtils.showNotification(
-          "Auto-apply blocked on this browser — downloaded image instead. Upload it on Add Product step.",
+          "Auto-apply blocked on this browser — downloaded image instead. Use Upload on Front Image.",
           "info",
           7000,
         );
@@ -7623,14 +7683,33 @@ Please share payment details and license key.`;
         return;
       }
 
-      imageInput.dispatchEvent(new Event("input", { bubbles: true }));
-      imageInput.dispatchEvent(new Event("change", { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1200));
 
-      const inputId = imageInput.id;
-      if (inputId) {
-        document.querySelectorAll("label[for]").forEach((label) => {
-          if (label.htmlFor === inputId) label.click();
-        });
+      const latestCtx =
+        typeof MeeshoAPI !== "undefined" && MeeshoAPI.findFrontImageUploadContext
+          ? MeeshoAPI.findFrontImageUploadContext()
+          : ctx;
+      const newPreview =
+        latestCtx.previewImg?.currentSrc || latestCtx.previewImg?.src || "";
+      if (
+        previousPreview &&
+        newPreview &&
+        previousPreview === newPreview &&
+        ctx.removeButton
+      ) {
+        try {
+          ctx.removeButton.click();
+          await new Promise((r) => setTimeout(r, 700));
+          imageInput =
+            MeeshoAPI.findCatalogFileInput?.() ||
+            this.findMeeshoCatalogImageInput();
+          if (!assignToInput(imageInput)) {
+            throw new Error("Re-apply after remove failed");
+          }
+          await new Promise((r) => setTimeout(r, 1200));
+        } catch (retryErr) {
+          console.warn("Replace existing front image failed:", retryErr);
+        }
       }
 
       this.closeModal();

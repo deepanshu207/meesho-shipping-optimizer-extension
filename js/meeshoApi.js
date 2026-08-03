@@ -453,6 +453,242 @@ const MeeshoAPI = {
   },
 
   /** Existing product image already on the Meesho catalog page (skip re-upload when unchanged). */
+
+  /** Text node matches Meesho "Front Image" field label (new MUI panel). */
+  _isFrontImageLabelText: function (text) {
+    const t = String(text || "").trim().replace(/\s+/g, " ");
+    return t === "Front Image" || t === "Front Image *" || /^Front\s*Image\b/i.test(t);
+  },
+
+  /** Section contains Front Image label, upload control, and/or preview. */
+  _sectionLooksLikeFrontImage: function (el) {
+    if (!el?.querySelector) return false;
+    const text = el.textContent || "";
+    if (!/Front\s*Image/i.test(text)) return false;
+    return !!(
+      el.querySelector('[data-testid="removeImage"]') ||
+      el.querySelector('input[type="file"]') ||
+      [...el.querySelectorAll("button")].some((btn) =>
+        /upload/i.test((btn.textContent || "").trim()),
+      )
+    );
+  },
+
+  /** Walk ancestors to find the Front Image upload block. */
+  findFrontImageUploadContext: function (root) {
+    root = root || document;
+    const ctx = {
+      section: null,
+      fileInput: null,
+      uploadButton: null,
+      removeButton: null,
+      previewImg: null,
+    };
+
+    const removeEl = root.querySelector('[data-testid="removeImage"]');
+    if (removeEl) {
+      ctx.removeButton = removeEl;
+      let node = removeEl;
+      for (let i = 0; i < 10 && node; i++) {
+        if (this._sectionLooksLikeFrontImage(node)) {
+          ctx.section = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+      const previewHost = removeEl.parentElement;
+      if (previewHost) {
+        const img = previewHost.querySelector("img[src]");
+        if (img) ctx.previewImg = img;
+      }
+    }
+
+    if (!ctx.section) {
+      const labelCandidates = root.querySelectorAll(
+        "p, span, label, div, h1, h2, h3, h4, h5, h6",
+      );
+      for (const el of labelCandidates) {
+        if (!this._isFrontImageLabelText(el.textContent)) continue;
+        let node = el;
+        for (let i = 0; i < 10 && node; i++) {
+          if (this._sectionLooksLikeFrontImage(node)) {
+            ctx.section = node;
+            break;
+          }
+          node = node.parentElement;
+        }
+        if (ctx.section) break;
+      }
+    }
+
+    const scope = ctx.section || root;
+
+    for (const btn of scope.querySelectorAll("button")) {
+      const label = (btn.textContent || "").trim();
+      if (/^upload$/i.test(label) || /\bupload\b/i.test(label)) {
+        ctx.uploadButton = btn;
+        break;
+      }
+    }
+
+    if (!ctx.previewImg && ctx.section) {
+      for (const img of ctx.section.querySelectorAll("img[src]")) {
+        const src = img.currentSrc || img.src || "";
+        if (!src || src.startsWith("data:")) continue;
+        if (/icon|logo|badge|svg/i.test(src)) continue;
+        ctx.previewImg = img;
+        break;
+      }
+    }
+
+    const scoreInput = (input, section) => {
+      if (!input || input.type !== "file") return -1;
+      if (input.closest("#opt-modal, #optimizer-app, .opt-modal")) return -1;
+      let score = 0;
+      const id = String(input.id || "").toLowerCase();
+      const name = String(input.name || "").toLowerCase();
+      const accept = String(input.accept || "").toLowerCase();
+      if (id === "changefrontimage") score += 140;
+      if (id.includes("frontimage") || id.includes("front_image")) score += 110;
+      if (name.includes("front") && name.includes("image")) score += 105;
+      if (accept.includes("image")) score += 30;
+      if (section && section.contains(input)) score += 120;
+      if (ctx.uploadButton) {
+        const uploadRoot =
+          ctx.uploadButton.closest("label, button, div") || ctx.uploadButton;
+        if (uploadRoot.contains(input) || input.closest("label") === uploadRoot) {
+          score += 100;
+        }
+        if (
+          ctx.uploadButton.parentElement?.contains(input) ||
+          ctx.uploadButton.parentElement === input.parentElement
+        ) {
+          score += 80;
+        }
+      }
+      try {
+        if (input.offsetParent != null) score += 5;
+      } catch (e) {}
+      return score;
+    };
+
+    const inputs = new Set();
+    const collectInputs = (node) => {
+      if (!node?.querySelectorAll) return;
+      node.querySelectorAll('input[type="file"]').forEach((inp) => inputs.add(inp));
+    };
+    collectInputs(scope);
+    if (ctx.uploadButton) {
+      collectInputs(ctx.uploadButton);
+      collectInputs(ctx.uploadButton.parentElement);
+      const label = ctx.uploadButton.closest("label");
+      if (label) collectInputs(label);
+    }
+    collectInputs(root);
+
+    const ranked = [...inputs].sort(
+      (a, b) => scoreInput(b, ctx.section) - scoreInput(a, ctx.section),
+    );
+    const best = ranked[0];
+    if (best && scoreInput(best, ctx.section) > 0) {
+      ctx.fileInput = best;
+    }
+
+    return ctx;
+  },
+
+  /** Hidden file input for Meesho catalog front image (legacy + new MUI panel). */
+  findCatalogFileInput: function () {
+    const ctx = this.findFrontImageUploadContext();
+    if (ctx.fileInput) return ctx.fileInput;
+
+    const scoreInput = (input) => {
+      if (!input || input.type !== "file") return -1;
+      if (input.closest("#opt-modal, #optimizer-app, .opt-modal")) return -1;
+      let score = 0;
+      const id = String(input.id || "").toLowerCase();
+      const name = String(input.name || "").toLowerCase();
+      const accept = String(input.accept || "").toLowerCase();
+      const aria = String(input.getAttribute("aria-label") || "").toLowerCase();
+      if (id === "changefrontimage") score += 120;
+      if (id.includes("frontimage") || id.includes("front_image")) score += 90;
+      if (name.includes("front") && name.includes("image")) score += 85;
+      if (id.includes("catalog") && id.includes("image")) score += 70;
+      if (name.includes("catalog") && name.includes("image")) score += 65;
+      if (id.includes("product") && id.includes("image")) score += 60;
+      if (name.includes("product") && name.includes("image")) score += 55;
+      if (id.includes("image") || name.includes("image")) score += 35;
+      if (accept.includes("image")) score += 25;
+      if (aria.includes("image") || aria.includes("photo") || aria.includes("upload")) {
+        score += 20;
+      }
+      try {
+        const rect = input.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) score += 10;
+      } catch (e) {}
+      if (input.offsetParent != null) score += 8;
+      return score;
+    };
+
+    const inputs = new Set();
+    const collectFrom = (node) => {
+      if (!node?.querySelectorAll) return;
+      try {
+        node.querySelectorAll('input[type="file"]').forEach((el) => inputs.add(el));
+        node.querySelectorAll("*").forEach((el) => {
+          if (el.shadowRoot) collectFrom(el.shadowRoot);
+        });
+      } catch (e) {}
+    };
+
+    collectFrom(document);
+    document.querySelectorAll("iframe").forEach((frame) => {
+      try {
+        if (frame.contentDocument) collectFrom(frame.contentDocument);
+      } catch (e) {}
+    });
+
+    const ranked = [...inputs].sort((a, b) => scoreInput(b) - scoreInput(a));
+    const best = ranked[0];
+    return best && scoreInput(best) > 0 ? best : null;
+  },
+
+  canApplyCatalogImage: function () {
+    const ctx = this.findFrontImageUploadContext();
+    if (ctx.fileInput) return true;
+    if (ctx.uploadButton && /Front\s*Image/i.test(ctx.section?.textContent || "")) {
+      return true;
+    }
+    return !!this.findCatalogFileInput();
+  },
+
+  assignFileToCatalogInput: function (input, file) {
+    if (!input || !file) return false;
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      input.files = dt.files;
+    } catch (e) {
+      console.warn("File assign failed:", e);
+      return false;
+    }
+
+    try {
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
+    } catch (e) {
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const inputId = input.id;
+    if (inputId) {
+      document.querySelectorAll("label[for]").forEach((label) => {
+        if (label.htmlFor === inputId) label.click();
+      });
+    }
+    return true;
+  },
+
   detectCatalogImageUrl: function () {
     const candidates = [];
     const add = (url) => {
@@ -472,8 +708,22 @@ const MeeshoAPI = {
       }
     }
 
+    const ctx = this.findFrontImageUploadContext();
+    if (ctx.previewImg) {
+      add(ctx.previewImg.currentSrc || ctx.previewImg.src);
+      const srcset = ctx.previewImg.getAttribute("srcset");
+      if (srcset) {
+        for (const part of srcset.split(",")) {
+          const piece = part.trim().split(/\s+/)[0];
+          if (piece) add(piece);
+        }
+      }
+    }
+
     const front =
       document.querySelector("#changeFrontImage") ||
+      ctx.fileInput ||
+      this.findCatalogFileInput() ||
       [...document.querySelectorAll('input[type="file"]')].find((inp) => {
         const id = String(inp.id || "").toLowerCase();
         const name = String(inp.name || "").toLowerCase();
@@ -486,6 +736,7 @@ const MeeshoAPI = {
       }) ||
       document.querySelector('input[type="file"][accept*="image"]');
     const scope =
+      ctx.section ||
       front?.closest(
         'form, section, [class*="catalog"], [class*="upload"], [class*="image"]',
       ) || document;
@@ -529,7 +780,9 @@ const MeeshoAPI = {
       if (low.includes("icon") || low.includes("logo") || low.includes("badge")) {
         score -= 20;
       }
-      if (/\d{3,4}x\d{3,4}/.test(low)) score += 4;
+      if (low.includes("upload.meeshosupplyassets.com")) score += 15;
+      if (low.includes("meeshosupplyassets.com")) score += 12;
+      if (low.includes("meesho") || low.includes("cdnmeesho")) score += 6;
       return { url, score };
     });
     scored.sort((a, b) => b.score - a.score);
