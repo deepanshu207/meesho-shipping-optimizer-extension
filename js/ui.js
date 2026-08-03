@@ -380,25 +380,34 @@ const OptimizerUI = {
                     display: block !important;
                     width: 100% !important;
                 }
-                .result-card-actions:not(.result-card-actions-single) .result-card-save,
-                .result-card-actions:not(.result-card-actions-single) .result-card-apply {
-                    flex: 1 1 0;
-                    min-width: 0;
-                    width: auto !important;
-                    display: inline-block !important;
+                #opt-modal .result-card-actions-stacked,
+                .result-card-actions-stacked {
+                    display: flex !important;
+                    flex-direction: column !important;
+                    gap: 4px;
+                    width: 100% !important;
                 }
+                #opt-modal .result-card-actions-stacked .result-card-save,
+                #opt-modal .result-card-actions-stacked .result-card-apply,
+                .result-card-actions-stacked .result-card-save,
+                .result-card-actions-stacked .result-card-apply {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    display: block !important;
+                    flex: none !important;
+                }
+                #opt-modal .result-card-apply,
                 .result-card-apply {
-                    flex: 1 1 0;
-                    min-width: 0;
-                    background: rgba(255,255,255,0.1);
-                    color: #1f2937;
-                    border: none;
-                    padding: 8px 4px;
-                    border-radius: 6px;
+                    background: rgba(5,150,105,0.14) !important;
+                    color: #047857 !important;
+                    border: none !important;
+                    padding: 8px 4px !important;
+                    border-radius: 6px !important;
                     cursor: pointer;
-                    font-size: 11px;
-                    font-weight: 600;
-                    box-sizing: border-box;
+                    font-size: 11px !important;
+                    font-weight: 700 !important;
+                    box-sizing: border-box !important;
+                    min-height: 30px;
                 }
                 .result-card-best {
                     border-color: #10b981 !important;
@@ -800,9 +809,11 @@ const OptimizerUI = {
     const applyLabel = isWeb ? "Save" : "Apply";
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
     const isBest = !!options.isBest;
-    const showPerCardApply = !isWeb && !isBest && !analysisMode;
+    const canApplyToMeesho = !!options.canApplyToMeesho;
+    const showPerCardApply =
+      !isWeb && canApplyToMeesho && !isBest && !analysisMode;
     const actionsClass = showPerCardApply
-      ? "result-card-actions"
+      ? "result-card-actions result-card-actions-stacked"
       : "result-card-actions result-card-actions-single";
     const vid = r.variantId || "var-" + i;
     const isSelected = options.selectedVariantId === vid;
@@ -1128,6 +1139,7 @@ const OptimizerUI = {
           baselineShipping: baseline,
           manualMode,
           selectedVariantId,
+          canApplyToMeesho: !!options.canApplyToMeesho,
           isBest:
             lowestLivePrice != null &&
             Number(r.shippingCost) === lowestLivePrice &&
@@ -1166,6 +1178,7 @@ const OptimizerUI = {
           baselineShipping: baseline,
           manualMode,
           selectedVariantId,
+          canApplyToMeesho: !!options.canApplyToMeesho,
           isBest: i === 0 && r.shippingCost > 0,
         });
       });
