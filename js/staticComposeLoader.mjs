@@ -8,19 +8,21 @@ const urls = [
   "./staticFrameCompose.mjs",
 ];
 
-let loaded = false;
-for (const url of urls) {
-  try {
-    await import(url);
-    if (window.StaticFrameCompose?.composeStaticPreview) {
-      loaded = true;
-      break;
+(async () => {
+  let loaded = false;
+  for (const url of urls) {
+    try {
+      await import(url);
+      if (window.StaticFrameCompose?.composeStaticPreview) {
+        loaded = true;
+        break;
+      }
+    } catch (e) {
+      console.warn("staticComposeLoader:", url, e);
     }
-  } catch (e) {
-    console.warn("staticComposeLoader:", url, e);
   }
-}
 
-if (loaded && typeof window !== "undefined") {
-  window.dispatchEvent(new Event("static-compose-ready"));
-}
+  if (loaded && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("static-compose-ready"));
+  }
+})();
