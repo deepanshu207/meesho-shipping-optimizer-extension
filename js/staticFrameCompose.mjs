@@ -2264,6 +2264,18 @@ function snapshotDefaults(layers, style) {
         slotH: p.h,
       };
     }
+    if (layers._textOverlaysDefaults === undefined) {
+      const IG = typeof ImageGenerator !== "undefined" ? ImageGenerator : null;
+      const overlays = IG?.normalizeTextOverlays
+        ? IG.normalizeTextOverlays(layers)
+        : Array.isArray(layers._textOverlays)
+        ? layers._textOverlays
+        : [];
+      layers._textOverlaysDefaults = JSON.parse(JSON.stringify(overlays));
+    }
+    layers._staticDefaults.textOverlays = JSON.parse(
+      JSON.stringify(layers._textOverlaysDefaults || []),
+    );
   }
 }
 
