@@ -754,11 +754,6 @@ class MeeshoShippingOptimizer {
     };
 
     setTimeout(() => {
-      this.detectShipping();
-      const el = document.getElementById("current-shipping");
-      if (el && this.currentShippingCost) {
-        el.textContent = "₹" + this.currentShippingCost;
-      }
       this.syncFromMeeshoPageOnce();
     }, 150);
   }
@@ -2529,13 +2524,9 @@ Please share payment details and license key.`;
   }
 
   gatherSettings() {
-    const customText = document.getElementById("custom-text");
-    const textBgColor = document.getElementById("text-bg-color");
-
-    // Only text settings - everything else is random
     ImageGenerator.updateSettings({
-      customText: customText?.value || "",
-      textBgColor: textBgColor?.value || "#e67e22",
+      customText: "",
+      textBgColor: "#e67e22",
     });
 
     if (typeof ImageGenerator.preloadBadges === "function") {
@@ -2717,21 +2708,16 @@ Please share payment details and license key.`;
 
     if (processingArea) {
       processingArea.style.display = "block";
-      processingArea.innerHTML = this.getSmartModeHTML(
+      this.mountSmartModeProgress(processingArea, maxAttempts, targetShipping);
+      this.updateSmartModeProgressUI(
+        processingArea,
         0,
         maxAttempts,
         targetShipping,
         null,
         0,
-        0
+        0,
       );
-
-      const stopBtn = document.getElementById("stop-btn");
-      if (stopBtn)
-        stopBtn.onclick = () => {
-          console.log("⏹️ Stop");
-          this.shouldStop = true;
-        };
     }
 
     const startTime = Date.now();
@@ -2776,20 +2762,17 @@ Please share payment details and license key.`;
           (attempt, max, bestSoFar, noPidCount) => {
             if (processingArea && !this.shouldStop) {
               const elapsed = Math.floor((Date.now() - startTime) / 1000);
-              processingArea.innerHTML = this.getSmartModeHTML(
+              this.updateSmartModeProgressUI(
+                processingArea,
                 attempt,
                 max,
                 targetShipping,
                 bestSoFar,
                 noPidCount,
-                elapsed
+                elapsed,
               );
-              const stopBtn = document.getElementById("stop-btn");
-              if (stopBtn)
-                stopBtn.onclick = () => {
-                  console.log("⏹️ Stop");
-                  this.shouldStop = true;
-                };
+            } else if (processingArea && this.shouldStop) {
+              this.markSmartModeStopping(processingArea);
             }
           },
           (foundResult) => {
@@ -2824,19 +2807,17 @@ Please share payment details and license key.`;
           (attempt, max) => {
             if (processingArea && !this.shouldStop) {
               const elapsed = Math.floor((Date.now() - startTime) / 1000);
-              processingArea.innerHTML = this.getSmartModeHTML(
+              this.updateSmartModeProgressUI(
+                processingArea,
                 attempt,
                 max,
                 targetShipping,
                 null,
                 0,
-                elapsed
+                elapsed,
               );
-              const stopBtn = document.getElementById("stop-btn");
-              if (stopBtn)
-                stopBtn.onclick = () => {
-                  this.shouldStop = true;
-                };
+            } else if (processingArea && this.shouldStop) {
+              this.markSmartModeStopping(processingArea);
             }
           },
           () => this.shouldStop
@@ -2916,7 +2897,6 @@ Please share payment details and license key.`;
     if (processingArea) processingArea.style.display = "none";
 
     if (this.currentResults.length > 0) {
-      await this.prepareEditableResultPreviews(this.currentResults);
       if (resultsArea) {
         resultsArea.style.display = "block";
         delete resultsArea.dataset.view;
@@ -2927,6 +2907,12 @@ Please share payment details and license key.`;
         this.setupResultsEvents();
       }
       this.restoreOptimizerChromeAfterResults();
+      void this.prepareEditableResultPreviews(this.currentResults).then(() => {
+        if (!(this.currentResults || []).length) return;
+        const area = document.getElementById("results-area");
+        if (!area || area.style.display === "none") return;
+        this.currentResults.forEach((row) => this.refreshVariantCard(row));
+      });
     } else {
       if (resultsArea) resultsArea.style.display = "none";
       if (uploadArea) uploadArea.style.display = "block";
@@ -2949,7 +2935,126 @@ Please share payment details and license key.`;
    * Pool uses live-pattern variants only (standard generateVariation — no ultra/analysis).
    */
 
-  // Smart Mode HTML - Enhanced
+  mountSmartModeProgress(processingArea, maxAttempts, target) {
+    if (!processingArea) return null;
+    processingArea.style.display = "block";
+    let root = processingArea.querySelector("#smart-mode-progress");
+    if (!root) {
+      processingArea.innerHTML = `
+        <div id="smart-mode-progress" style="text-align:center;padding:20px;">
+          <div style="font-size:50px;margin-bottom:10px;">🎯</div>
+          <h3 style="margin:0 0 5px 0;color:#059669;font-size:18px;">Finding best shipping</h3>
+          <p id="smp-target" style="color:#1f2937;font-size:14px;margin-bottom:3px;">Target: ≤ ₹${target}</p>
+          <p id="smp-attempts" style="color:#9ca3af;font-size:11px;margin-bottom:5px;">0 / ${maxAttempts}</p>
+          <p id="smp-time" style="color:#e67e22;font-size:12px;margin-bottom:12px;">⏱️ 0s</p>
+          <div id="smp-best-wrap" style="background:rgba(230,126,34,0.12);border:1px solid rgba(230,126,34,0.28);border-radius:12px;padding:15px;margin-bottom:12px;">
+            <div style="font-size:28px;color:#e67e22;">🔍</div>
+            <div id="smp-best-label" style="font-size:11px;color:#9ca3af;margin-top:5px;">Searching…</div>
+          </div>
+          <div style="background:#f0e0c8;border-radius:10px;height:10px;margin-bottom:8px;overflow:hidden;">
+            <div id="smp-bar" style="width:0%;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);height:100%;border-radius:10px;transition:width 0.25s ease;"></div>
+          </div>
+          <div id="smp-pct" style="font-size:11px;color:#c45f12;margin-bottom:12px;">0%</div>
+          <button id="stop-btn" type="button" class="opt-btn opt-btn-danger" style="padding:10px 25px;font-size:13px;border-radius:10px;">⏹️ Stop</button>
+          <p id="smp-stopping" style="display:none;font-size:11px;color:#6b7280;margin-top:10px;">Stopping — showing results so far…</p>
+        </div>`;
+      root = processingArea.querySelector("#smart-mode-progress");
+      const stopBtn = processingArea.querySelector("#stop-btn");
+      if (stopBtn && !stopBtn.dataset.wired) {
+        stopBtn.dataset.wired = "1";
+        stopBtn.onclick = () => {
+          console.log("⏹️ Stop");
+          this.shouldStop = true;
+          this.markSmartModeStopping(processingArea);
+        };
+      }
+    }
+    const targetEl = root?.querySelector("#smp-target");
+    if (targetEl) targetEl.textContent = `Target: ≤ ₹${target}`;
+    return root;
+  }
+
+  markSmartModeStopping(processingArea) {
+    if (!processingArea) return;
+    const stopping = processingArea.querySelector("#smp-stopping");
+    const stopBtn = processingArea.querySelector("#stop-btn");
+    const label = processingArea.querySelector("#smp-best-label");
+    if (stopping) stopping.style.display = "block";
+    if (stopBtn) {
+      stopBtn.disabled = true;
+      stopBtn.style.opacity = "0.55";
+      stopBtn.style.cursor = "not-allowed";
+    }
+    if (label && label.textContent === "Searching…") {
+      label.textContent = "Wrapping up…";
+    }
+  }
+
+  updateSmartModeProgressUI(
+    processingArea,
+    attempt,
+    maxAttempts,
+    target,
+    bestSoFar,
+    noPidCount = 0,
+    elapsedTime = 0,
+  ) {
+    if (!processingArea || this.shouldStop) {
+      this.markSmartModeStopping(processingArea);
+      return;
+    }
+    this.mountSmartModeProgress(processingArea, maxAttempts, target);
+    const pct = maxAttempts > 0 ? Math.round((attempt / maxAttempts) * 100) : 0;
+    const mins = Math.floor(elapsedTime / 60);
+    const secs = elapsedTime % 60;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+    let estRemaining = "";
+    if (attempt > 0 && elapsedTime > 0) {
+      const avgPerAttempt = elapsedTime / attempt;
+      const remaining = Math.round(avgPerAttempt * (maxAttempts - attempt));
+      if (remaining > 60) estRemaining = ` • ~${Math.ceil(remaining / 60)}m left`;
+      else if (remaining > 0) estRemaining = ` • ~${remaining}s left`;
+    }
+
+    const attemptsEl = processingArea.querySelector("#smp-attempts");
+    const timeEl = processingArea.querySelector("#smp-time");
+    const barEl = processingArea.querySelector("#smp-bar");
+    const pctEl = processingArea.querySelector("#smp-pct");
+    const bestWrap = processingArea.querySelector("#smp-best-wrap");
+
+    if (attemptsEl) {
+      let text = `${attempt} / ${maxAttempts}`;
+      if (noPidCount > 0) text += ` • ${noPidCount} no PID`;
+      attemptsEl.textContent = text;
+    }
+    if (timeEl) timeEl.textContent = `⏱️ ${timeStr}${estRemaining}`;
+    if (barEl) barEl.style.width = `${pct}%`;
+    if (pctEl) pctEl.textContent = `${pct}%`;
+
+    if (bestWrap) {
+      if (bestSoFar) {
+        const reached = bestSoFar <= target;
+        bestWrap.style.background = reached
+          ? "rgba(5,150,105,0.12)"
+          : "rgba(230,126,34,0.12)";
+        bestWrap.style.borderColor = reached
+          ? "rgba(5,150,105,0.35)"
+          : "rgba(230,126,34,0.28)";
+        bestWrap.innerHTML = `
+          <div style="font-size:11px;color:#6b7280;">Best found</div>
+          <div style="font-size:32px;font-weight:700;color:${reached ? "#059669" : "#e67e22"};">₹${bestSoFar}</div>
+          <div style="font-size:11px;color:${reached ? "#059669" : "#6b7280"};margin-top:3px;">${
+          reached ? "✅ Target reached" : "✓ Live Meesho API"
+        }</div>`;
+      } else if (!bestWrap.querySelector("#smp-best-label")) {
+        bestWrap.innerHTML = `
+          <div style="font-size:28px;color:#e67e22;">🔍</div>
+          <div id="smp-best-label" style="font-size:11px;color:#9ca3af;margin-top:5px;">Searching…</div>`;
+      }
+    }
+  }
+
+  // Smart Mode HTML - legacy fallback (prefer mountSmartModeProgress)
   getSmartModeHTML(
     attempt,
     maxAttempts,
@@ -3123,14 +3228,6 @@ Please share payment details and license key.`;
   }
 
   getBaselineShipping() {
-    const el = document.getElementById("current-shipping-baseline");
-    const fromInput = parseInt(el?.value, 10);
-    if (fromInput > 0) return fromInput;
-    if (this.currentShippingCost > 0) return this.currentShippingCost;
-    if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.detectCatalogPricing) {
-      const catalog = MeeshoAPI.detectCatalogPricing();
-      if (catalog?.customerShipping > 0) return catalog.customerShipping;
-    }
     return 0;
   }
 
@@ -3212,8 +3309,9 @@ Please share payment details and license key.`;
   }
 
   restoreOptimizerChromeAfterResults() {
+    const hasResults = (this.currentResults || []).length > 0;
     document.querySelectorAll(".opt-section").forEach((s) => {
-      s.style.display = "block";
+      s.style.display = hasResults ? "none" : "block";
     });
     const previewBox = document.getElementById("preview-box");
     const previewImg = document.getElementById("preview-img");
@@ -7209,27 +7307,8 @@ Please share payment details and license key.`;
 
   stopProcessing() {
     this.shouldStop = true;
-    this.isProcessing = false;
-
-    if (this.currentResults.length > 0) {
-      const processingArea = document.getElementById("processing-area");
-      const resultsArea = document.getElementById("results-area");
-
-      this.currentResults.sort((a, b) => b.savings - a.savings);
-
-      if (processingArea) processingArea.style.display = "none";
-      if (resultsArea) {
-        resultsArea.style.display = "block";
-        resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-          this.currentResults,
-          this.getResultsViewOptions()
-        );
-        this.setupResultsEvents();
-      }
-    } else {
-      this.closeModal();
-      setTimeout(() => this.openModal(), 200);
-    }
+    const processingArea = document.getElementById("processing-area");
+    this.markSmartModeStopping(processingArea);
   }
 }
 

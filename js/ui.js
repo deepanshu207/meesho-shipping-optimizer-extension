@@ -357,7 +357,7 @@ const OptimizerUI = {
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
-                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%),rgba(230,126,34,0.1));border:1px solid rgba(16,185,129,0.3);">
+                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, rgba(255,215,0,0.14) 0%, rgba(245,166,35,0.1) 55%, rgba(230,126,34,0.08) 100%);border:1px solid #f0e0c8;">
                         <div class="opt-section-title" style="color:#c45f12;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
                         <div class="opt-row" style="margin-bottom:10px;">
                             <div>
@@ -385,11 +385,6 @@ const OptimizerUI = {
                             </div>
                         </div>
                         <div style="font-size:10px;color:#6b7280;margin-top:6px;">Live Meesho shipping checks using Target + Max Variants</div>
-                    </div>
-
-                    <div class="opt-section" style="padding:10px;">
-                        <div class="opt-section-title">✏️ Text on image (optional)</div>
-                        <input type="text" id="custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING" style="font-size:12px;">
                     </div>
 
                     <div class="opt-upload-box" id="upload-area">
@@ -491,11 +486,6 @@ const OptimizerUI = {
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
-                    <div class="opt-shipping">
-                        <div style="font-size:11px;color:#9ca3af;">Current Shipping</div>
-                        <div class="opt-shipping-value" id="current-shipping">Detecting...</div>
-                    </div>
-
                     <div class="opt-section" style="padding:12px;">
                         <div class="opt-section-title" style="display:flex;justify-content:space-between;align-items:center;">
                             <span>📁 Category (Required)</span>
@@ -520,7 +510,7 @@ const OptimizerUI = {
                         <div id="category-api-preview" style="font-size:10px;color:#9ca3af;margin-top:6px;line-height:1.4;display:none;"></div>
                     </div>
 
-                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%),rgba(230,126,34,0.1));border:1px solid rgba(16,185,129,0.3);">
+                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, rgba(255,215,0,0.14) 0%, rgba(245,166,35,0.1) 55%, rgba(230,126,34,0.08) 100%);border:1px solid #f0e0c8;">
                         <div class="opt-section-title" style="color:#c45f12;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
                         <div class="opt-row" style="margin-bottom:10px;">
                             <div>
@@ -547,14 +537,9 @@ const OptimizerUI = {
                                 </select>
                             </div>
                         </div>
-                        <div style="font-size:10px;color:#9ca3af;padding:6px;background:rgba(0,0,0,0.2);border-radius:4px;">
+                        <div style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
                             ⚡ Live Meesho shipping checks using Target + Max Variants
                         </div>
-                    </div>
-
-                    <div class="opt-section" style="padding:10px;">
-                        <div class="opt-section-title">✏️ Text (Optional)</div>
-                        <input type="text" id="custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING" style="font-size:12px;">
                     </div>
 
                     <div class="opt-upload-box" id="upload-area">
@@ -806,11 +791,6 @@ const OptimizerUI = {
                         ? `<div style="font-size:10px;color:#6b7280;margin-top:6px;">${tips}</div>`
                         : ""
                     }
-                    ${
-                      baseline > 0
-                        ? `<div style="font-size:10px;color:#666;margin-top:4px;">Your current shipping: ₹${baseline}</div>`
-                        : ""
-                    }
                 </div>
                 <div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:8px;text-align:center;">6 analysis previews — tap image for 6 edit options (remove + add)</div>
                 <div class="analysis-primary-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;max-height:480px;overflow-y:auto;">
@@ -906,22 +886,22 @@ const OptimizerUI = {
       const bestVariantId = best.variantId || "";
 
       html += `
-            <div style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:15px;margin-bottom:15px;text-align:center;">
-                <div style="font-size:11px;color:#9ca3af;">${
+            <div style="background:linear-gradient(135deg, rgba(255,215,0,0.12) 0%, rgba(5,150,105,0.1) 100%);border:1px solid #f0e0c8;border-radius:12px;padding:15px;margin-bottom:10px;text-align:center;">
+                <div style="font-size:11px;color:#6b7280;">${
                   manualMode && !bestPrice
                     ? "📝 Enter prices from Meesho"
                     : !bestPrice
                     ? "✨ Variants Generated"
                     : "🏆 Best Shipping Rate"
                 }</div>
-                <div style="font-size:28px;font-weight:700;color:#10b981;">${
+                <div style="font-size:28px;font-weight:700;color:#059669;">${
                   bestPrice
                     ? "₹" + bestPrice
                     : manualMode
                     ? testedCount + " / " + totalResults + " priced"
                     : totalResults + " ready"
                 }</div>
-                <div style="font-size:10px;color:#10b981;margin-top:2px;">${
+                <div style="font-size:10px;color:#c45f12;margin-top:2px;">${
                   manualMode
                     ? "Download → upload on Meesho → type ₹ below"
                     : bestPrice
@@ -930,17 +910,13 @@ const OptimizerUI = {
                       : "✓ Meesho price"
                     : "Tap image to preview / edit"
                 }</div>
-                ${
-                  baseline > 0
-                    ? `<div style="font-size:10px;color:#666;margin-top:4px;">Your current shipping: ₹${baseline}</div>`
-                    : ""
-                }
-                <div style="font-size:10px;color:#0f0f10;margin-top:4px;">${totalResults} live variants${
+                <div style="font-size:10px;color:#6b7280;margin-top:4px;">${totalResults} live variants${
         results.filter((r) => r.noPid).length
           ? ` · ${results.filter((r) => r.noPid).length} kept without PID`
           : ""
       }</div>
             </div>
+            <p style="font-size:10px;color:#6b7280;margin:0 0 10px;text-align:center;line-height:1.4;">Tap any variant to edit text, colors &amp; badges — shipping ₹ stays unchanged on save.</p>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:15px;max-height:480px;overflow-y:auto;">
         `;
 

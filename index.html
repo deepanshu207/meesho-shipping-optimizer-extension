@@ -344,19 +344,13 @@
 
           <div class="opt-section">
             <div class="opt-section-title">🎯 Smart Mode</div>
-            <div class="opt-row">
-              <div>
-                <label class="opt-label" for="current-shipping-baseline">Your current shipping (₹)</label>
-                <input type="number" id="current-shipping-baseline" class="opt-input" min="0" max="999" placeholder="e.g. 120">
-              </div>
-              <div style="display:flex;align-items:flex-end;padding-bottom:4px;">
-                <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
-                  <input type="checkbox" id="manual-shipping-mode" checked style="width:18px;height:18px;">
-                  Manual prices (recommended)
-                </label>
-              </div>
+            <div style="margin-bottom:10px;">
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
+                <input type="checkbox" id="manual-shipping-mode" checked style="width:18px;height:18px;">
+                Manual prices (recommended)
+              </label>
             </div>
-            <div class="opt-row" style="margin-top:10px;">
+            <div class="opt-row">
               <div>
                 <label class="opt-label" for="target-shipping">Target Shipping</label>
                 <select id="target-shipping" class="opt-select">
@@ -382,14 +376,8 @@
                 </select>
               </div>
             </div>
-            <p class="smart-mode-note">Manual mode: generate variants → download → test on Meesho → enter ₹ on each card. Best price sorts to top.</p>
+            <p class="smart-mode-note">Generate variants → download → test on Meesho → enter ₹ on each card. Tap a variant to add text in the editor.</p>
           </div>
-
-          <div class="opt-section">
-            <label class="opt-label" for="custom-text">✏️ Text on image (optional)</label>
-            <input type="text" id="custom-text" class="opt-input" placeholder="e.g. FREE SHIPPING">
-          </div>
-
 
           <div id="processing-area" style="display:none;"></div>
           <div id="results-area" style="display:none;"></div>
