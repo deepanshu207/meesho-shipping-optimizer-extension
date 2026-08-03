@@ -380,25 +380,10 @@ const OptimizerUI = {
                     display: block !important;
                     width: 100% !important;
                 }
-                .result-card-actions:not(.result-card-actions-single) .result-card-save,
-                .result-card-actions:not(.result-card-actions-single) .result-card-apply {
-                    flex: 1 1 0;
-                    min-width: 0;
-                    width: auto !important;
-                    display: inline-block !important;
-                }
-                .result-card-apply {
-                    flex: 1 1 0;
-                    min-width: 0;
-                    background: rgba(255,255,255,0.1);
-                    color: #1f2937;
-                    border: none;
-                    padding: 8px 4px;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    font-size: 11px;
-                    font-weight: 600;
-                    box-sizing: border-box;
+                .result-card-badge-spacer {
+                    display: block;
+                    height: 17px;
+                    margin: 0 auto 6px;
                 }
                 .result-card-best {
                     border-color: #10b981 !important;
@@ -796,14 +781,8 @@ const OptimizerUI = {
     const baseline = options.baselineShipping || 0;
     const manualMode = !!options.manualMode;
     const analysisMode = !!options.analysisMode || !!r.analysisMode;
-    const isWeb = !!window.WEB_OPTIMIZER_MODE;
-    const applyLabel = isWeb ? "Save" : "Apply";
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
     const isBest = !!options.isBest;
-    const showPerCardApply = !isWeb && !isBest && !analysisMode;
-    const actionsClass = showPerCardApply
-      ? "result-card-actions"
-      : "result-card-actions result-card-actions-single";
     const vid = r.variantId || "var-" + i;
     const isSelected = options.selectedVariantId === vid;
     const staticEst =
@@ -883,7 +862,7 @@ const OptimizerUI = {
                         ? '<div class="result-card-badge result-card-badge-best">🏆 BEST</div>'
                         : isRecommended
                         ? '<div class="result-card-badge result-card-badge-recommend">★ TOP</div>'
-                        : ""
+                        : '<div class="result-card-badge-spacer" aria-hidden="true"></div>'
                     }
                     <span class="result-edit-badge" data-variant-id="${vid}" style="display:${
       edited ? "block" : "none"
@@ -925,13 +904,8 @@ const OptimizerUI = {
                           }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:0;padding:4px;font-size:12px;text-align:center;box-sizing:border-box;">`
                         : ""
                     }
-                    <div class="${actionsClass}">
-                        <button type="button" class="result-card-save" data-variant-id="${vid}">Save</button>
-                        ${
-                          showPerCardApply
-                            ? `<button type="button" class="result-card-apply apply-btn" data-variant-id="${vid}">${applyLabel}</button>`
-                            : ""
-                        }
+                    <div class="result-card-actions result-card-actions-single">
+                        <button type="button" class="result-card-save" data-variant-id="${vid}" style="display:block;width:100%;max-width:100%;box-sizing:border-box;">Save</button>
                     </div>
                     </div>
                 </div>
