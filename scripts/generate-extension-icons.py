@@ -33,24 +33,42 @@ def rounded_mask(size: int, radius: int) -> Image.Image:
 
 
 def draw_package(draw: ImageDraw.ImageDraw, size: int) -> None:
+    """Shipping box with downward savings arrow (optimizer symbol)."""
     pad = size * 0.2
     left = pad
-    top = pad * 0.75
+    top = pad * 0.82
     right = size - pad
-    bottom = size - pad * (1.45 if size >= 32 else 1.2)
+    bottom = size - pad * (1.35 if size >= 32 else 1.15)
     radius = max(int(size * 0.08), 1)
 
     draw.rounded_rectangle([left, top, right, bottom], radius=radius, fill=(255, 255, 255, 250))
 
-    tape = max(1, int(size * 0.045))
-    mid_y = top + (bottom - top) * 0.4
+    tape = max(1, int(size * 0.04))
+    mid_y = top + (bottom - top) * 0.42
     draw.rectangle([left, mid_y - tape, right, mid_y + tape], fill=(*MID, 210))
     mid_x = (left + right) / 2
     draw.rectangle([mid_x - tape, top, mid_x + tape, bottom], fill=(*MID, 190))
 
+    if size >= 20:
+        cx = (left + right) / 2
+        cy = top - size * 0.08
+        r = size * 0.11
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(*SAVE_GREEN, 255))
+        stroke = max(1, int(size * 0.05))
+        draw.line([(cx, cy - r * 0.15), (cx, cy + r * 0.45)], fill=(255, 255, 255, 255), width=stroke)
+        head = r * 0.38
+        draw.polygon(
+            [
+                (cx - head, cy + r * 0.1),
+                (cx + head, cy + r * 0.1),
+                (cx, cy + r * 0.72),
+            ],
+            fill=(255, 255, 255, 255),
+        )
+
 
 def draw_savings_badge(draw: ImageDraw.ImageDraw, size: int) -> None:
-    if size < 24:
+    if size < 48:
         return
 
     pad = size * 0.16
