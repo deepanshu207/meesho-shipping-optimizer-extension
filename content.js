@@ -150,6 +150,11 @@ class MeeshoShippingOptimizer {
     this.lastDetectedCost = null;
     this.isProcessing = false;
     this.shouldStop = false;
+    this.selectedVariantId = null;
+    this._runPreviousResults = null;
+    this._runFinalizedEarly = false;
+    this._stopFinalizeTimer = null;
+    this._generationSeq = 0;
     this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
@@ -1089,9 +1094,9 @@ Please share payment details and license key.`;
           return;
         }
         if (this.isProcessing) {
-      OptimizerUtils.showNotification("Already generating — wait or tap Stop", "info");
-      return;
-    }
+          this.requestStopGeneration();
+          return;
+        }
         void this.processImage(file);
       };
 
@@ -2561,6 +2566,11 @@ Please share payment details and license key.`;
 
     this.isProcessing = false;
     this.shouldStop = false;
+    this.selectedVariantId = null;
+    this._runPreviousResults = null;
+    this._runFinalizedEarly = false;
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = null;
     this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
@@ -2635,6 +2645,78 @@ Please share payment details and license key.`;
   }
 
 
+  requestStopGeneration() {
+    if (!this.isProcessing) return;
+    this.shouldStop = true;
+    const processingArea = document.getElementById("processing-area");
+    this.markSmartModeStopping(processingArea);
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = setTimeout(() => {
+      this.forceFinishProcessing();
+    }, 2500);
+  }
+
+  forceFinishProcessing() {
+    if (!this.isProcessing) return;
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = null;
+    this._generationSeq++;
+    this._runFinalizedEarly = false;
+
+    const processingArea = document.getElementById("processing-area");
+    if (processingArea) {
+      processingArea.style.display = "none";
+      processingArea.innerHTML = "";
+    }
+
+    const resultsArea = document.getElementById("results-area");
+    if (resultsArea) resultsArea.classList.remove("results-during-run");
+
+    if (this._runPreviousResults?.length) {
+      this.currentResults = [...this._runPreviousResults];
+    }
+
+    if (resultsArea && this.currentResults.length > 0) {
+      resultsArea.style.display = "block";
+      resultsArea.innerHTML = OptimizerUI.getResultsHTML(
+        this.currentResults,
+        this.getResultsViewOptions(),
+      );
+      this.setupResultsEvents();
+      this.restoreOptimizerChromeAfterResults();
+      OptimizerUtils.showNotification(
+        "Stopped — your previous variants are still available",
+        "info",
+      );
+    } else {
+      const uploadArea = document.getElementById("upload-area");
+      if (resultsArea) resultsArea.style.display = "none";
+      if (uploadArea) uploadArea.style.display = "block";
+      document.querySelectorAll(".opt-section").forEach((s) => {
+        s.style.display = "block";
+      });
+      this.restoreOptimizerChromeAfterResults();
+      OptimizerUtils.showNotification("Stopped", "info");
+    }
+
+    this._runPreviousResults = null;
+    this.finishOptimizerRun();
+  }
+
+  selectResultVariant(variantId) {
+    if (variantId == null || variantId === "") return;
+    const vid = String(variantId);
+    if (!this.findResultRow(vid)) return;
+    if (this.selectedVariantId === vid) return;
+    this.selectedVariantId = vid;
+    document.querySelectorAll(".result-card").forEach((card) => {
+      card.classList.toggle(
+        "result-card-selected",
+        card.dataset.variantId === vid,
+      );
+    });
+  }
+
   // LIVE MODE — production generate path.
   async processImage(file, options = {}) {
     if (!file) {
@@ -2643,7 +2725,7 @@ Please share payment details and license key.`;
     }
 
     if (this.isProcessing) {
-      OptimizerUtils.showNotification("Already generating — wait or tap Stop", "info");
+      this.requestStopGeneration();
       return;
     }
 
@@ -2670,12 +2752,16 @@ Please share payment details and license key.`;
     }
 
     const manualMode = this.isManualShippingMode();
+    const runId = ++this._generationSeq;
 
     this.isProcessing = true;
     this.shouldStop = false;
+    this._runFinalizedEarly = false;
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = null;
     this.lastProcessedFile = file;
+    this._runPreviousResults = [...(this.currentResults || [])];
     this.lastLivePricedResults = [];
-    this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
     this.liveAnalysis = null;
@@ -2686,9 +2772,14 @@ Please share payment details and license key.`;
     const uploadArea = document.getElementById("upload-area");
     const sections = document.querySelectorAll(".opt-section");
     const processingArea = document.getElementById("processing-area");
+    const resultsArea = document.getElementById("results-area");
 
     if (uploadArea) uploadArea.style.display = "none";
     this.prepareOptimizerSectionsForRun();
+    if (resultsArea && this.currentResults.length > 0) {
+      resultsArea.style.display = "block";
+      resultsArea.classList.add("results-during-run");
+    }
 
     const runSettings = LiveSmart.readMainSmartModeSettings();
     const targetShipping = runSettings.targetShipping;
@@ -2708,6 +2799,7 @@ Please share payment details and license key.`;
 
     if (processingArea) {
       processingArea.style.display = "block";
+      processingArea.innerHTML = "";
       this.mountSmartModeProgress(processingArea, maxAttempts, targetShipping);
       this.updateSmartModeProgressUI(
         processingArea,
@@ -2720,7 +2812,64 @@ Please share payment details and license key.`;
       );
     }
 
+    const finishRunUi = (mappedResults) => {
+      if (runId !== this._generationSeq) return;
+      clearTimeout(this._stopFinalizeTimer);
+      this._stopFinalizeTimer = null;
+      if (processingArea) {
+        processingArea.style.display = "none";
+        processingArea.innerHTML = "";
+      }
+      if (resultsArea) resultsArea.classList.remove("results-during-run");
+
+      if (mappedResults.length > 0) {
+        this.selectedVariantId = null;
+        this.currentResults = mappedResults;
+        if (resultsArea) {
+          resultsArea.style.display = "block";
+          delete resultsArea.dataset.view;
+          resultsArea.innerHTML = OptimizerUI.getResultsHTML(
+            this.currentResults,
+            this.getResultsViewOptions(),
+          );
+          this.setupResultsEvents();
+        }
+        this.restoreOptimizerChromeAfterResults();
+        void this.prepareEditableResultPreviews(this.currentResults).then(() => {
+          if (runId !== this._generationSeq || !(this.currentResults || []).length) return;
+          const area = document.getElementById("results-area");
+          if (!area || area.style.display === "none") return;
+          this.currentResults.forEach((row) => this.refreshVariantCard(row));
+        });
+      } else if (this._runPreviousResults?.length) {
+        this.currentResults = [...this._runPreviousResults];
+        if (resultsArea) {
+          resultsArea.style.display = "block";
+          resultsArea.innerHTML = OptimizerUI.getResultsHTML(
+            this.currentResults,
+            this.getResultsViewOptions(),
+          );
+          this.setupResultsEvents();
+        }
+        this.restoreOptimizerChromeAfterResults();
+      } else {
+        if (resultsArea) resultsArea.style.display = "none";
+        if (uploadArea) uploadArea.style.display = "block";
+        sections.forEach((s) => (s.style.display = "block"));
+        this.restoreOptimizerChromeAfterResults();
+        if (window.WEB_OPTIMIZER_MODE) {
+          OptimizerUtils.showNotification(
+            "No variants generated — try another image",
+            "error",
+          );
+        }
+      }
+      this._runPreviousResults = null;
+      this.finishOptimizerRun();
+    };
+
     const startTime = Date.now();
+    let result = { success: false, results: [] };
 
     try {
       const blob = await new Promise((resolve) => {
@@ -2734,8 +2883,6 @@ Please share payment details and license key.`;
       });
 
       this.gatherSettings();
-
-      let result = { success: false, results: [] };
 
       if (
         !manualMode &&
@@ -2823,110 +2970,86 @@ Please share payment details and license key.`;
           () => this.shouldStop
         );
       }
-
-      if (result.success && result.results.length > 0) {
-        const mapped = result.results.map((r, i) =>
-          this.mapResultFromApi(r, i),
-        );
-        const framedMapped = (result.framedExtras || []).map((r, i) =>
-          this.mapResultFromApi(r, i + 10000),
-        );
-        const policy = LiveSmart.applyLiveResultPolicy(mapped);
-        this.lastLivePricedResults = [...policy.allPriced];
-        this.currentResults = policy.display;
-        this.framedExtraResults = framedMapped;
-        this.showFramedExtras = false;
-        this.liveAnalysis = null;
-        this.analysisPrimaryResults = [];
-        this.analysisExtraResults = [];
-        this.showAnalysisExtras = false;
-
-        if (policy.hiddenHighCount > 0 && shippingCap) {
-          OptimizerUtils.showNotification(
-            `Showing all variants — ${policy.hiddenHighCount} above ₹${shippingCap} cap (not in ★ recommend set)`,
-            "info",
-            5000,
-          );
-        }
-        const recPrices = (policy.recommendation?.picks || [])
-          .map((p) => `₹${p.shippingCost}`)
-          .join(" + ");
-        if (recPrices && policy.recommendation?.picks?.length) {
-          OptimizerUtils.showNotification(
-            `★ Recommended: ${recPrices} (${policy.recommendation.strategy})`,
-            "success",
-            6000,
-          );
-        }
-
-        if (result.localOnly) {
-          OptimizerUtils.showNotification(
-            manualMode
-              ? `✅ ${result.results.length} variants — download, test on Meesho, type ₹ below`
-              : `✅ ${result.results.length} variants ready — download & test on Meesho`,
-            "success"
-          );
-        } else if (result.targetReached) {
-          OptimizerUtils.showNotification(
-            `🎯 Target! ₹${result.bestResult.shippingCost}`,
-            "success"
-          );
-        } else if (this.shouldStop) {
-          OptimizerUtils.showNotification(
-            `Stopped. Best: ₹${result.bestResult?.shippingCost || "—"}`,
-            "info"
-          );
-        } else if (result.bestResult?.shippingCost) {
-          OptimizerUtils.showNotification(
-            `✅ Best: ₹${result.bestResult.shippingCost} (${result.verifiedCount || 0} verified, ${result.noPidCount || 0} no PID)`,
-            "info"
-          );
-        }
-      } else if (!window.WEB_OPTIMIZER_MODE) {
-        OptimizerUtils.showNotification(
-          `⚠️ No results yet. Try different image or check Meesho session.`,
-          "error"
-        );
-      }
     } catch (err) {
       console.error("❌ Error:", err);
       OptimizerUtils.showNotification("Error: " + err.message, "error");
     }
 
-    const resultsArea = document.getElementById("results-area");
-    if (processingArea) processingArea.style.display = "none";
-
-    if (this.currentResults.length > 0) {
-      if (resultsArea) {
-        resultsArea.style.display = "block";
-        delete resultsArea.dataset.view;
-        resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-          this.currentResults,
-          this.getResultsViewOptions()
-        );
-        this.setupResultsEvents();
+    if (this._runFinalizedEarly && runId === this._generationSeq) {
+      this._runFinalizedEarly = false;
+      if (result?.success && result.results?.length > 0) {
+        const mapped = result.results.map((r, i) => this.mapResultFromApi(r, i));
+        const policy = LiveSmart.applyLiveResultPolicy(mapped);
+        finishRunUi(policy.display);
       }
-      this.restoreOptimizerChromeAfterResults();
-      void this.prepareEditableResultPreviews(this.currentResults).then(() => {
-        if (!(this.currentResults || []).length) return;
-        const area = document.getElementById("results-area");
-        if (!area || area.style.display === "none") return;
-        this.currentResults.forEach((row) => this.refreshVariantCard(row));
-      });
-    } else {
-      if (resultsArea) resultsArea.style.display = "none";
-      if (uploadArea) uploadArea.style.display = "block";
-      sections.forEach((s) => (s.style.display = "block"));
-      this.restoreOptimizerChromeAfterResults();
-      if (window.WEB_OPTIMIZER_MODE) {
-        OptimizerUtils.showNotification(
-          "No variants generated — try another image",
-          "error"
-        );
-      }
+      return;
     }
 
-    this.finishOptimizerRun();
+    let mappedResults = [];
+    if (result.success && result.results.length > 0) {
+      const mapped = result.results.map((r, i) => this.mapResultFromApi(r, i));
+      const framedMapped = (result.framedExtras || []).map((r, i) =>
+        this.mapResultFromApi(r, i + 10000),
+      );
+      const policy = LiveSmart.applyLiveResultPolicy(mapped);
+      this.lastLivePricedResults = [...policy.allPriced];
+      mappedResults = policy.display;
+      this.framedExtraResults = framedMapped;
+      this.showFramedExtras = false;
+      this.liveAnalysis = null;
+      this.analysisPrimaryResults = [];
+      this.analysisExtraResults = [];
+      this.showAnalysisExtras = false;
+
+      if (policy.hiddenHighCount > 0 && shippingCap) {
+        OptimizerUtils.showNotification(
+          `Showing all variants — ${policy.hiddenHighCount} above ₹${shippingCap} cap (not in ★ recommend set)`,
+          "info",
+          5000,
+        );
+      }
+      const recPrices = (policy.recommendation?.picks || [])
+        .map((p) => `₹${p.shippingCost}`)
+        .join(" + ");
+      if (recPrices && policy.recommendation?.picks?.length) {
+        OptimizerUtils.showNotification(
+          `★ Recommended: ${recPrices} (${policy.recommendation.strategy})`,
+          "success",
+          6000,
+        );
+      }
+
+      if (result.localOnly) {
+        OptimizerUtils.showNotification(
+          manualMode
+            ? `✅ ${result.results.length} variants — download, test on Meesho, type ₹ below`
+            : `✅ ${result.results.length} variants ready — download & test on Meesho`,
+          "success",
+        );
+      } else if (result.targetReached) {
+        OptimizerUtils.showNotification(
+          `🎯 Target! ₹${result.bestResult.shippingCost}`,
+          "success",
+        );
+      } else if (this.shouldStop) {
+        OptimizerUtils.showNotification(
+          `Stopped. Best: ₹${result.bestResult?.shippingCost || "—"}`,
+          "info",
+        );
+      } else if (result.bestResult?.shippingCost) {
+        OptimizerUtils.showNotification(
+          `✅ Best: ₹${result.bestResult.shippingCost} (${result.verifiedCount || 0} verified, ${result.noPidCount || 0} no PID)`,
+          "info",
+        );
+      }
+    } else if (!window.WEB_OPTIMIZER_MODE) {
+      OptimizerUtils.showNotification(
+        `⚠️ No results yet. Try different image or check Meesho session.`,
+        "error",
+      );
+    }
+
+    finishRunUi(mappedResults);
   }
 
 
@@ -2938,12 +3061,13 @@ Please share payment details and license key.`;
   mountSmartModeProgress(processingArea, maxAttempts, target) {
     if (!processingArea) return null;
     processingArea.style.display = "block";
+    const compact = (this.currentResults || []).length > 0;
     let root = processingArea.querySelector("#smart-mode-progress");
     if (!root) {
       processingArea.innerHTML = `
-        <div id="smart-mode-progress" style="text-align:center;padding:20px;">
-          <div style="font-size:50px;margin-bottom:10px;">🎯</div>
-          <h3 style="margin:0 0 5px 0;color:#059669;font-size:18px;">Finding best shipping</h3>
+        <div id="smart-mode-progress" class="${compact ? "processing-banner" : ""}" style="text-align:center;padding:${compact ? "12px 14px" : "20px"};">
+          <div style="font-size:${compact ? "28px" : "50px"};margin-bottom:${compact ? "6px" : "10px"};">🎯</div>
+          <h3 style="margin:0 0 5px 0;color:#059669;font-size:${compact ? "15px" : "18px"};">${compact ? "Searching again…" : "Finding best shipping"}</h3>
           <p id="smp-target" style="color:#1f2937;font-size:14px;margin-bottom:3px;">Target: ≤ ₹${target}</p>
           <p id="smp-attempts" style="color:#9ca3af;font-size:11px;margin-bottom:5px;">0 / ${maxAttempts}</p>
           <p id="smp-time" style="color:#e67e22;font-size:12px;margin-bottom:12px;">⏱️ 0s</p>
@@ -2964,10 +3088,11 @@ Please share payment details and license key.`;
         stopBtn.dataset.wired = "1";
         stopBtn.onclick = () => {
           console.log("⏹️ Stop");
-          this.shouldStop = true;
-          this.markSmartModeStopping(processingArea);
+          this.requestStopGeneration();
         };
       }
+    } else if (root) {
+      root.classList.toggle("processing-banner", compact);
     }
     const targetEl = root?.querySelector("#smp-target");
     if (targetEl) targetEl.textContent = `Target: ≤ ₹${target}`;
@@ -3304,7 +3429,10 @@ Please share payment details and license key.`;
 
 
   finishOptimizerRun() {
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = null;
     this.isProcessing = false;
+    this.shouldStop = false;
     this.enableAllGenerateButtons();
   }
 
@@ -3350,6 +3478,7 @@ Please share payment details and license key.`;
     return {
       manualMode: this.isManualShippingMode(),
       baselineShipping: this.getBaselineShipping(),
+      selectedVariantId: this.selectedVariantId,
       framedExtras: this.framedExtraResults,
       showFramedExtras: this.showFramedExtras,
       liveAnalysis: this.liveAnalysis,
@@ -3713,13 +3842,19 @@ Please share payment details and license key.`;
   findResultRow(variantId) {
     if (variantId == null || variantId === "") return null;
     const id = String(variantId);
-    return (
-      this.currentResults.find((r) => String(r.variantId) === id) ||
-      this.framedExtraResults.find((r) => String(r.variantId) === id) ||
-      this.analysisPrimaryResults.find((r) => String(r.variantId) === id) ||
-      this.analysisExtraResults.find((r) => String(r.variantId) === id) ||
-      null
-    );
+    const pools = [
+      this.currentResults,
+      this._runPreviousResults,
+      this.framedExtraResults,
+      this.analysisPrimaryResults,
+      this.analysisExtraResults,
+    ];
+    for (const pool of pools) {
+      if (!pool?.length) continue;
+      const hit = pool.find((r) => String(r.variantId) === id);
+      if (hit) return hit;
+    }
+    return null;
   }
 
 
@@ -7090,6 +7225,22 @@ Please share payment details and license key.`;
       };
     });
 
+    document.querySelectorAll(".result-card").forEach((card) => {
+      card.style.cursor = "pointer";
+      card.onclick = (e) => {
+        if (
+          e.target.closest(
+            ".apply-btn, .dl-btn, .manual-price-input, button, input",
+          )
+        ) {
+          return;
+        }
+        const variantId = card.dataset.variantId;
+        if (!variantId) return;
+        this.selectResultVariant(variantId);
+      };
+    });
+
     document.querySelectorAll(".result-img").forEach((img) => {
       img.style.cursor = "pointer";
       img.onclick = (e) => {
@@ -7097,6 +7248,7 @@ Please share payment details and license key.`;
         e.stopPropagation();
         const variantId = img.dataset.variantId;
         if (!variantId) return;
+        this.selectResultVariant(variantId);
         const row = this.findResultRow(variantId);
         if (this.canEditResultRow(row)) {
           void this.openVariantEditor(variantId);
@@ -7116,6 +7268,7 @@ Please share payment details and license key.`;
         e.stopPropagation();
         const variantId = img.dataset.variantId;
         if (!variantId) return;
+        this.selectResultVariant(variantId);
         const row = this.findResultRow(variantId);
         if (this.canEditResultRow(row)) {
           void this.openVariantEditor(variantId);

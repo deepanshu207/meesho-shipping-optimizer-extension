@@ -1301,9 +1301,10 @@ const MeeshoAPI = {
   },
 
   /** Re-fetch getTransferPrice so UI ₹ matches live API */
-  confirmLiveShippingForResults: async function (results, onProgress) {
+  confirmLiveShippingForResults: async function (results, onProgress, shouldStopFn) {
     if (!results?.length) return results;
     for (let i = 0; i < results.length; i++) {
+      if (shouldStopFn && shouldStopFn()) break;
       const row = results[i];
       const url = row.uploadedUrl || row.pricingImageUrl;
       if (!url || String(url).startsWith("data:")) continue;
@@ -1344,11 +1345,44 @@ const MeeshoAPI = {
     if (typeof ImageGenerator !== "undefined" && ImageGenerator.preloadBadges) {
       await ImageGenerator.preloadBadges();
     }
+    if (shouldStopFn && shouldStopFn()) {
+      return {
+        success: false,
+        results: [],
+        bestResult: null,
+        targetReached: false,
+        attempts: 0,
+        noPidCount: 0,
+        verifiedCount: 0,
+      };
+    }
     if (this.preloadBadges) {
       await this.preloadBadges();
     }
+    if (shouldStopFn && shouldStopFn()) {
+      return {
+        success: false,
+        results: [],
+        bestResult: null,
+        targetReached: false,
+        attempts: 0,
+        noPidCount: 0,
+        verifiedCount: 0,
+      };
+    }
 
     const imageReuse = await this.prepareCatalogImageReuse(originalBlob);
+    if (shouldStopFn && shouldStopFn()) {
+      return {
+        success: false,
+        results: [],
+        bestResult: null,
+        targetReached: false,
+        attempts: 0,
+        noPidCount: 0,
+        verifiedCount: 0,
+      };
+    }
 
     const results = [];
     let bestResult = null;
@@ -1369,6 +1403,7 @@ const MeeshoAPI = {
 
       try {
         const variation = await this.generateVariation(originalBlob, attempt);
+        if (shouldStopFn && shouldStopFn()) break;
         if (!variation?.blob) continue;
 
         const imageUrl = await this.uploadImageForPricing(
@@ -1381,6 +1416,7 @@ const MeeshoAPI = {
             _cachedRemoteBlob: imageReuse.cachedRemoteBlob,
           },
         );
+        if (shouldStopFn && shouldStopFn()) break;
         if (!imageUrl) {
           uploadFailures++;
           const localResult = this.buildLocalSearchResult(variation, attempt, {
@@ -1399,6 +1435,7 @@ const MeeshoAPI = {
         uploadFailures = 0;
 
         const priceData = await this.getShippingCharges(imageUrl);
+        if (shouldStopFn && shouldStopFn()) break;
         if (!priceData || priceData.shippingCharges == null) {
           const localResult = this.buildLocalSearchResult(variation, attempt, {
             pricingImageUrl: imageUrl,
@@ -1458,6 +1495,7 @@ const MeeshoAPI = {
           if (onFound) onFound(result);
         }
 
+        if (shouldStopFn && shouldStopFn()) break;
         await new Promise((r) => setTimeout(r, 20));
       } catch (e) {
         console.error(`[${attempt}]`, e.message);
@@ -1474,8 +1512,8 @@ const MeeshoAPI = {
     });
 
     // Final live re-check so displayed ₹ matches getTransferPrice API
-    if (results.length) {
-      await this.confirmLiveShippingForResults(results);
+    if (results.length && !(shouldStopFn && shouldStopFn())) {
+      await this.confirmLiveShippingForResults(results, null, shouldStopFn);
     }
 
     const resultLimit = Math.min(
