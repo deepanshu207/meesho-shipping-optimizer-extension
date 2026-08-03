@@ -2047,15 +2047,28 @@ const MeeshoAPI = {
           const noBorder = noBorderCanvas.toDataURL("image/jpeg", quality);
           const stickersRendered = badgePlacements.some((p) => p.drawn);
           const customTextStamp = (() => {
-            const text =
-              typeof ImageGenerator !== "undefined" && ImageGenerator.settings?.customText
-                ? String(ImageGenerator.settings.customText).trim()
-                : "";
-            if (!text) return {};
-            return {
-              _customText: text,
-              _customTextBg: ImageGenerator.settings.textBgColor || "#e67e22",
+            if (typeof ImageGenerator === "undefined") return {};
+            const fromGlobal = String(ImageGenerator.settings?.customText || "").trim();
+            const overlays = fromGlobal
+              ? [
+                  ImageGenerator.createTextOverlay({
+                    id: "text-1",
+                    text: fromGlobal,
+                    position: ImageGenerator.settings.textPosition || "bottom",
+                    textColor: ImageGenerator.settings.textColor || "#ffffff",
+                    bgColor: ImageGenerator.settings.textBgColor || "#e67e22",
+                    fontSizePct: 100,
+                    enabled: true,
+                  }),
+                ]
+              : [];
+            if (!overlays.length) return {};
+            const stamp = {
+              _textOverlays: overlays,
+              _textOverlaysDefaults: JSON.parse(JSON.stringify(overlays)),
             };
+            ImageGenerator.syncLegacyTextFields(stamp, overlays);
+            return stamp;
           })();
 
           canvas.toBlob(

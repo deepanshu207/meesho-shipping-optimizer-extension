@@ -1583,20 +1583,13 @@ async function compressLifestyleToKb(canvas, targetKb) {
 }
 
 function applyCustomTextToCanvas(canvas, layers) {
-  const text = String(layers?._customText || "").trim();
-  if (!text || !canvas) return;
+  if (!canvas || !layers) return;
   const IG = typeof ImageGenerator !== "undefined" ? ImageGenerator : null;
-  if (!IG?.drawText) return;
+  if (!IG?.drawTextOverlays) return;
   const border = Number(layers?._staticFrame?.border) || 0;
-  const saved = {
-    customText: IG.settings.customText,
-    textBgColor: IG.settings.textBgColor,
-  };
-  IG.settings.customText = text;
-  if (layers._customTextBg) IG.settings.textBgColor = layers._customTextBg;
-  IG.drawText(canvas.getContext("2d"), canvas.width, canvas.height, border);
-  IG.settings.customText = saved.customText;
-  IG.settings.textBgColor = saved.textBgColor;
+  const overlays = IG.normalizeTextOverlays(layers);
+  if (!overlays.length) return;
+  IG.drawTextOverlays(canvas.getContext("2d"), canvas.width, canvas.height, border, overlays);
 }
 
 async function compressPreview(canvas, options = {}, layers = null) {
