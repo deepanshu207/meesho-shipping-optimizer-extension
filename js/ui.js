@@ -282,6 +282,52 @@ const OptimizerUI = {
                     overflow: visible;
                     border-radius: 10px;
                     box-shadow: 0 2px 8px rgba(61,41,20,0.06);
+                    display: flex;
+                    flex-direction: column;
+                }
+                .result-card-body {
+                    display: flex;
+                    flex-direction: column;
+                    flex: 1;
+                    min-width: 0;
+                }
+                .result-card-foot {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    margin-top: 2px;
+                }
+                .result-card-price-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    min-height: 20px;
+                    flex-wrap: nowrap;
+                }
+                .result-price-label {
+                    font-size: 16px;
+                    font-weight: 800;
+                    line-height: 1;
+                    white-space: nowrap;
+                }
+                .result-live-tag {
+                    font-size: 9px;
+                    font-weight: 700;
+                    color: #059669;
+                    background: rgba(5,150,105,0.12);
+                    padding: 2px 6px;
+                    border-radius: 999px;
+                    white-space: nowrap;
+                    line-height: 1.2;
+                    flex-shrink: 0;
+                }
+                .result-card-save {
+                    width: 100%;
+                    padding: 6px 4px !important;
+                    font-size: 10px !important;
+                    min-height: 28px;
+                    border-radius: 6px !important;
                 }
                 .result-card-best {
                     border-color: #10b981 !important;
@@ -315,6 +361,24 @@ const OptimizerUI = {
                     overflow-x: hidden;
                     padding-top: 6px;
                 }
+                .results-actions-bar {
+                    display: flex;
+                    gap: 8px;
+                    padding-bottom: 4px;
+                }
+                @media (max-width: 520px) {
+                    .results-variant-grid {
+                        grid-template-columns: repeat(2, minmax(0, 1fr));
+                        gap: 12px;
+                    }
+                    .result-card-hint-global {
+                        font-size: 11px;
+                        white-space: normal;
+                    }
+                    .results-actions-bar {
+                        padding-bottom: 72px;
+                    }
+                }
                 .result-card-selected {
                     border: 2px solid #e67e22 !important;
                     background: rgba(255,215,0,0.14) !important;
@@ -325,8 +389,11 @@ const OptimizerUI = {
                     color: #6b7280;
                     margin: 0 0 10px;
                     text-align: center;
-                    line-height: 1.45;
+                    line-height: 1.35;
                     padding: 0 4px;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
                 .category-picker-hint { font-size: 10px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
                 #category-ac-wrap { position: relative; z-index: 10000; min-height: 44px; }
@@ -740,51 +807,57 @@ const OptimizerUI = {
                       isBest
                         ? '<div class="result-card-badge result-card-badge-best">🏆 BEST</div>'
                         : isRecommended
-                        ? '<div class="result-card-badge result-card-badge-recommend">★ RECOMMEND</div>'
+                        ? '<div class="result-card-badge result-card-badge-recommend">★ TOP</div>'
                         : ""
                     }
                     <span class="result-edit-badge" data-variant-id="${vid}" style="display:${
       edited ? "block" : "none"
     };position:absolute;top:6px;right:6px;background:#e67e22;color:#fff;font-size:8px;padding:2px 5px;border-radius:4px;z-index:2;">✂️</span>
+                    <div class="result-card-body">
                     <img src="${imgSrc}" class="result-img" data-variant-id="${vid}" title="${
       canEdit
         ? staticPromoEditor
           ? "Tap to edit text, colors, zoom, pan, and badges"
           : "Tap to edit text, border & stickers"
         : "Tap to preview"
-    }" style="width:100%;height:62px;object-fit:contain;border-radius:6px;background:#f3f4f6;border:1px solid #ece7df;margin-bottom:6px;cursor:pointer;" loading="lazy">
+    }" style="width:100%;height:72px;object-fit:contain;border-radius:6px;background:#f3f4f6;border:1px solid #ece7df;margin-bottom:4px;cursor:pointer;" loading="lazy">
                     ${styleTag}
-                    <div class="result-price-label" style="font-size:15px;font-weight:800;color:${
+                    <div class="result-card-foot">
+                    <div class="result-card-price-row">
+                    <div class="result-price-label" style="color:${
                       isBest ? "#059669" : "#1f2937"
-                    };line-height:1.2;">${priceLabel}</div>
+                    };">${priceLabel}</div>
                     ${
-                      analysisMode
-                        ? '<div style="font-size:8px;color:#2563eb;font-weight:600;">static est</div>'
-                        : r.shippingCost > 0
-                        ? '<div style="font-size:8px;color:#047857;font-weight:600;">✓ live Meesho</div>'
+                      !analysisMode && r.shippingCost > 0
+                        ? '<span class="result-live-tag">live</span>'
+                        : analysisMode
+                        ? '<span class="result-live-tag" style="color:#2563eb;background:rgba(37,99,235,0.1);">est</span>'
                         : ""
                     }
+                    </div>
                     ${
                       savings > 0
-                        ? `<div style="font-size:9px;color:#10b981;">Save ₹${savings}</div>`
+                        ? `<div style="font-size:9px;color:#10b981;white-space:nowrap;">Save ₹${savings}</div>`
                         : ""
                     }
                     ${
                       manualMode
                         ? `<input type="number" class="manual-price-input opt-input" data-variant-id="${vid}" value="${
                             r.shippingCost > 0 ? r.shippingCost : ""
-                          }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:4px;padding:4px;font-size:12px;text-align:center;">`
+                          }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:0;padding:4px;font-size:12px;text-align:center;">`
                         : ""
                     }
-                    <div style="display:flex;gap:4px;margin-top:4px;">
-                        <button class="dl-btn" data-variant-id="${vid}" style="${
+                    <div style="display:flex;gap:4px;">
+                        <button class="dl-btn result-card-save" data-variant-id="${vid}" style="${
       showPerCardApply ? "flex:1;" : "width:100%;"
-    }background:rgba(230,126,34,0.15);color:#c45f12;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:9px;">Save</button>
+    }background:rgba(230,126,34,0.15);color:#c45f12;border:none;cursor:pointer;">Save</button>
                         ${
                           showPerCardApply
-                            ? `<button class="apply-btn" data-variant-id="${vid}" style="flex:1;background:rgba(255,255,255,0.1);color:white;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:9px;">${applyLabel}</button>`
+                            ? `<button class="apply-btn" data-variant-id="${vid}" style="flex:1;background:rgba(255,255,255,0.1);color:white;border:none;padding:6px 4px;border-radius:6px;cursor:pointer;font-size:10px;">${applyLabel}</button>`
                             : ""
                         }
+                    </div>
+                    </div>
                     </div>
                 </div>
             `;
@@ -971,7 +1044,7 @@ const OptimizerUI = {
           : ""
       }</div>
             </div>
-            <p class="result-card-hint-global">Tap a variant to select · tap image to edit text, colors &amp; badges</p>
+            <p class="result-card-hint-global">Tap to select · tap image to edit</p>
             <div class="results-variant-grid">
         `;
 
@@ -1063,7 +1136,7 @@ const OptimizerUI = {
       : "Apply Best Variant";
 
     html += `
-            <div style="display:flex;gap:8px;">
+            <div class="results-actions-bar">
                 <button id="apply-best-btn" class="opt-btn opt-btn-success" style="flex:1;padding:10px;">${applyLabel}</button>
                 <button id="restart-btn" class="opt-btn opt-btn-primary" style="flex:1;padding:10px;">New Search</button>
             </div>

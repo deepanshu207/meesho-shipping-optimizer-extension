@@ -472,7 +472,19 @@ const MeeshoAPI = {
       }
     }
 
-    const front = document.querySelector("#changeFrontImage");
+    const front =
+      document.querySelector("#changeFrontImage") ||
+      [...document.querySelectorAll('input[type="file"]')].find((inp) => {
+        const id = String(inp.id || "").toLowerCase();
+        const name = String(inp.name || "").toLowerCase();
+        return (
+          id.includes("frontimage") ||
+          name.includes("frontimage") ||
+          (name.includes("image") && name.includes("front")) ||
+          id.includes("catalogimage")
+        );
+      }) ||
+      document.querySelector('input[type="file"][accept*="image"]');
     const scope =
       front?.closest(
         'form, section, [class*="catalog"], [class*="upload"], [class*="image"]',

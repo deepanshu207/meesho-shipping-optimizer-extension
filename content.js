@@ -421,15 +421,90 @@ class MeeshoShippingOptimizer {
       }
     });
 
-    // Wait for page to load and add button
-    this.waitForElement("#changeFrontImage", () => {
-      console.log("Image input found, adding button");
+    // Wait for Meesho catalog file input (id varies by panel step / version)
+    this.waitForMeeshoImageInput(() => {
+      console.log("Meesho image input found, adding button");
       this.addOptimizerButton();
       this.detectShipping();
       if (!document.getElementById("opt-modal")) {
         this.scheduleMeeshoPageSync();
       }
     });
+  }
+
+  waitForMeeshoImageInput(callback, maxAttempts = 40) {
+    let attempts = 0;
+    const check = () => {
+      const input = this.findMeeshoCatalogImageInput();
+      if (input) {
+        callback(input);
+      } else if (attempts < maxAttempts) {
+        attempts++;
+        setTimeout(check, 500);
+      } else {
+        console.log("Meesho catalog file input not found after polling");
+      }
+    };
+    check();
+  }
+
+  /** Find Meesho product image file input (legacy #changeFrontImage or new panel). */
+  findMeeshoCatalogImageInput() {
+    const scoreInput = (input) => {
+      if (!input || input.type !== "file") return -1;
+      if (input.closest("#opt-modal, #optimizer-app, .opt-modal")) return -1;
+
+      let score = 0;
+      const id = String(input.id || "").toLowerCase();
+      const name = String(input.name || "").toLowerCase();
+      const accept = String(input.accept || "").toLowerCase();
+      const aria = String(input.getAttribute("aria-label") || "").toLowerCase();
+
+      if (id === "changefrontimage") score += 120;
+      if (id.includes("frontimage") || id.includes("front_image")) score += 90;
+      if (name.includes("front") && name.includes("image")) score += 85;
+      if (id.includes("catalog") && id.includes("image")) score += 70;
+      if (name.includes("catalog") && name.includes("image")) score += 65;
+      if (id.includes("product") && id.includes("image")) score += 60;
+      if (name.includes("product") && name.includes("image")) score += 55;
+      if (id.includes("image") || name.includes("image")) score += 35;
+      if (accept.includes("image")) score += 25;
+      if (aria.includes("image") || aria.includes("photo") || aria.includes("upload")) {
+        score += 20;
+      }
+      try {
+        const rect = input.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) score += 10;
+      } catch (e) {}
+      if (input.offsetParent != null) score += 8;
+      return score;
+    };
+
+    const inputs = new Set();
+    const collectFrom = (root) => {
+      if (!root?.querySelectorAll) return;
+      try {
+        root.querySelectorAll('input[type="file"]').forEach((el) => inputs.add(el));
+        root.querySelectorAll("*").forEach((el) => {
+          if (el.shadowRoot) collectFrom(el.shadowRoot);
+        });
+      } catch (e) {}
+    };
+
+    collectFrom(document);
+    document.querySelectorAll("iframe").forEach((frame) => {
+      try {
+        if (frame.contentDocument) collectFrom(frame.contentDocument);
+      } catch (e) {}
+    });
+
+    const ranked = [...inputs].sort((a, b) => scoreInput(b) - scoreInput(a));
+    const best = ranked[0];
+    return best && scoreInput(best) > 0 ? best : null;
+  }
+
+  canApplyToMeeshoPage() {
+    return !!this.findMeeshoCatalogImageInput();
   }
 
   // Wait for element to appear
@@ -467,7 +542,8 @@ class MeeshoShippingOptimizer {
       url.includes("/cataloging/") ||
       url.includes("/catalog/") ||
       url.includes("/catalogs/single/add") ||
-      document.querySelector("#changeFrontImage") !== null
+      document.querySelector("#changeFrontImage") !== null ||
+      !!this.findMeeshoCatalogImageInput?.()
     );
   }
 
@@ -516,6 +592,13 @@ class MeeshoShippingOptimizer {
     fab.onclick = () => this.openModal();
 
     document.documentElement.appendChild(fab);
+    this._optimizerFab = fab;
+  }
+
+  setOptimizerFabVisible(visible) {
+    const fab = this._optimizerFab || document.getElementById("meesho-optimizer-fab");
+    if (!fab) return;
+    fab.style.display = visible ? "flex" : "none";
   }
 
   async checkLicense() {
@@ -529,9 +612,9 @@ class MeeshoShippingOptimizer {
       return;
     }
 
-    const imageInput = document.querySelector("#changeFrontImage");
+    const imageInput = this.findMeeshoCatalogImageInput();
     if (!imageInput) {
-      console.log("Image input not found");
+      console.log("Image input not found on page yet");
       return;
     }
 
@@ -758,6 +841,7 @@ class MeeshoShippingOptimizer {
 
     this.modal.appendChild(content);
     document.documentElement.appendChild(this.modal);
+    this.setOptimizerFabVisible(false);
 
     this._categoryPageSyncedThisModal = false;
     this._categoryAcPinned = false;
@@ -816,6 +900,7 @@ class MeeshoShippingOptimizer {
       this.modal.remove();
       this.modal = null;
     }
+    this.setOptimizerFabVisible(true);
   }
 
   isCategoryAutocompleteActive() {
@@ -7341,10 +7426,16 @@ Please share payment details and license key.`;
         applyBestBtn.textContent = price ? `Download Best ₹${price}` : "Download Best";
         applyBestBtn.onclick = () => this.downloadImage(best);
       } else {
-        applyBestBtn.textContent = best?.shippingCost
-          ? `Apply Best ₹${best.shippingCost}`
-          : "Apply Best Variant";
-        applyBestBtn.onclick = () => this.applyImage(best);
+        const price = best?.shippingCost || "";
+        const canApply = this.canApplyToMeeshoPage();
+        applyBestBtn.textContent = canApply
+          ? price
+            ? `Apply Best ₹${price}`
+            : "Apply Best Variant"
+          : price
+          ? `Download Best ₹${price}`
+          : "Download Best";
+        applyBestBtn.onclick = () => void this.applyImage(best);
       }
     }
 
@@ -7427,28 +7518,91 @@ Please share payment details and license key.`;
     }
   }
 
-  async applyImage(result) {
-    try {
-      OptimizerUtils.showNotification("Applying image...", "info");
+  async resolveResultBlob(result) {
+    if (!result) return null;
 
-      const imageInput = document.querySelector("#changeFrontImage");
+    const edited =
+      this.isVariantEdited(result.editFlags, result.layers, result) ||
+      !!result._textOverlaysEdited ||
+      this.textOverlaysChanged(result);
+
+    if (edited && result.layers?._staticFrame) {
+      try {
+        const composed = await this.composeSaveForRow(result);
+        if (composed) {
+          const resp = await fetch(composed);
+          if (resp.ok) return await resp.blob();
+        }
+      } catch (e) {
+        console.warn("Compose for apply failed:", e);
+      }
+    }
+
+    if (!edited && result.blob instanceof Blob && result.blob.size > 0) {
+      return result.blob;
+    }
+
+    const url = this.resolveDownloadUrl(result);
+    if (!url) return null;
+
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error("Could not load variant image");
+    return await resp.blob();
+  }
+
+  async applyImage(result) {
+    if (!result) {
+      OptimizerUtils.showNotification("No variant selected to apply", "error");
+      return;
+    }
+
+    try {
+      const imageInput = this.findMeeshoCatalogImageInput();
       if (!imageInput) {
-        OptimizerUtils.showNotification("Image input not found", "error");
+        OptimizerUtils.showNotification(
+          "Open Add Product (image upload step) on Meesho, then tap Apply again — downloading best image for now",
+          "info",
+          7000,
+        );
+        await this.downloadImage(result);
         return;
       }
 
-      // Use the SAME image that was tested (from dataUrl)
-      // This ensures consistency between test and apply
-      const resp = await fetch(result.imageUrl);
-      const blob = await resp.blob();
+      OptimizerUtils.showNotification("Applying image to Meesho…", "info");
+
+      const blob = await this.resolveResultBlob(result);
+      if (!blob?.size) {
+        OptimizerUtils.showNotification("Could not load variant image", "error");
+        return;
+      }
+
       const file = new File([blob], "optimized-" + Date.now() + ".jpg", {
-        type: "image/jpeg",
+        type: blob.type || "image/jpeg",
       });
 
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      imageInput.files = dt.files;
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        imageInput.files = dt.files;
+      } catch (assignErr) {
+        console.warn("File assign failed:", assignErr);
+        OptimizerUtils.showNotification(
+          "Auto-apply blocked on this browser — downloaded image instead. Upload it on Add Product step.",
+          "info",
+          7000,
+        );
+        await this.downloadImage(result);
+        return;
+      }
+
+      imageInput.dispatchEvent(new Event("input", { bubbles: true }));
       imageInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+      const inputId = imageInput.id;
+      if (inputId) {
+        const label = document.querySelector(`label[for="${CSS.escape(inputId)}"]`);
+        label?.click();
+      }
 
       this.closeModal();
 
@@ -7550,5 +7704,5 @@ if (window.WEB_OPTIMIZER_MODE) {
   window.MeeshoShippingOptimizer = MeeshoShippingOptimizer;
   if (typeof initWebOptimizerButtons === "function") initWebOptimizerButtons();
 } else {
-  new MeeshoShippingOptimizer();
+  window.meeshoOptimizer = new MeeshoShippingOptimizer();
 }
