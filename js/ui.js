@@ -231,7 +231,12 @@ const OptimizerUI = {
                 .session-status.warn { color: #b45309; }
                 .optimizer-chrome-hidden { display: none !important; }
                 .category-picker-hint { font-size: 10px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
-                #category-ac-wrap { position: relative; z-index: 10000; }
+                #category-ac-wrap { position: relative; z-index: 10000; min-height: 44px; }
+                #category-ac-wrap.category-loading { opacity: 0.72; }
+                #category-ac-wrap.category-loading #category-search {
+                    background: #fff8ee;
+                    cursor: wait;
+                }
                 #category-search {
                     touch-action: manipulation;
                     -webkit-user-select: text; user-select: text;
@@ -305,6 +310,14 @@ const OptimizerUI = {
                     border-bottom: 1px solid #f0e0c8;
                 }
                 .category-ac-footer { border-bottom: none; border-top: 1px solid #f0e0c8; }
+                .category-ac-loading { font-style: italic; color: #9ca3af; }
+                .category-ac-virtual-pad {
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    border: none !important;
+                    pointer-events: none;
+                    list-style: none;
+                }
                 .category-ac-empty { padding: 12px; color: #6b7280; font-size: 12px; }
                 .opt-developer {
                     text-align: center;
@@ -496,7 +509,7 @@ const OptimizerUI = {
                         </div>
                         <input type="hidden" id="category-select" value="">
                         <p class="category-picker-hint" id="category-count-hint">Loading categories…</p>
-                        <p class="category-picker-hint">All categories listed — type to filter by name or ID</p>
+                        <p class="category-picker-hint">Type to search all categories · quick picks when empty</p>
                         <div id="category-error" style="display:none;margin-top:8px;padding:8px;background:rgba(239,68,68,0.15);border-radius:6px;border:1px solid rgba(239,68,68,0.3);">
                             <span style="font-size:11px;color:#ef4444;">⚠️ Categories not loaded. Click 🔄 Refresh or reload page.</span>
                         </div>

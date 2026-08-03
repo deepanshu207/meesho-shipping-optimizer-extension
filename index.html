@@ -131,7 +131,12 @@
     .session-status.warn { background: #fffbeb; color: #b45309; }
     .session-hint { font-size: 11px; color: #666; margin-top: 6px; line-height: 1.4; }
     .category-picker-hint { font-size: 10px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
-    #category-ac-wrap { position: relative; z-index: 10000; }
+    #category-ac-wrap { position: relative; z-index: 10000; min-height: 44px; }
+    #category-ac-wrap.category-loading { opacity: 0.72; }
+    #category-ac-wrap.category-loading #category-search {
+      background: #f9fafb;
+      cursor: wait;
+    }
     #category-search {
       touch-action: manipulation;
       -webkit-user-select: text; user-select: text;
@@ -182,6 +187,8 @@
     .category-ac-header, .category-ac-footer { padding: 8px 12px; font-size: 10px; color: #6b7280; background: #f9fafb; }
     .category-ac-header { border-bottom: 1px solid #f3f4f6; }
     .category-ac-footer { border-top: 1px solid #f3f4f6; }
+    .category-ac-loading { font-style: italic; color: #9ca3af; }
+    .category-ac-virtual-pad { padding: 0 !important; margin: 0 !important; border: none !important; pointer-events: none; list-style: none; }
     .category-ac-empty { padding: 12px; color: #6b7280; font-size: 12px; }
     .smart-mode-note {
       font-size: 11px;
@@ -322,7 +329,7 @@
             </div>
             <input type="hidden" id="category-select" value="">
             <p class="category-picker-hint" id="category-count-hint" style="font-size:10px;color:#047857;margin-top:4px;line-height:1.4;">Loading categories…</p>
-            <p class="category-picker-hint" style="font-size:10px;color:#6b7280;margin-top:4px;line-height:1.4;">All categories listed — type to filter by name or ID</p>
+            <p class="category-picker-hint" style="font-size:10px;color:#6b7280;margin-top:4px;line-height:1.4;">Type to search all categories · quick picks when empty</p>
             <div id="category-error" style="display:none;margin-top:8px;padding:8px;background:#fef2f2;border-radius:6px;border:1px solid #fecaca;">
               <span style="font-size:11px;color:#dc2626;">⚠️ Could not load categories. You can still generate variants — category is only needed for live Meesho shipping checks.</span>
             </div>
