@@ -590,11 +590,7 @@ const MeeshoAPI = {
     collectInputs(scope);
     if (ctx.uploadButton) {
       collectInputs(ctx.uploadButton);
-      let parent = ctx.uploadButton.parentElement;
-      for (let i = 0; i < 8 && parent; i++) {
-        collectInputs(parent);
-        parent = parent.parentElement;
-      }
+      collectInputs(ctx.uploadButton.parentElement);
       const label = ctx.uploadButton.closest("label");
       if (label) collectInputs(label);
     }
@@ -693,91 +689,26 @@ const MeeshoAPI = {
     return !!this.findCatalogFileInput();
   },
 
-  _isMobileBrowser: function () {
-    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-  },
-
-  _setInputFiles: function (input, file) {
+  assignFileToCatalogInput: function (input, file) {
     if (!input || !file) return false;
     try {
       const dt = new DataTransfer();
       dt.items.add(file);
       input.files = dt.files;
-      if (input.files?.length) return true;
     } catch (e) {
-      console.warn("DataTransfer file assign failed:", e);
-    }
-
-    try {
-      const fileList = {
-        0: file,
-        length: 1,
-        item: (index) => (index === 0 ? file : null),
-        [Symbol.iterator]: function* () {
-          yield file;
-        },
-      };
-      Object.defineProperty(input, "files", {
-        configurable: true,
-        enumerable: true,
-        get: () => fileList,
-      });
-      return input.files?.length > 0;
-    } catch (e2) {
-      console.warn("defineProperty files assign failed:", e2);
+      console.warn("File assign failed:", e);
       return false;
     }
-  },
 
-  _dispatchInputReactEvents: function (input) {
-    if (!input) return;
     try {
-      const tracker = input._valueTracker;
-      if (tracker && typeof tracker.setValue === "function") {
-        tracker.setValue("");
-      }
-    } catch (e) {}
-
-    const opts = { bubbles: true, cancelable: true, composed: true };
-    try {
-      input.dispatchEvent(new InputEvent("input", opts));
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
     } catch (e) {
-      input.dispatchEvent(new Event("input", opts));
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     }
-    input.dispatchEvent(new Event("change", opts));
-    input.dispatchEvent(new Event("blur", opts));
-  },
-
-  injectFileViaDrop: function (target, file) {
-    if (!target || !file) return false;
-    try {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      const types = ["dragenter", "dragover", "drop"];
-      for (const type of types) {
-        const evt = new DragEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt,
-        });
-        target.dispatchEvent(evt);
-      }
-      return true;
-    } catch (e) {
-      console.warn("Drop inject failed:", e);
-      return false;
-    }
-  },
-
-  assignFileToCatalogInput: function (input, file, options) {
-    options = options || {};
-    if (!input || !file) return false;
-    if (!this._setInputFiles(input, file)) return false;
-
-    this._dispatchInputReactEvents(input);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
     const inputId = input.id;
-    if (inputId && !options.skipLabelClick && !this._isMobileBrowser()) {
+    if (inputId) {
       document.querySelectorAll("label[for]").forEach((label) => {
         if (label.htmlFor === inputId) label.click();
       });

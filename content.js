@@ -7612,43 +7612,31 @@ Please share payment details and license key.`;
     }
 
     try {
-      // Meesho form is inert while our modal is open — mobile WebViews ignore
-      // file assignment/events on inert nodes. Restore page interactivity first.
-      this.restoreMeeshoPageInert();
-      if (this.modal) {
-        this.modal.style.pointerEvents = "none";
-        this.modal.style.opacity = "0.35";
-      }
-
       const ctx =
         typeof MeeshoAPI !== "undefined" && MeeshoAPI.findFrontImageUploadContext
           ? MeeshoAPI.findFrontImageUploadContext()
-          : { fileInput: null, removeButton: null, previewImg: null, uploadButton: null, section: null };
+          : { fileInput: null, removeButton: null, previewImg: null };
       let imageInput = ctx.fileInput || this.findMeeshoCatalogImageInput();
 
       if (!imageInput && (ctx.removeButton || ctx.uploadButton || this.canApplyToMeeshoPage())) {
         imageInput = await this.waitForMeeshoCatalogImageInput();
       }
 
-      if (!imageInput && ctx.uploadButton && typeof MeeshoAPI !== "undefined" && !MeeshoAPI._isMobileBrowser?.()) {
-        try {
-          ctx.uploadButton.click();
-          await new Promise((r) => setTimeout(r, 400));
-          imageInput =
-            MeeshoAPI.findCatalogFileInput?.() || this.findMeeshoCatalogImageInput();
-        } catch (e) {
-          console.warn("Upload button probe failed:", e);
-        }
+      if (!imageInput) {
+        OptimizerUtils.showNotification(
+          "Open Add Product (Front Image upload) on Meesho, then tap Apply again — downloading image for now",
+          "info",
+          7000,
+        );
+        await this.downloadImage(result);
+        return;
       }
+
+      OptimizerUtils.showNotification("Applying image to Meesho…", "info");
 
       const blob = await this.resolveResultBlob(result);
       if (!blob?.size) {
         OptimizerUtils.showNotification("Could not load variant image", "error");
-        if (this.modal) {
-          this.modal.style.pointerEvents = "";
-          this.modal.style.opacity = "";
-          this.inertMeeshoPageBehindModal();
-        }
         return;
       }
 
@@ -7656,38 +7644,15 @@ Please share payment details and license key.`;
         type: blob.type || "image/jpeg",
       });
 
-      if (!imageInput) {
-        OptimizerUtils.showNotification(
-          "Open Front Image on Meesho, then tap Apply again — downloading image for now",
-          "info",
-          7000,
-        );
-        await this.downloadImage(result);
-        if (this.modal) {
-          this.modal.style.pointerEvents = "";
-          this.modal.style.opacity = "";
-          this.inertMeeshoPageBehindModal();
-        }
-        return;
-      }
-
-      OptimizerUtils.showNotification("Applying image to Meesho…", "info");
-
-      const assignToInput = (input, dropTarget) => {
+      const assignToInput = (input) => {
         if (!input) return false;
         if (
           typeof MeeshoAPI !== "undefined" &&
           MeeshoAPI.assignFileToCatalogInput
         ) {
-          if (MeeshoAPI.assignFileToCatalogInput(input, file, { skipLabelClick: true })) {
-            return true;
-          }
+          return MeeshoAPI.assignFileToCatalogInput(input, file);
         }
         try {
-          if (typeof MeeshoAPI !== "undefined" && MeeshoAPI._setInputFiles?.(input, file)) {
-            MeeshoAPI._dispatchInputReactEvents?.(input);
-            return true;
-          }
           const dt = new DataTransfer();
           dt.items.add(file);
           input.files = dt.files;
@@ -7696,22 +7661,14 @@ Please share payment details and license key.`;
           return true;
         } catch (assignErr) {
           console.warn("File assign failed:", assignErr);
-          if (dropTarget && MeeshoAPI.injectFileViaDrop?.(dropTarget, file)) {
-            return true;
-          }
           return false;
         }
       };
 
-      const dropTarget =
-        ctx.section ||
-        ctx.uploadButton?.closest("div") ||
-        ctx.removeButton?.closest("div");
-
       const previousPreview =
         ctx.previewImg?.currentSrc || ctx.previewImg?.src || "";
 
-      let applied = assignToInput(imageInput, dropTarget);
+      let applied = assignToInput(imageInput);
 
       if (!applied && ctx.removeButton) {
         try {
@@ -7721,32 +7678,23 @@ Please share payment details and license key.`;
             MeeshoAPI.findCatalogFileInput?.() ||
             ctx.fileInput ||
             this.findMeeshoCatalogImageInput();
-          applied = assignToInput(imageInput, dropTarget);
+          applied = assignToInput(imageInput);
         } catch (removeErr) {
           console.warn("Remove existing image before apply failed:", removeErr);
         }
       }
 
-      if (!applied && dropTarget && MeeshoAPI.injectFileViaDrop) {
-        applied = MeeshoAPI.injectFileViaDrop(dropTarget, file);
-      }
-
       if (!applied) {
         OptimizerUtils.showNotification(
-          "Auto-apply blocked on this browser — downloaded image instead. Tap Upload on Front Image.",
+          "Auto-apply blocked on this browser — downloaded image instead. Use Upload on Front Image.",
           "info",
           7000,
         );
         await this.downloadImage(result);
-        if (this.modal) {
-          this.modal.style.pointerEvents = "";
-          this.modal.style.opacity = "";
-          this.inertMeeshoPageBehindModal();
-        }
         return;
       }
 
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1200));
 
       const latestCtx =
         typeof MeeshoAPI !== "undefined" && MeeshoAPI.findFrontImageUploadContext
@@ -7766,28 +7714,13 @@ Please share payment details and license key.`;
           imageInput =
             MeeshoAPI.findCatalogFileInput?.() ||
             this.findMeeshoCatalogImageInput();
-          if (!assignToInput(imageInput, dropTarget)) {
+          if (!assignToInput(imageInput)) {
             throw new Error("Re-apply after remove failed");
           }
-          await new Promise((r) => setTimeout(r, 1500));
+          await new Promise((r) => setTimeout(r, 1200));
         } catch (retryErr) {
           console.warn("Replace existing front image failed:", retryErr);
         }
-      }
-
-      const verifyCtx =
-        typeof MeeshoAPI !== "undefined" && MeeshoAPI.findFrontImageUploadContext
-          ? MeeshoAPI.findFrontImageUploadContext()
-          : ctx;
-      const verifyPreview =
-        verifyCtx.previewImg?.currentSrc || verifyCtx.previewImg?.src || "";
-      if (previousPreview && verifyPreview && previousPreview === verifyPreview) {
-        OptimizerUtils.showNotification(
-          "Image may not have updated — tap Upload on Front Image and pick the downloaded file",
-          "info",
-          8000,
-        );
-        await this.downloadImage(result);
       }
 
       this.closeModal();
@@ -7843,16 +7776,7 @@ Please share payment details and license key.`;
       }
     } catch (err) {
       console.error("Apply error:", err);
-      if (this.modal) {
-        this.modal.style.pointerEvents = "";
-        this.modal.style.opacity = "";
-        this.inertMeeshoPageBehindModal();
-      }
-      OptimizerUtils.showNotification(
-        "Apply failed — tap Save on the card, then Upload on Front Image",
-        "error",
-        7000,
-      );
+      OptimizerUtils.showNotification("Error applying image", "error");
     }
   }
 
