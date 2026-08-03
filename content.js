@@ -2812,7 +2812,6 @@ Please share payment details and license key.`;
         card.dataset.variantId === vid,
       );
     });
-    this.updateApplyBestButton();
   }
 
   // LIVE MODE — production generate path.
@@ -3574,7 +3573,6 @@ Please share payment details and license key.`;
       manualMode: this.isManualShippingMode(),
       baselineShipping: this.getBaselineShipping(),
       selectedVariantId: this.selectedVariantId,
-      canApplyToMeesho: this.canApplyToMeeshoPage(),
       framedExtras: this.framedExtraResults,
       showFramedExtras: this.showFramedExtras,
       liveAnalysis: this.liveAnalysis,
@@ -3840,14 +3838,6 @@ Please share payment details and license key.`;
     if (!priced.length) return list[0];
     const lowest = Math.min(...priced.map((r) => Number(r.shippingCost)));
     return priced.find((r) => Number(r.shippingCost) === lowest) || list[0];
-  }
-
-  getApplyTargetResult() {
-    if (this.selectedVariantId) {
-      const selected = this.findResultRow(this.selectedVariantId);
-      if (selected) return selected;
-    }
-    return this.getBestActiveResult();
   }
 
 
@@ -7429,47 +7419,32 @@ Please share payment details and license key.`;
       };
     }
 
-    this.updateApplyBestButton();
+    const applyBestBtn = document.getElementById("apply-best-btn");
+    if (applyBestBtn) {
+      const best = this.getBestActiveResult();
+      if (window.WEB_OPTIMIZER_MODE) {
+        const price = best?.shippingCost || best?.estShipping || "";
+        applyBestBtn.textContent = price ? `Download Best ₹${price}` : "Download Best";
+        applyBestBtn.onclick = () => this.downloadImage(best);
+      } else {
+        const price = best?.shippingCost || "";
+        const canApply = this.canApplyToMeeshoPage();
+        applyBestBtn.textContent = canApply
+          ? price
+            ? `Apply Best ₹${price}`
+            : "Apply Best Variant"
+          : price
+          ? `Download Best ₹${price}`
+          : "Download Best";
+        applyBestBtn.onclick = () => void this.applyImage(best);
+      }
+    }
 
     const restartBtn = document.getElementById("restart-btn");
     if (restartBtn) {
       restartBtn.onclick = () => {
         this.resetToUploadForm();
       };
-    }
-  }
-
-  updateApplyBestButton() {
-    const applyBestBtn = document.getElementById("apply-best-btn");
-    if (!applyBestBtn) return;
-    const target = this.getApplyTargetResult();
-    const best = this.getBestActiveResult();
-    const usingSelection =
-      !!this.selectedVariantId &&
-      target?.variantId === this.selectedVariantId &&
-      target?.variantId !== best?.variantId;
-    if (window.WEB_OPTIMIZER_MODE) {
-      const price = target?.shippingCost || target?.estShipping || "";
-      applyBestBtn.textContent = price ? `Download Best ₹${price}` : "Download Best";
-      applyBestBtn.onclick = () => this.downloadImage(target);
-      return;
-    }
-    const price = target?.shippingCost || "";
-    const canApply = this.canApplyToMeeshoPage();
-    if (canApply) {
-      applyBestBtn.textContent = usingSelection
-        ? price
-          ? `Apply Selected ₹${price}`
-          : "Apply Selected"
-        : price
-        ? `Apply Best ₹${price}`
-        : "Apply Best Variant";
-      applyBestBtn.onclick = () => void this.applyImage(target);
-    } else {
-      applyBestBtn.textContent = price
-        ? `Download Best ₹${price}`
-        : "Download Best";
-      applyBestBtn.onclick = () => this.downloadImage(target);
     }
   }
 
