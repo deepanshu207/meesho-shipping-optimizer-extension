@@ -1,110 +1,7 @@
 // Meesho Shipping Optimizer v6.0.0 - Main Entry Point
 
-// ─── Local Price Database ───────────────────────────────────────────────────
-// Accumulates past report/CSV results in localStorage to estimate best local
-// shipping without a live Meesho API call.
-function parseReportCsvInline(text) {
-  const lines = String(text || "")
-    .split(/\r?\n/)
-    .filter((l) => l.trim());
-  if (!lines.length) return { variants: [], meta: {}, tiers: [] };
-
-  const parseCsvLine = (line) => {
-    const out = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"' && line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else if (ch === '"') {
-          inQuotes = false;
-        } else {
-          cur += ch;
-        }
-      } else if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === ",") {
-        out.push(cur);
-        cur = "";
-      } else {
-        cur += ch;
-      }
-    }
-    out.push(cur);
-    return out;
-  };
-
-  const header = parseCsvLine(lines[0]);
-  const idx = (name) => header.indexOf(name);
-  const variants = [];
-  const meta = {};
-  const tiers = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const row = parseCsvLine(lines[i]);
-    const type = row[idx("record_type")];
-    if (type === "META") {
-      meta[row[idx("key")]] = row[idx("value")];
-    } else if (type === "VARIANT") {
-      const recommended = row[idx("recommended")] === "true";
-      variants.push({
-        variantId: row[idx("variant_id")],
-        name: row[idx("name")],
-        shippingCost: Number(row[idx("shipping_inr")]) || 0,
-        estShipping: Number(row[idx("est_inr")]) || 0,
-        isVerified: row[idx("verified")] === "true",
-        liveVerified: row[idx("live_verified")] === "true",
-        duplicatePid: row[idx("duplicate_pid")] || "",
-        noPid: row[idx("no_pid")] === "true",
-        variantStyle: row[idx("variant_style")],
-        recommended,
-        meta: {
-          path: row[idx("path")],
-          kb: row[idx("kb")],
-          width: row[idx("width")],
-          height: row[idx("height")],
-          borderPx: row[idx("border_px")] || "",
-          badgeCount: row[idx("badge_count")] || "",
-          recommended,
-        },
-      });
-    } else if (type === "PRICE_TIER") {
-      tiers.push({
-        variantId: row[idx("variant_id")],
-        name: row[idx("name")],
-        price: Number(row[idx("shipping_inr")]) || 0,
-        gapToNext: row[idx("gap_to_next")],
-        count: Number(row[idx("tier_count")]) || 0,
-      });
-    }
-  }
-
-  const uniquePrices = (meta.unique_prices || "")
-    .split("|")
-    .filter(Boolean)
-    .map(Number)
-    .filter((p) => p > 0);
-  const recommendedPrices = (meta.recommended_prices || "")
-    .split("|")
-    .filter(Boolean)
-    .map(Number)
-    .filter((p) => p > 0);
-
-  return {
-    variants,
-    meta,
-    tiers,
-    strategy: meta.strategy || "",
-    strategyReason: meta.strategy_reason || "",
-    uniquePrices,
-    recommendedPrices,
-  };
-}
-
-function pickLocalStrategy(prices) {
+// ─── Live Smart helpers (recommend ★ from current run only) ─────────────────
+function pickLiveStrategy(prices) {
   const sorted = [...new Set(prices.filter((p) => p > 0))].sort((a, b) => a - b);
   if (!sorted.length) {
     return { strategy: "none", recommendedPrices: [], reason: "No price data." };
@@ -114,506 +11,40 @@ function pickLocalStrategy(prices) {
     return {
       strategy: "rupee_pair",
       recommendedPrices: [lowest, lowest + 1],
-      reason: `₹1 pair at floor — ₹${lowest} & ₹${lowest + 1} (lowest tiers).`,
+      reason: `₹1 pair at floor — ₹${lowest} & ₹${lowest + 1}.`,
     };
   }
   return {
     strategy: "single_lowest",
     recommendedPrices: [lowest],
-    reason: `No ₹1 gap at floor (${sorted.join(", ")}) — recommend only ₹${lowest}.`,
+    reason: `Recommend only ₹${lowest}.`,
   };
 }
 
-/** Empirical KB when CSV/seed rows lack file-size (not injected onto live-verified variants). */
-const LOCAL_TIER_KB_FALLBACK = {
-  "10004": { 59: 52, 60: 53 },
-};
-
-/** Standard live generate border spread — pink kurti path when session has no border metadata. */
-const LIVE_STANDARD_BORDER_MIN = 20;
-const LIVE_STANDARD_BORDER_MAX = 55;
-
-const LocalPriceDB = {
-  KEY: "meesho_local_price_db",
-  REPORTS_KEY: "meesho_local_price_reports",
-  FINGERPRINTS_KEY: "meesho_local_price_fingerprints",
-  SEEDED_KEY: "meesho_local_price_seeded",
-  SEED_VERSION: 2,
-  SEED_VERSION_KEY: "meesho_local_price_seed_version",
-  MAX_ENTRIES: 200,
-  MAX_REPORTS: 50,
-  MAX_FINGERPRINTS: 500,
-  PICK_COUNT_MIN: 2,
-  PICK_COUNT_MAX: 10,
-  PICK_COUNT_DEFAULT: 2,
-
-  /** KB/border profile only when this category+tier was live-tested (fingerprints/history). */
-  getEmpiricalTierProfile(catId, tierPrice) {
-    const tier = Number(tierPrice);
-    const id = String(catId || "");
-    if (!tier || !id) return null;
-    const stats = this.getTierLearnedStats(id, tier);
-    if (!stats) return null;
-
-    const fps = this._readFingerprints().filter(
-      (f) => f.cat === id && Number(f.shipping) === tier,
+const LiveSmart = {
+  readMainSmartModeSettings() {
+    const targetShipping =
+      parseInt(document.getElementById("target-shipping")?.value, 10) || 80;
+    const maxAttempts = Math.min(
+      Math.max(
+        parseInt(document.getElementById("max-attempts")?.value, 10) || 80,
+        1,
+      ),
+      200,
     );
-    const kbs = fps.map((f) => Number(f.kb)).filter((k) => k > 0);
-    const anchorKb =
-      stats.medianKb ||
-      (kbs.length ? kbs.sort((a, b) => a - b)[Math.floor(kbs.length / 2)] : null);
-
-    const borders = fps
-      .map((f) => Number(f.borderPx))
-      .filter((b) => b > 0);
-    const medianBorder =
-      stats.medianBorder ||
-      (borders.length
-        ? borders.sort((a, b) => a - b)[Math.floor(borders.length / 2)]
-        : null);
-    const maxKb = anchorKb
-      ? Math.min(Math.ceil(anchorKb * 1.12), anchorKb + 6)
-      : null;
-    const borderMax = medianBorder || null;
-    const borderMin = borderMax ? Math.max(8, borderMax - 6) : null;
-
     return {
-      anchorKb: anchorKb || null,
-      maxKb,
-      borderMin,
-      borderMax,
-      badgeCount: 0,
-      liveTested: true,
+      purpose: "main",
+      targetShipping,
+      maxAttempts,
+      maxShippingCap: targetShipping,
     };
   },
 
-  /** Category has live-learned reports, history, or fingerprints (price tiers from Meesho). */
-  hasCategoryLiveLearn(catId) {
-    const id = String(catId || "");
-    if (!id) return false;
-    const profile = this.getCategoryProfile(id);
-    if (!profile.hasData) return false;
-    const fps = this._readFingerprints().filter((f) => f.cat === id);
-    if (fps.length) return true;
-    const entries = this._read().filter((e) => e.cat === id);
-    return entries.length > 0;
-  },
-
-  hasLiveTierLearned(catId, tierPrice) {
-    return this.getTierLearnedStats(catId, tierPrice) != null;
-  },
-
-  tierKbFallback(catId, tierPrice) {
-    const id = String(catId || "");
-    const tier = Number(tierPrice);
-    if (!id || !tier) return null;
-    const map = LOCAL_TIER_KB_FALLBACK[id];
-    if (map?.[tier] > 0) return map[tier];
-    const floor = this.resolveLearnedTier(id);
-    if (floor && tier === floor + 1 && map?.[floor]) return map[floor] + 1;
-    return null;
-  },
-
-  /** Priced variants within recommend cap (e.g. ≤₹60 when pair is 59+60). */
-  filterFloorBandPriced(priced, catId) {
-    const cap = this.getShippingCap(catId);
-    if (cap == null) return priced || [];
-    return (priced || []).filter(
-      (v) =>
-        Number(v.shippingCost) > 0 && Number(v.shippingCost) <= Number(cap),
-    );
-  },
-
-  isWithinFloorBand(shippingInr, catId) {
-    const ship = Number(shippingInr);
-    if (ship <= 0) return false;
-    const cap = this.getShippingCap(catId);
-    const floor = this.resolveLearnedTier(catId);
-    if (cap != null && ship > cap) return false;
-    if (floor > 0 && ship < floor) return false;
-    return true;
-  },
-
-  /** Learned refs at floor tiers — used when session live run is high slab (₹68). */
-  getCategoryFloorRefs(catId) {
-    const id = String(catId || "");
-    if (!id) return [];
-    const profile = this.getCategoryProfile(id);
-    const floor = this.resolveLearnedTier(id, profile);
-    const cap = this.getShippingCap(id) || floor;
-    const tierSet = new Set(
-      (profile.recommendedPrices || [])
-        .map((p) => Number(p))
-        .filter((p) => p > 0 && p <= cap),
-    );
-    if (floor > 0) tierSet.add(floor);
-    if (!tierSet.size) return [];
-
-    const fps = this._readFingerprints().filter(
-      (f) => f.cat === id && tierSet.has(Number(f.shipping)),
-    );
-    const entries = this._read().filter(
-      (e) => e.cat === id && tierSet.has(Number(e.price)),
-    );
-
-    const refs = [];
-    const seen = new Set();
-    const pushRef = (ship, kb, borderPx, variantId, name, source) => {
-      const kbNum = Number(kb) || this.tierKbFallback(id, ship) || 0;
-      const borderNum = Number(borderPx) || 0;
-      const key = `${ship}:${kbNum}:${borderNum}:${variantId || name}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      refs.push({
-        variantId: variantId || `learned-${ship}-${refs.length}`,
-        name: name || `Learned ₹${ship}`,
-        shippingCost: Number(ship),
-        variantStyle: "standard",
-        liveVerified: false,
-        isVerified: false,
-        recommended: (profile.recommendedPrices || []).includes(Number(ship)),
-        categoryLearned: true,
-        meta: {
-          path: "standard",
-          style: "standard",
-          kb: kbNum,
-          borderPx: borderNum || undefined,
-          categoryLearned: true,
-          source,
-        },
-      });
-    };
-
-    fps.forEach((f) => {
-      pushRef(
-        f.shipping,
-        f.kb,
-        f.borderPx,
-        f.variantId,
-        f.name,
-        f.source || "fingerprint",
-      );
-    });
-    entries.forEach((e) => {
-      pushRef(e.price, e.kb, e.borderPx, e.variantId, e.name, "history");
-    });
-
-    if (!refs.length && floor > 0) {
-      tierSet.forEach((tier) => {
-        const fb = this.tierKbFallback(id, tier);
-        if (fb) pushRef(tier, fb, 22, "", "", "fallback");
-      });
-    }
-
-    return refs.sort(
-      (a, b) => Number(a.shippingCost) - Number(b.shippingCost),
-    );
-  },
-
-  /** Rotating border/KB profiles for local pool — spreads options in floor band. */
-  getFloorBandGenerationProfiles(catId, sessionRefs = null) {
-    const id = String(catId || "");
-    const session = (sessionRefs || []).filter(
-      (r) =>
-        !r.categoryLearned &&
-        Number(r.shippingCost) > 0 &&
-        (r.liveVerified || r.isVerified || this.variantKb(r) > 0),
-    );
-    if (session.length) {
-      const profiles = [];
-      const seen = new Set();
-      session.forEach((r) => {
-        const border = Number(r.meta?.borderPx || 0);
-        const minB =
-          border > 0
-            ? Math.max(8, border - 4)
-            : LIVE_STANDARD_BORDER_MIN;
-        const maxB =
-          border > 0 ? border + 4 : LIVE_STANDARD_BORDER_MAX;
-        const key = `${minB}-${maxB}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        profiles.push({
-          tier: Number(r.shippingCost),
-          borderMin: minB,
-          borderMax: maxB,
-          anchorKb: this.variantKb(r),
-          badgeCount: Number(r.meta?.badgeCount ?? 0),
-          fromSession: true,
-        });
-      });
-      if (profiles.length) return profiles;
-    }
-
-    const profile = this.getCategoryProfile(id);
-    const floor = this.resolveLearnedTier(id, profile);
-    const cap = this.getShippingCap(id) || floor;
-    const tiers =
-      profile.recommendedPrices?.length
-        ? profile.recommendedPrices
-            .map((p) => Number(p))
-            .filter((p) => p > 0 && p <= cap)
-        : floor > 0
-          ? [floor]
-          : [];
-    if (!tiers.length) return [];
-
-    const profiles = [];
-    const seen = new Set();
-
-    tiers.forEach((tier) => {
-      const stats = this.getTierLearnedStats(id, tier);
-      const tierProf = this.getEmpiricalTierProfile(id, tier);
-      const anchorKb =
-        stats?.medianKb ||
-        tierProf?.anchorKb ||
-        this.tierKbFallback(id, tier) ||
-        null;
-      const borderMax = stats?.medianBorder ?? tierProf?.borderMax ?? 24;
-      const borderMin =
-        tierProf?.borderMin ??
-        (borderMax ? Math.max(8, borderMax - 6) : LIVE_STANDARD_BORDER_MIN);
-      const borderMaxResolved =
-        borderMax || LIVE_STANDARD_BORDER_MAX;
-
-      const addProfile = (minB, maxB) => {
-        const key = `${tier}:${minB}-${maxB}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        profiles.push({
-          tier,
-          borderMin: minB,
-          borderMax: maxB,
-          anchorKb,
-          badgeCount: tierProf?.badgeCount ?? 0,
-        });
-      };
-
-      addProfile(borderMin, borderMaxResolved);
-      if (borderMaxResolved - borderMin >= 4) {
-        const mid = Math.round((borderMin + borderMaxResolved) / 2);
-        addProfile(
-          Math.max(8, mid - 2),
-          Math.min(mid + 2, borderMaxResolved + 2),
-        );
-      }
-    });
-
-    if (!profiles.length && floor > 0) {
-      profiles.push({
-        tier: floor,
-        borderMin: LIVE_STANDARD_BORDER_MIN,
-        borderMax: LIVE_STANDARD_BORDER_MAX,
-        anchorKb: this.tierKbFallback(id, floor),
-        badgeCount: 0,
-      });
-    }
-
-    return profiles;
-  },
-
-  enrichVariantFromLiveTier(v, catId = "") {
-    if (!v) return v;
-    // Never fabricate KB/border on Meesho-verified live rows — avoids steering pink kurti wrong.
-    if (v.liveVerified || v.isVerified) {
-      return v;
-    }
-    const ship = Number(v.shippingCost || 0);
-    const prof =
-      ship > 0 && catId
-        ? this.getEmpiricalTierProfile(catId, ship)
-        : null;
-    const kb = this.variantKb(v);
-    if (prof) {
-      v.meta = { ...(v.meta || {}) };
-      if (!kb && prof.anchorKb) {
-        v.meta.kb = prof.anchorKb;
-        v.meta.kbFromLiveLearn = true;
-      }
-      if (!v.meta.borderPx && prof.borderMax) {
-        v.meta.borderPx = prof.borderMax;
-      }
-      if (v.meta.badgeCount == null && prof.badgeCount != null) {
-        v.meta.badgeCount = prof.badgeCount;
-      }
-    }
-    return v;
-  },
-
-  _read() {
-    try {
-      return JSON.parse(localStorage.getItem(this.KEY) || "[]");
-    } catch {
-      return [];
-    }
-  },
-
-  _write(entries) {
-    try {
-      localStorage.setItem(this.KEY, JSON.stringify(entries.slice(-this.MAX_ENTRIES)));
-    } catch {}
-  },
-
-  _readReports() {
-    try {
-      return JSON.parse(localStorage.getItem(this.REPORTS_KEY) || "[]");
-    } catch {
-      return [];
-    }
-  },
-
-  _writeReports(reports) {
-    try {
-      localStorage.setItem(
-        this.REPORTS_KEY,
-        JSON.stringify(reports.slice(-this.MAX_REPORTS)),
-      );
-    } catch {}
-  },
-
-  _readFingerprints() {
-    try {
-      return JSON.parse(localStorage.getItem(this.FINGERPRINTS_KEY) || "[]");
-    } catch {
-      return [];
-    }
-  },
-
-  _writeFingerprints(rows) {
-    try {
-      localStorage.setItem(
-        this.FINGERPRINTS_KEY,
-        JSON.stringify(rows.slice(-this.MAX_FINGERPRINTS)),
-      );
-    } catch {}
-  },
-
-  _variantFingerprint(v, catId, source = "run", tierPrice = 0) {
-    const est = this.estOf(v);
-    const ship = Number(tierPrice || v.shippingCost || 0);
-    let kb =
-      Number(v.meta?.kb || v.meta?.actualKb || 0) ||
-      (v.blob?.size ? Math.ceil(v.blob.size / 1024) : 0);
-    if (!kb && ship > 0) {
-      const src = String(source || "");
-      if (src === "fallback" || src.startsWith("csv")) {
-        kb = this.tierKbFallback(catId, ship) || 0;
-      }
-    }
-    return {
-      cat: String(catId || ""),
-      shipping: ship,
-      est,
-      kb,
-      width: v.meta?.width || v.meta?.canvasW || "",
-      height: v.meta?.height || v.meta?.canvasH || "",
-      borderPx: v.meta?.borderPx ?? "",
-      style: v.variantStyle || v.meta?.style || v.meta?.path || "",
-      path: v.meta?.path || "",
-      name: v.name || "",
-      variantId: v.variantId || "",
-      recommended: !!v.recommended || !!v.meta?.recommended || !!v.localRecommended,
-      source,
-      ts: Date.now(),
-    };
-  },
-
-  /** Learn from lowest-shipping variants you import or save (CSV / live). */
-  saveFingerprints(variants, catId, source = "run", tierPrice = 0) {
-    if (!variants?.length || !catId) return;
-    const fps = this._readFingerprints();
-    variants.forEach((v) => {
-      const fp = this._variantFingerprint(v, catId, source, tierPrice || v.shippingCost);
-      if (fp.shipping > 0 || fp.est < 900) fps.push(fp);
-    });
-    this._writeFingerprints(fps);
-  },
-
-  getEffectiveTarget(catId, userTarget) {
-    const cap = this.getShippingCap(catId);
-    const user = Number(userTarget) || 80;
-    if (cap != null) return Math.min(user, cap);
-    return user;
-  },
-
-  /**
-   * Profile from current live session prices — overrides merged category seed when
-   * this image has floor winners (pink ₹59 single_lowest). Returns null when session
-   * is high-slab only (lavender ₹68) so category floor band applies.
-   */
-  buildSessionProfile(catId, sessionPrices) {
-    const prices = [...new Set((sessionPrices || []).filter((p) => p > 0))].sort(
-      (a, b) => a - b,
-    );
-    if (!prices.length) return null;
-    const sessionPick = pickLocalStrategy(prices);
-    const categoryProfile = this.getCategoryProfile(catId);
-    const learnedFloor = this.resolveLearnedTier(catId, categoryProfile);
-    if (learnedFloor > 0 && prices[0] > learnedFloor) return null;
-    return {
-      categoryId: String(catId || ""),
-      tiers: prices,
-      tierCounts: {},
-      strategy: sessionPick.strategy,
-      strategyReason: sessionPick.reason,
-      recommendedPrices: sessionPick.recommendedPrices,
-      runCount: 0,
-      hasData: true,
-      latestReportTs: 0,
-      fromSession: true,
-    };
-  },
-
-  /**
-   * Lavender path: live run is mostly high-slab (₹68) with only a few floor winners.
-   * Use category floor band (₹59+₹60) for local generate — not session rupee_pair built
-   * from mixed prices. Pink path: session single_lowest stays on session profile.
-   */
-  shouldUseCategoryFloorBandLocal(catId, sessionPrices, pricedRows = null) {
-    const categoryProfile = this.getCategoryProfile(catId);
-    const sessionProfile = this.buildSessionProfile(catId, sessionPrices);
-    if (sessionProfile?.strategy === "single_lowest") return false;
-
-    const cap = this.getShippingCap(catId, categoryProfile);
-    if (cap == null) return false;
-
-    let floorCount = 0;
-    let highCount = 0;
-    const rows = pricedRows?.length ? pricedRows : null;
-    if (rows) {
-      for (const r of rows) {
-        const ship = Number(r.shippingCost);
-        if (ship <= 0) continue;
-        if (ship <= cap) floorCount++;
-        else highCount++;
-      }
-    } else {
-      const prices = [...new Set((sessionPrices || []).filter((p) => p > 0))];
-      for (const p of prices) {
-        if (p <= cap) floorCount++;
-        else highCount++;
-      }
-    }
-
-    if (highCount === 0) return false;
-    if (floorCount === 0) return true;
-    return highCount > floorCount;
-  },
-
-  /** Max live ₹ to show/recommend for this category (e.g. 60 when pair is 59+60). */
-  getShippingCap(catId, profileOverride = null) {
-    const profile = profileOverride || this.getCategoryProfile(catId);
-    if (!profile.hasData) return null;
-    if (profile.recommendedPrices?.length >= 2) {
-      return Math.max(...profile.recommendedPrices.map((p) => Number(p)));
-    }
-    if (profile.recommendedPrices?.length) {
-      return Number(profile.recommendedPrices[0]);
-    }
-    if (profile.tiers?.length) {
-      return Number(profile.tiers[0]);
-    }
-    return null;
+  /** Cap = Smart Mode target shipping dropdown (no local history). */
+  getShippingCap() {
+    const target =
+      parseInt(document.getElementById("target-shipping")?.value, 10) || 80;
+    return target > 0 ? target : null;
   },
 
   scoreLiveVariant(v) {
@@ -640,7 +71,7 @@ const LocalPriceDB = {
     const prices = [...new Set(priced.map((v) => Number(v.shippingCost)))]
       .filter((p) => p > 0)
       .sort((a, b) => a - b);
-    const strategy = pickLocalStrategy(prices);
+    const strategy = pickLiveStrategy(prices);
     const picks = [];
     const targets = strategy.recommendedPrices?.length
       ? strategy.recommendedPrices
@@ -655,10 +86,10 @@ const LocalPriceDB = {
   },
 
   /**
-   * Mark recommended picks (within category cap) but keep every generated variant visible.
+   * Mark recommended picks (within target cap) but keep every generated variant visible.
    */
-  applyLiveResultPolicy(variants, catId) {
-    const cap = this.getShippingCap(catId);
+  applyLiveResultPolicy(variants) {
+    const cap = this.getShippingCap();
     const all = variants || [];
     const priced = all.filter((v) => Number(v.shippingCost) > 0);
     const withinCap = cap
@@ -709,1472 +140,9 @@ const LocalPriceDB = {
         : 0,
     };
   },
-
-  syncTargetShippingSelect(catId) {
-    return this.getShippingCap(catId);
-  },
-
-  /** Smart Mode dropdowns — used only by 🚀 Generate Variants (main live run). */
-  readMainSmartModeSettings() {
-    const targetShipping =
-      parseInt(document.getElementById("target-shipping")?.value, 10) || 80;
-    const maxAttempts = Math.min(
-      Math.max(
-        parseInt(document.getElementById("max-attempts")?.value, 10) || 80,
-        1,
-      ),
-      200,
-    );
-    return {
-      purpose: "main",
-      targetShipping,
-      maxAttempts,
-      maxShippingCap: targetShipping,
-    };
-  },
-
-  /** Focused live run after local picks — does not use Max Variants / target dropdown. */
-  readLearnForLocalSettings(catId) {
-    const id = String(catId || "");
-    const profile = id ? this.getCategoryProfile(id) : null;
-    const floorTier =
-      (id && this.resolveLearnedTier(id, profile)) ||
-      profile?.recommendedPrices?.[0] ||
-      null;
-    const cap = id ? this.getShippingCap(id) : null;
-    const pickCount = this.clampPickCount(
-      document.getElementById("local-price-pick-count")?.value,
-    );
-    const targetShipping =
-      floorTier != null && Number(floorTier) > 0
-        ? Number(floorTier)
-        : cap != null
-          ? Number(cap)
-          : 65;
-    const maxAttempts = Math.min(
-      30,
-      Math.max(pickCount * 5, 12),
-    );
-    return {
-      purpose: "learn",
-      targetShipping,
-      maxAttempts,
-      maxShippingCap: cap != null ? Number(cap) : targetShipping,
-    };
-  },
-
-  /** Stats from your saved lowest-tier variants — used to score new picks. */
-  getLowestTierLearnedStats(catId) {
-    const profile = this.getCategoryProfile(catId);
-    if (!profile.hasData) return null;
-    const lowest =
-      profile.recommendedPrices?.[0] || profile.tiers?.[0] || null;
-    if (!lowest) return null;
-    return this.getTierLearnedStats(catId, lowest);
-  },
-
-  /** Fingerprints + KB/est stats for one live shipping tier (e.g. ₹59 vs ₹60). */
-  getTierLearnedStats(catId, tierPrice) {
-    const tier = Number(tierPrice);
-    if (!tier || !catId) return null;
-
-    const fps = this._readFingerprints().filter(
-      (f) =>
-        f.cat === String(catId) &&
-        Number(f.shipping) === tier &&
-        String(f.source || "") !== "fallback",
-    );
-    const entries = this._read().filter(
-      (e) => e.cat === String(catId) && Number(e.price) === tier,
-    );
-
-    const kbs = fps.map((f) => Number(f.kb)).filter((k) => k > 0);
-    entries.forEach((e) => {
-      const kb = Number(e.kb);
-      if (kb > 0) kbs.push(kb);
-    });
-    const borders = fps.map((f) => Number(f.borderPx)).filter((b) => b > 0);
-    const ests = fps.map((f) => Number(f.est)).filter((e) => e > 0 && e < 900);
-    const styles = fps.map((f) => f.style).filter(Boolean);
-    const dominantStyle = styles.length
-      ? styles.sort(
-          (a, b) =>
-            styles.filter((s) => s === b).length -
-            styles.filter((s) => s === a).length,
-        )[0]
-      : "standard";
-
-    const minEst = ests.length ? Math.min(...ests) : null;
-    const maxEst = ests.length ? Math.max(...ests) : null;
-    const medianKb = kbs.length
-      ? kbs.sort((a, b) => a - b)[Math.floor(kbs.length / 2)]
-      : null;
-    const medianBorder = borders.length
-      ? borders.sort((a, b) => a - b)[Math.floor(borders.length / 2)]
-      : null;
-
-    if (!fps.length && !entries.length) return null;
-
-    return {
-      tierShipping: tier,
-      lowestShipping: tier,
-      fingerprintCount: fps.length,
-      historyCount: entries.length,
-      minEst,
-      maxEst,
-      medianKb,
-      medianBorder,
-      dominantStyle,
-      estTolerance:
-        minEst != null && maxEst != null
-          ? Math.max(5, maxEst - minEst + 3)
-          : 5,
-    };
-  },
-
-  /** Learn from a live generate run — tiers, KB/style fingerprints, report snapshot. */
-  learnFromLiveVariants(variants, context = {}) {
-    const catId = String(context.categoryId || "");
-    if (!catId || !variants?.length) return { learned: 0, lowest: 0, lowestCount: 0 };
-
-    const priced = variants
-      .filter((v) => Number(v.shippingCost) > 0)
-      .map((v) => this.enrichVariantFromLiveTier(v, catId));
-    if (!priced.length) return { learned: 0, lowest: 0, lowestCount: 0 };
-
-    const floorPriced = this.filterFloorBandPriced(priced, catId);
-    const fingerprintPool = floorPriced.length ? floorPriced : priced;
-
-    this.saveRun(priced, context);
-
-    const profile = this.getCategoryProfile(catId);
-    const lowest =
-      profile.recommendedPrices?.[0] ||
-      profile.tiers?.[0] ||
-      Math.min(...priced.map((v) => Number(v.shippingCost)));
-
-    this.saveFingerprints(fingerprintPool, catId, "live", 0);
-
-    fingerprintPool.forEach((v) => {
-      const ship = Number(v.shippingCost);
-      if (ship > 0) {
-        this.saveFingerprints([v], catId, `live_tier_${ship}`, ship);
-      }
-    });
-
-    const atLowest = fingerprintPool.filter(
-      (v) => Number(v.shippingCost) === Number(lowest),
-    );
-    if (atLowest.length && lowest) {
-      this.saveFingerprints(atLowest, catId, "live_lowest", lowest);
-    }
-
-    const uniquePrices = [...new Set(priced.map((v) => Number(v.shippingCost)))]
-      .filter((p) => p > 0)
-      .sort((a, b) => a - b);
-
-    const mergedTiers = [...new Set([
-      ...(this.getCategoryProfile(catId).tiers || []),
-      ...uniquePrices,
-    ])]
-      .filter((p) => p > 0)
-      .sort((a, b) => a - b);
-    const strategyPick = pickLocalStrategy(mergedTiers);
-
-    strategyPick.recommendedPrices.forEach((tier) => {
-      const atTier = fingerprintPool.filter(
-        (v) => Number(v.shippingCost) === Number(tier),
-      );
-      if (atTier.length) {
-        this.saveFingerprints(atTier, catId, `live_rec_${tier}`, tier);
-      }
-    });
-    const highSlabCount = priced.length - fingerprintPool.length;
-    const reports = this._readReports();
-    reports.push({
-      ts: Date.now(),
-      categoryId: catId,
-      categoryName: context.categoryName || "",
-      categoryPath: context.categoryPath || "",
-      source: "live_learn",
-      strategy: strategyPick.strategy,
-      strategyReason:
-        context.learnNote ||
-        `Learned from ${priced.length} live variants (${atLowest.length} at ₹${lowest}). ${strategyPick.reason}${highSlabCount > 0 ? ` · ${highSlabCount} high-slab skipped for local learn` : ""}`,
-      uniquePrices,
-      recommendedPrices: strategyPick.recommendedPrices.length
-        ? strategyPick.recommendedPrices
-        : [lowest],
-      variantCount: priced.length,
-      variantSnapshots: priced.map((v) => ({
-        shippingCost: v.shippingCost,
-        estShipping: v.estShipping ?? v.meta?.estInr ?? v.meta?.staticEst,
-        name: v.name,
-        variantStyle: v.variantStyle,
-        path: v.meta?.path,
-        kb: v.meta?.kb,
-        recommended: Number(v.shippingCost) === Number(lowest),
-      })),
-    });
-    this._writeReports(reports);
-
-    return {
-      learned: priced.length,
-      lowest,
-      lowestCount: atLowest.length,
-    };
-  },
-
-  matchesLiveLowestPattern(v, catId) {
-    const stats = this.getLowestTierLearnedStats(catId);
-    if (!stats?.fingerprintCount) return false;
-    const kb =
-      Number(v.meta?.kb || 0) ||
-      (v.blob?.size ? Math.ceil(v.blob.size / 1024) : 0);
-    const style = String(
-      v.variantStyle || v.meta?.style || v.meta?.path || "",
-    ).toLowerCase();
-    const kbOk =
-      stats.medianKb && kb > 0 && Math.abs(kb - stats.medianKb) <= 18;
-    const styleOk =
-      stats.dominantStyle &&
-      style.includes(String(stats.dominantStyle).toLowerCase());
-    return kbOk && styleOk;
-  },
-
-  variantKb(v) {
-    return (
-      Number(v?.meta?.kb || 0) ||
-      (v?.blob?.size ? Math.ceil(v.blob.size / 1024) : 0)
-    );
-  },
-
-  /** Best KB anchor from live Meesho winners at target tier (min = safest for ₹59). */
-  resolveLiveAnchorKb(catId, liveRefs, tierPrice = null) {
-    const tier = Number(tierPrice) || this.resolveLearnedTier(catId);
-    const refKbs = (liveRefs || [])
-      .map((r) => this.variantKb(r))
-      .filter((k) => k > 0);
-    if (refKbs.length) return Math.min(...refKbs);
-    const stats = tier
-      ? this.getTierLearnedStats(catId, tier)
-      : this.getLowestTierLearnedStats(catId);
-    if (stats?.medianKb) return stats.medianKb;
-    const fps = this._readFingerprints().filter(
-      (f) =>
-        f.cat === String(catId) &&
-        tier > 0 &&
-        Number(f.shipping) === tier &&
-        Number(f.kb) > 0 &&
-        String(f.source || "") !== "fallback",
-    );
-    if (fps.length) {
-      const kbs = fps.map((f) => Number(f.kb)).filter((k) => k > 0);
-      if (kbs.length) return Math.min(...kbs);
-    }
-    const profile = this.getCategoryProfile(catId);
-    const rec = (profile.recommendedPrices || []).map((p) => Number(p)).filter((p) => p > 0);
-    const catFps = this._readFingerprints().filter((f) => f.cat === String(catId));
-    const recKbs = catFps
-      .filter((f) => !rec.length || rec.includes(Number(f.shipping)))
-      .map((f) => Number(f.kb))
-      .filter((k) => k > 0);
-    if (recKbs.length) return Math.min(...recKbs);
-    const tierProf = this.getEmpiricalTierProfile(catId, tier);
-    if (tierProf?.anchorKb) return tierProf.anchorKb;
-    return null;
-  },
-
-  /** Live-learned generation hints — only when tier was Meesho-tested for this category. */
-  getLiveGenerationHints(catId) {
-    const id = String(catId || "");
-    const tier = this.resolveLearnedTier(id);
-    if (!tier) return null;
-    const stats = this.getTierLearnedStats(id, tier);
-    if (!stats) return null;
-
-    const lowest = this.getLowestTierLearnedStats(id);
-    const tierProf = this.getEmpiricalTierProfile(id, tier);
-    const anchorKb =
-      stats.medianKb ||
-      tierProf?.anchorKb ||
-      this.resolveLiveAnchorKb(id, null, tier) ||
-      lowest?.medianKb ||
-      null;
-    const maxKb =
-      anchorKb != null
-        ? tierProf?.maxKb || Math.min(Math.ceil(anchorKb * 1.12), anchorKb + 6)
-        : null;
-    const borderMax =
-      stats.medianBorder ?? tierProf?.borderMax ?? lowest?.medianBorder ?? null;
-    const borderMin =
-      tierProf?.borderMin ||
-      (borderMax ? Math.max(8, borderMax - 6) : null);
-
-    return {
-      tier,
-      medianKb: anchorKb,
-      maxKb,
-      medianBorder: borderMax,
-      dominantStyle: stats.dominantStyle || "standard",
-      ultraLow: false,
-      lowBias: false,
-      borderMin,
-      borderMax,
-      badgeCount: tierProf?.badgeCount ?? 0,
-      kbTolerance: anchorKb != null ? 5 : null,
-      liveTested: true,
-    };
-  },
-
-  /**
-   * Keep pool near live-verified KB (tight band — avoids 2nd pick at 231KB → high ₹).
-   */
-  filterLiveKbBand(
-    variants,
-    catId,
-    tierPrice = null,
-    liveRefs = null,
-    anchorKb = null,
-    tolerance = null,
-  ) {
-    const tier = Number(tierPrice) || this.resolveLearnedTier(catId);
-    const anchor =
-      anchorKb != null && anchorKb > 0
-        ? anchorKb
-        : this.resolveLiveAnchorKb(catId, liveRefs, tier);
-    if (!anchor) return variants || [];
-
-    const stats = tier
-      ? this.getTierLearnedStats(catId, tier)
-      : this.getLowestTierLearnedStats(catId);
-    let tol =
-      tolerance != null
-        ? tolerance
-        : tier > 0 && tier <= 65
-          ? 6
-          : Math.max(8, Math.ceil(anchor * 0.15));
-    if (stats?.medianKb && Math.abs(anchor - stats.medianKb) <= 4) {
-      tol = Math.min(tol, 6);
-    }
-
-    const minKb = Math.max(1, anchor - tol);
-    const maxKb = anchor + tol;
-    const band = (variants || []).filter((v) => {
-      const kb = this.variantKb(v);
-      return kb > 0 && kb >= minKb && kb <= maxKb;
-    });
-    if (band.length) return band;
-
-    const tierProf = this.getEmpiricalTierProfile(catId, tier);
-    if (tierProf?.maxKb) {
-      const capped = (variants || []).filter((v) => {
-        const kb = this.variantKb(v);
-        return kb > 0 && kb <= tierProf.maxKb;
-      });
-      if (capped.length) return capped;
-    }
-
-    const wideTol = Math.min(tol + 4, 10);
-    const wide = (variants || []).filter((v) => {
-      const kb = this.variantKb(v);
-      return kb > 0 && kb >= anchor - wideTol && kb <= anchor + wideTol;
-    });
-    if (wide.length) return wide;
-
-    const withKb = (variants || []).filter((v) => this.variantKb(v) > 0);
-    if (!withKb.length) return variants || [];
-    return [...withKb].sort(
-      (a, b) =>
-        Math.abs(this.variantKb(a) - anchor) - Math.abs(this.variantKb(b) - anchor),
-    );
-  },
-
-  scoreLiveReferenceAlignment(v, liveRefs, tierStats, anchorKb = null) {
-    let score = 0;
-    const kb = this.variantKb(v);
-    const border = Number(v.meta?.borderPx ?? 0);
-    const style = String(
-      v.variantStyle || v.meta?.style || v.meta?.path || "",
-    ).toLowerCase();
-    const anchor =
-      anchorKb != null && anchorKb > 0
-        ? anchorKb
-        : tierStats?.medianKb || null;
-
-    if (anchor && kb > 0) {
-      const d = Math.abs(kb - anchor);
-      score += Math.max(0, 150 - d * 12);
-      if (d <= 3) score += 80;
-      else if (d <= 5) score += 45;
-      if (kb > anchor + 8) score -= 250;
-      if (kb > anchor + 15) score -= 400;
-    } else if (tierStats?.medianKb && kb > 0) {
-      score += Math.max(0, 120 - Math.abs(kb - tierStats.medianKb) * 4);
-    }
-    if (tierStats?.medianBorder && border > 0) {
-      score += Math.max(0, 70 - Math.abs(border - tierStats.medianBorder) * 4);
-    }
-    if (
-      tierStats?.dominantStyle &&
-      style.includes(String(tierStats.dominantStyle).toLowerCase())
-    ) {
-      score += 45;
-    }
-
-    for (const ref of liveRefs || []) {
-      const rKb =
-        Number(ref.meta?.kb || 0) ||
-        (ref.blob?.size ? Math.ceil(ref.blob.size / 1024) : 0);
-      const rBorder = Number(ref.meta?.borderPx ?? 0);
-      if (rKb > 0 && kb > 0) {
-        const d = Math.abs(kb - rKb);
-        if (d <= 3) score += 90;
-        else if (d <= 6) score += 55;
-        else if (d <= 10) score += 25;
-      }
-      if (rBorder > 0 && border > 0 && Math.abs(border - rBorder) <= 6) {
-        score += 40;
-      }
-      if (ref.liveVerified || ref.isVerified) score += 15;
-      if (ref.recommended || ref.meta?.recommended) score += 20;
-    }
-    return score;
-  },
-
-  scoreVariantForLocalPick(
-    v,
-    catId,
-    profile,
-    tierPrice = null,
-    liveRefs = null,
-    anchorKb = null,
-    diversityKbs = null,
-  ) {
-    const kb = this.variantKb(v);
-    const style = String(
-      v.variantStyle || v.meta?.style || v.meta?.path || "",
-    ).toLowerCase();
-
-    const tier = tierPrice || this.resolveLearnedTier(catId);
-    const stats = tier
-      ? this.getTierLearnedStats(catId, tier)
-      : this.getLowestTierLearnedStats(catId);
-
-    let score = this.scoreLiveReferenceAlignment(
-      v,
-      liveRefs,
-      stats,
-      anchorKb,
-    );
-
-    for (const pk of diversityKbs || []) {
-      if (pk > 0 && kb > 0 && Math.abs(kb - pk) <= 3) {
-        score -= 220;
-      }
-    }
-
-    if (stats) {
-      if (stats.medianKb && kb > 0) {
-        score += Math.max(0, 50 - Math.abs(kb - stats.medianKb));
-      }
-      if (stats.dominantStyle && style.includes(stats.dominantStyle.toLowerCase())) {
-        score += 35;
-      }
-      if (tierPrice && this.matchesTierPattern(v, catId, tierPrice)) {
-        score += 55;
-      } else if (!tierPrice && this.matchesLiveLowestPattern(v, catId)) {
-        score += 45;
-      }
-    } else if (profile?.recommendedPrices?.length) {
-      score += 10;
-    }
-
-    return score;
-  },
-
-  matchesTierPattern(v, catId, tierPrice) {
-    const stats = this.getTierLearnedStats(catId, tierPrice);
-    if (!stats?.fingerprintCount) return false;
-    const kb =
-      Number(v.meta?.kb || 0) ||
-      (v.blob?.size ? Math.ceil(v.blob.size / 1024) : 0);
-    const style = String(
-      v.variantStyle || v.meta?.style || v.meta?.path || "",
-    ).toLowerCase();
-    const kbOk =
-      stats.medianKb && kb > 0 && Math.abs(kb - stats.medianKb) <= 18;
-    const styleOk =
-      stats.dominantStyle &&
-      style.includes(String(stats.dominantStyle).toLowerCase());
-    return kbOk && styleOk;
-  },
-
-  pickVariantForTier(
-    variants,
-    catId,
-    tierPrice,
-    excludeIds = new Set(),
-    liveRefs = null,
-    anchorKb = null,
-    diversityKbs = null,
-  ) {
-    const profile = this.getCategoryProfile(catId);
-    const candidates = (variants || []).filter(
-      (v) => !excludeIds.has(String(v.variantId || "")),
-    );
-    if (!candidates.length) return null;
-
-    let best = null;
-    let bestScore = -Infinity;
-    for (const v of candidates) {
-      const score = this.scoreVariantForLocalPick(
-        v,
-        catId,
-        profile,
-        tierPrice,
-        liveRefs,
-        anchorKb,
-        diversityKbs,
-      );
-      if (score > bestScore) {
-        bestScore = score;
-        best = v;
-      }
-    }
-    return best;
-  },
-
-  buildTierTargets(profile, count) {
-    const cap =
-      profile?.recommendedPrices?.length
-        ? Math.max(...profile.recommendedPrices.map((p) => Number(p)))
-        : profile?.tiers?.length
-          ? Number(profile.tiers[0])
-          : null;
-    let rec =
-      profile?.recommendedPrices?.length
-        ? profile.recommendedPrices
-        : profile?.tiers?.length
-          ? [profile.tiers[0]]
-          : [];
-    if (cap != null) {
-      rec = rec.filter((p) => Number(p) <= cap);
-    }
-    if (!rec.length) return [];
-    const targets = [];
-    for (let i = 0; i < count; i++) {
-      targets.push(rec[i % rec.length]);
-    }
-    return targets;
-  },
-
-  /**
-   * Pick N variants that best match your saved lowest-shipping patterns.
-   */
-  pickLearnedVariants(
-    variants,
-    catId,
-    count = 2,
-    liveRefs = null,
-    anchorKb = null,
-  ) {
-    const profile = this.getCategoryProfile(catId);
-    const tier = this.resolveLearnedTier(catId, profile);
-    const anchor =
-      anchorKb != null && anchorKb > 0
-        ? anchorKb
-        : this.resolveLiveAnchorKb(catId, liveRefs, tier);
-    const sorted = this.sortVariantsStable(variants);
-    if (!sorted.length) return [];
-
-    const liveBand = this.filterLiveKbBand(
-      sorted,
-      catId,
-      tier,
-      liveRefs,
-      anchor,
-    );
-    const candidates = liveBand.length ? liveBand : sorted;
-
-    const scored = candidates.map((v) => ({
-      v,
-      kb: this.variantKb(v),
-      score: this.scoreVariantForLocalPick(
-        v,
-        catId,
-        profile,
-        tier || null,
-        liveRefs,
-        anchor,
-      ),
-    }));
-
-    scored.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (anchor > 0) {
-        const da = Math.abs(a.kb - anchor);
-        const db = Math.abs(b.kb - anchor);
-        if (da !== db) return da - db;
-      }
-      if (a.kb !== b.kb) return a.kb - b.kb;
-      const rankA = Number(a.v.meta?.rank ?? a.v.meta?.attempt ?? 0);
-      const rankB = Number(b.v.meta?.rank ?? b.v.meta?.attempt ?? 0);
-      if (rankA !== rankB) return rankA - rankB;
-      return String(a.v.variantId || "").localeCompare(String(b.v.variantId || ""));
-    });
-
-    const picked = [];
-    const seen = new Set();
-    for (const row of scored) {
-      if (picked.length >= count) break;
-      const id = String(row.v.variantId || "");
-      if (id && seen.has(id)) continue;
-      row.v.meta = {
-        ...(row.v.meta || {}),
-        learnedScore: row.score,
-        learnedRank: picked.length + 1,
-      };
-      picked.push(row.v);
-      if (id) seen.add(id);
-    }
-    return picked;
-  },
-
-  clampPickCount(n) {
-    const parsed = parseInt(n, 10);
-    if (!Number.isFinite(parsed)) return this.PICK_COUNT_DEFAULT;
-    return Math.min(this.PICK_COUNT_MAX, Math.max(this.PICK_COUNT_MIN, parsed));
-  },
-
-  poolSizeForPickCount(pickCount) {
-    const n = this.clampPickCount(pickCount);
-    return Math.min(20, Math.max(n + 4, n * 3));
-  },
-
-  /** Same canvas pattern as live Generate Variants — standard only, no ultra/analysis/framed. */
-  isLivePatternVariant(v) {
-    if (!v) return false;
-    if (v.analysisMode) return false;
-    const style = String(v.variantStyle || "").toLowerCase();
-    if (style && style !== "standard" && style !== "live_standard") return false;
-    const path = String(v.meta?.path || "").toLowerCase();
-    const mode = String(v.meta?.mode || "").toLowerCase();
-    if (path.includes("ultra") || mode.includes("ultra")) return false;
-    const blockedPaths = [
-      "studio_ultra",
-      "studio",
-      "tall",
-      "flatlay",
-      "framed",
-      "framed_low",
-      "framed_live",
-      "showcase",
-      "lifestyle_promo",
-      "tall_static",
-      "gown_static",
-      "collage_back",
-      "collage_front",
-    ];
-    if (path && blockedPaths.includes(path)) return false;
-    return true;
-  },
-
-  filterLivePatternPool(variants) {
-    return (variants || []).filter((v) => this.isLivePatternVariant(v));
-  },
-
-  /** Save all priced variants from a completed run. */
-  saveRun(variants, context = {}) {
-    if (!variants?.length) return;
-    const priced = variants.filter((v) => Number(v.shippingCost) > 0);
-    if (!priced.length) return;
-    const ts = Date.now();
-    const cat = String(context.categoryId || "");
-    const entries = this._read();
-    priced.forEach((v) => {
-      this.enrichVariantFromLiveTier(v, cat);
-      entries.push({
-        ts,
-        cat,
-        price: Number(v.shippingCost),
-        variantId: v.variantId || "",
-        name: v.name || "",
-        kb: v.meta?.kb || v.meta?.actualKb || "",
-        width: v.meta?.width || v.meta?.canvasW || "",
-        height: v.meta?.height || v.meta?.canvasH || "",
-        borderPx: v.meta?.borderPx ?? "",
-        style: v.variantStyle || v.meta?.style || "",
-      });
-    });
-    this._write(entries);
-    if (cat) {
-      const profile = this.getCategoryProfile(cat);
-      const tier =
-        profile.recommendedPrices?.[0] || profile.tiers?.[0] || 0;
-      const fpPool = this.filterFloorBandPriced(priced, cat);
-      if (fpPool.length) {
-        this.saveFingerprints(fpPool, cat, "live", tier);
-      }
-    }
-  },
-
-  /** Import a live report CSV (VARIANT + META + PRICE_TIER rows). */
-  importCsv(text) {
-    const parsed = parseReportCsvInline(text);
-    const catId = String(parsed.meta.category_id || "");
-    const priced = parsed.variants
-      .filter((v) => Number(v.shippingCost) > 0)
-      .map((v) => this.enrichVariantFromLiveTier(v, catId));
-
-    if (!priced.length && !parsed.uniquePrices.length) {
-      return { ok: false, error: "No variant or tier data found in CSV." };
-    }
-
-    if (priced.length) {
-      this.saveRun(priced, { categoryId: catId });
-    }
-
-    const lowestTier =
-      parsed.recommendedPrices?.[0] ||
-      parsed.uniquePrices?.[0] ||
-      0;
-    const recTiers =
-      parsed.recommendedPrices?.length
-        ? parsed.recommendedPrices
-        : lowestTier
-          ? [lowestTier]
-          : [];
-    recTiers.forEach((tier) => {
-      const atTier = parsed.variants
-        .filter((v) => Number(v.shippingCost) === Number(tier))
-        .map((v) => this.enrichVariantFromLiveTier(v, catId));
-      if (atTier.length) {
-        this.saveFingerprints(atTier, catId, `csv_rec_${tier}`, tier);
-      }
-    });
-    if (catId && parsed.variants.length && lowestTier) {
-      const atLowest = parsed.variants
-        .filter(
-          (v) =>
-            Number(v.shippingCost) === Number(lowestTier) ||
-            v.meta?.recommended,
-        )
-        .map((v) => this.enrichVariantFromLiveTier(v, catId));
-      if (atLowest.length) {
-        this.saveFingerprints(atLowest, catId, "csv", lowestTier);
-      }
-    }
-
-    const reports = this._readReports();
-    reports.push({
-      ts: Date.now(),
-      categoryId: catId,
-      categoryName: parsed.meta.category_name || "",
-      categoryPath: parsed.meta.category_path || "",
-      strategy: parsed.strategy || pickLocalStrategy(parsed.uniquePrices).strategy,
-      strategyReason:
-        parsed.strategyReason || pickLocalStrategy(parsed.uniquePrices).reason,
-      uniquePrices: parsed.uniquePrices,
-      recommendedPrices:
-        parsed.recommendedPrices.length
-          ? parsed.recommendedPrices
-          : pickLocalStrategy(parsed.uniquePrices).recommendedPrices,
-      tiers: parsed.tiers,
-      variantCount: parsed.variants.length,
-      baselineShipping: Number(parsed.meta.baseline_shipping_inr) || 0,
-    });
-    this._writeReports(reports);
-
-    return {
-      ok: true,
-      categoryId: catId,
-      categoryName: parsed.meta.category_name || "",
-      tiers: parsed.uniquePrices,
-      recommendedPrices:
-        parsed.recommendedPrices.length
-          ? parsed.recommendedPrices
-          : pickLocalStrategy(parsed.uniquePrices).recommendedPrices,
-      variantCount: priced.length,
-    };
-  },
-
-  /** Aggregated category profile from saved reports + variant history. */
-  getCategoryProfile(catId) {
-    const id = String(catId || "");
-    const reports = this._readReports().filter((r) => r.categoryId === id);
-    const tierSet = new Set();
-    const tierCounts = {};
-
-    reports.forEach((r) => {
-      (r.uniquePrices || []).forEach((p) => {
-        tierSet.add(p);
-        tierCounts[p] = (tierCounts[p] || 0) + 1;
-      });
-    });
-
-    this._read()
-      .filter((e) => e.cat === id)
-      .forEach((e) => {
-        const p = Number(e.price);
-        if (p > 0) {
-          tierSet.add(p);
-          tierCounts[p] = (tierCounts[p] || 0) + 1;
-        }
-      });
-
-    const tiers = [...tierSet].sort((a, b) => a - b);
-    const latest = reports[reports.length - 1];
-    const strategyPick = pickLocalStrategy(tiers);
-
-    return {
-      categoryId: id,
-      tiers,
-      tierCounts,
-      strategy: strategyPick.strategy,
-      strategyReason: strategyPick.reason,
-      recommendedPrices: strategyPick.recommendedPrices,
-      runCount: reports.length,
-      hasData: tiers.length > 0,
-      latestReportTs: latest?.ts || 0,
-    };
-  },
-
-  /** Lowest live-learned tier for category (global floor, not rupee-pair high band). */
-  resolveLearnedTier(catId, profile = null) {
-    const p = profile || this.getCategoryProfile(catId);
-    if (p?.tiers?.length) {
-      return Math.min(...p.tiers.map((x) => Number(x)).filter((n) => n > 0));
-    }
-    if (p?.recommendedPrices?.length) {
-      return Math.min(...p.recommendedPrices.map((x) => Number(x)).filter((n) => n > 0));
-    }
-    return 0;
-  },
-
-  /** Tag local pick — no shipping ₹ on cards (not live-verified). */
-  _tagLocalVariant(v, tierPrice, recommended) {
-    const profileTier = Number(tierPrice);
-    const learnedTier =
-      profileTier > 0 && profileTier < 900 ? profileTier : 0;
-    const staticEst = this.estOf(v);
-    const tagged = {
-      ...v,
-      localEstShipping: learnedTier,
-      localRecommended: recommended,
-      estShipping: staticEst,
-      shippingCost: 0,
-      isVerified: false,
-      liveVerified: false,
-      localOnly: true,
-      meta: {
-        ...(v.meta || {}),
-        localPrice: true,
-        localTier: learnedTier,
-        localEstimated: false,
-        staticEst,
-        estInr: staticEst,
-      },
-    };
-    if (tagged._frozenPricing) {
-      tagged._frozenPricing = {
-        ...tagged._frozenPricing,
-        estShipping: staticEst,
-        metaEstInr: staticEst,
-        shippingCost: 0,
-        localTier: learnedTier > 0 ? learnedTier : undefined,
-      };
-    }
-    return tagged;
-  },
-
-  EST_OUTLIER_BAND: 5,
-
-  csvEscape(val) {
-    const s = String(val ?? "");
-    if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-    return s;
-  },
-
-  csvRow(cols) {
-    return cols.map((c) => this.csvEscape(c)).join(",");
-  },
-
-  /** Stable static est for sorting — ignores remapped local tier on cards. */
-  estOf(v) {
-    const raw = Number(
-      v?.meta?.staticEst ??
-        v?.estShipping ??
-        v?.meta?.estInr ??
-        v?.meta?.est_inr ??
-        0,
-    );
-    return raw > 0 && raw < 900 ? raw : 999;
-  },
-
-  /** Deterministic sort: est ascending → generation rank → variant id. */
-  sortVariantsStable(variants) {
-    return [...(variants || [])].sort((a, b) => {
-      const estDiff = this.estOf(a) - this.estOf(b);
-      if (estDiff !== 0) return estDiff;
-      const rankA = Number(a.meta?.rank ?? a.meta?.attempt ?? 0);
-      const rankB = Number(b.meta?.rank ?? b.meta?.attempt ?? 0);
-      if (rankA !== rankB) return rankA - rankB;
-      return String(a.variantId || a.name || "").localeCompare(
-        String(b.variantId || b.name || ""),
-      );
-    });
-  },
-
-  /** Drop high-est outliers (e.g. est ₹69 when pool min is ₹49). */
-  filterLowEstBand(variants, tolerance = this.EST_OUTLIER_BAND) {
-    const sorted = this.sortVariantsStable(variants);
-    if (!sorted.length) return [];
-    const minEst = this.estOf(sorted[0]);
-    const maxEst = minEst + tolerance;
-    return sorted.filter((v) => this.estOf(v) <= maxEst);
-  },
-
-  exportLocalCsv(pool, picks, context = {}) {
-    const profile = context.categoryId
-      ? this.getCategoryProfile(context.categoryId)
-      : null;
-    const sortedPool = this.sortVariantsStable(pool);
-    const pickIds = new Set((picks || []).map((p) => String(p.variantId)));
-    const ests = sortedPool.map((v) => this.estOf(v)).filter((e) => e < 900);
-    const poolMin = ests.length ? Math.min(...ests) : "";
-    const poolMax = ests.length ? Math.max(...ests) : "";
-    const pad = (n) => Array(n).fill("");
-
-    const lines = [];
-    const meta = (key, value) =>
-      lines.push(
-        this.csvRow(["META", key, value, ...pad(26)]),
-      );
-
-    meta("report_type", "local_price");
-    meta("generated_at", context.generatedAt || new Date().toISOString());
-    meta("category_id", context.categoryId || "");
-    meta("category_name", context.categoryName || "");
-    meta("category_path", context.categoryPath || "");
-    meta("category_source", context.categorySource || "");
-    meta("strategy", profile?.strategy || "");
-    meta("strategy_reason", profile?.strategyReason || "");
-    meta(
-      "recommended_prices",
-      (profile?.recommendedPrices || []).join("|"),
-    );
-    meta("pool_count", String(sortedPool.length));
-    meta("picked_count", String(picks?.length || 0));
-    meta("pool_est_min", String(poolMin));
-    meta("pool_est_max", String(poolMax));
-    meta(
-      "picked_variant_ids",
-      (picks || []).map((p) => p.variantId).join("|"),
-    );
-    meta(
-      "pool_variant_ids",
-      sortedPool.map((v) => v.variantId).join("|"),
-    );
-    meta(
-      "pricing_note",
-      "est_inr=static analysis from file KB/frame; shipping_inr=learned live tier for category",
-    );
-
-    let pickRank = 0;
-    for (const v of sortedPool) {
-      const est = this.estOf(v);
-      const isPick = pickIds.has(String(v.variantId));
-      const rank = isPick ? ++pickRank : "";
-      const tier =
-        v.localEstShipping ||
-        profile?.recommendedPrices?.[0] ||
-        v.meta?.localTier ||
-        "";
-      lines.push(
-        this.csvRow([
-          "VARIANT",
-          "",
-          "",
-          v.variantId || "",
-          v.name || "",
-          tier,
-          est,
-          v.isVerified || false,
-          v.liveVerified || false,
-          v.duplicatePid || "",
-          v.noPid || false,
-          v.variantStyle || v.meta?.style || "",
-          v.meta?.path || "",
-          v.meta?.kb || "",
-          v.meta?.width || v.meta?.canvasW || "",
-          v.meta?.height || v.meta?.canvasH || "",
-          isPick ? "picked" : "pool",
-          isPick,
-          rank,
-          "",
-          "",
-          "",
-          isPick ? "display_pick" : `est=${est}`,
-          v.meta?.learnedScore ?? "",
-          ...pad(5),
-        ]),
-      );
-    }
-
-    return lines.join("\n");
-  },
-
-  downloadLocalCsv(pool, picks, context = {}) {
-    const csv = this.exportLocalCsv(pool, picks, context);
-    const cat = context.categoryId || "all";
-    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const filename = `meesho-local-price-${cat}-${ts}.csv`;
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.rel = "noopener";
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 250);
-  },
-
-  /**
-   * Pick 2–10 variants: one per recommended live tier (e.g. ₹59 + ₹60), learned from history.
-   */
-  buildLocalPicks(
-    variants,
-    catId,
-    pickCount = this.PICK_COUNT_DEFAULT,
-    liveRefs = null,
-    profileOverride = null,
-  ) {
-    const profile = profileOverride || this.getCategoryProfile(catId);
-    const count = this.clampPickCount(pickCount);
-    const learnedTier = this.resolveLearnedTier(catId, profile);
-    const anchorKb = this.resolveLiveAnchorKb(catId, liveRefs, learnedTier);
-    const sortedAll = this.sortVariantsStable(variants);
-    const liveBand = this.filterLiveKbBand(
-      sortedAll,
-      catId,
-      learnedTier,
-      liveRefs,
-      anchorKb,
-    );
-    let pool = liveBand.length ? liveBand : sortedAll;
-    const tierProf = learnedTier
-      ? this.getEmpiricalTierProfile(catId, learnedTier)
-      : null;
-    if (tierProf?.maxKb) {
-      const within = pool.filter((v) => this.variantKb(v) <= tierProf.maxKb);
-      if (within.length >= count) pool = within;
-    }
-    if (anchorKb > 0) {
-      pool = [...pool].sort(
-        (a, b) =>
-          Math.abs(this.variantKb(a) - anchorKb) -
-          Math.abs(this.variantKb(b) - anchorKb),
-      );
-    }
-
-    if (!pool.length) return [];
-
-    const singleTierOnly =
-      profile.strategy === "single_lowest" ||
-      (profile.recommendedPrices?.length === 1 &&
-        profile.strategy !== "rupee_pair");
-    const tierTargets = singleTierOnly
-      ? Array.from({ length: count }, () => learnedTier)
-      : this.buildTierTargets(profile, count);
-    const recommendedSet = new Set(
-      (profile.recommendedPrices || []).map((p) => Number(p)),
-    );
-    const tierStats = learnedTier
-      ? this.getTierLearnedStats(catId, learnedTier)
-      : this.getLowestTierLearnedStats(catId);
-
-    const picked = [];
-    const seen = new Set();
-    const pickedKbs = [];
-    let clusterKb = anchorKb > 0 ? anchorKb : null;
-
-    for (let i = 0; i < count; i++) {
-      const tier = tierTargets[i] || learnedTier;
-      let candidates = pool.filter(
-        (x) => !seen.has(String(x.variantId || "")),
-      );
-      if (clusterKb > 0 && i > 0) {
-        const tight = candidates.filter(
-          (v) => Math.abs(this.variantKb(v) - clusterKb) <= 5,
-        );
-        if (tight.length) candidates = tight;
-      }
-      if (clusterKb > 0) {
-        const band = candidates.filter(
-          (v) => Math.abs(this.variantKb(v) - clusterKb) <= 8,
-        );
-        if (band.length) candidates = band;
-      }
-
-      let v = this.pickVariantForTier(
-        candidates.length ? candidates : pool.filter(
-          (x) => !seen.has(String(x.variantId || "")),
-        ),
-        catId,
-        tier,
-        seen,
-        liveRefs,
-        clusterKb || anchorKb,
-        pickedKbs,
-      );
-      if (!v) {
-        const rest = pool.filter((x) => !seen.has(String(x.variantId || "")));
-        const fallback = this.pickLearnedVariants(
-          rest,
-          catId,
-          1,
-          liveRefs,
-          clusterKb || anchorKb,
-        );
-        v = fallback[0];
-      }
-      if (!v) continue;
-      const id = String(v.variantId || "");
-      if (id && seen.has(id)) continue;
-      const recommended =
-        recommendedSet.has(Number(tier)) || singleTierOnly;
-      picked.push(this._tagLocalVariant(v, tier, recommended));
-      if (id) seen.add(id);
-      const vKb = this.variantKb(v);
-      if (vKb > 0) pickedKbs.push(vKb);
-      if (!clusterKb) clusterKb = vKb;
-    }
-
-    if (!picked.length) {
-      const learned = this.pickLearnedVariants(
-        pool,
-        catId,
-        count,
-        liveRefs,
-        anchorKb,
-      );
-      if (learned.length) {
-        return learned.map((v) =>
-          this._tagLocalVariant(v, learnedTier, true),
-        );
-      }
-      return sortedAll
-        .slice(0, count)
-        .map((v) => this._tagLocalVariant(v, learnedTier, true));
-    }
-
-    const ranked = picked
-      .map((v) => ({
-        v,
-        kb: this.variantKb(v),
-        score: this.scoreLiveReferenceAlignment(
-          v,
-          liveRefs,
-          tierStats,
-          anchorKb,
-        ),
-      }))
-      .sort((a, b) => {
-        if (b.score !== a.score) return b.score - a.score;
-        if (anchorKb > 0) {
-          return (
-            Math.abs(a.kb - anchorKb) - Math.abs(b.kb - anchorKb)
-          );
-        }
-        return a.kb - b.kb;
-      })
-      .map((r) => r.v);
-
-    return ranked.slice(0, count);
-  },
-
-  /** Map generated variants to local tier estimates from category history. */
-  assignLocalTiers(variants, catId) {
-    const profile = this.getCategoryProfile(catId);
-    const tiers = profile.tiers || [];
-    if (!variants?.length) return [];
-
-    const sorted = [...variants].sort(
-      (a, b) =>
-        (a.estShipping || a.meta?.estInr || 999) -
-        (b.estShipping || b.meta?.estInr || 999),
-    );
-
-    if (!tiers.length) {
-      return sorted.map((v) => ({
-        ...v,
-        localEstShipping: v.estShipping || 0,
-        localRecommended: false,
-      }));
-    }
-
-    const tierCount = tiers.length;
-    const recommendedSet = new Set();
-
-    profile.recommendedPrices.forEach((targetPrice) => {
-      let best = null;
-      let bestEst = 999;
-      sorted.forEach((v, i) => {
-        const tierIdx = Math.min(
-          Math.floor((i / sorted.length) * tierCount),
-          tierCount - 1,
-        );
-        if (tiers[tierIdx] === targetPrice) {
-          const est = v.estShipping || v.meta?.estInr || 999;
-          if (est < bestEst) {
-            bestEst = est;
-            best = v;
-          }
-        }
-      });
-      if (best) recommendedSet.add(best.variantId);
-    });
-
-    return sorted.map((v, i) => {
-      const tierIdx = Math.min(
-        Math.floor((i / sorted.length) * tierCount),
-        tierCount - 1,
-      );
-      const localTier = tiers[tierIdx];
-      return {
-        ...v,
-        localEstShipping: localTier,
-        localRecommended: recommendedSet.has(v.variantId),
-        estShipping: localTier,
-        shippingCost: 0,
-        isVerified: false,
-        localOnly: true,
-        meta: {
-          ...(v.meta || {}),
-          localPrice: true,
-          localTier,
-          localEstimated: true,
-        },
-      };
-    });
-  },
-
-  /** Return all unique prices seen across all saved runs, sorted ascending. */
-  allPrices(catFilter = "") {
-    const entries = this._read();
-    const rows = catFilter
-      ? entries.filter((e) => e.cat === String(catFilter))
-      : entries;
-    const prices = [...new Set(rows.map((e) => Number(e.price)).filter((p) => p > 0))];
-    const profile = catFilter ? this.getCategoryProfile(catFilter) : null;
-    if (profile?.tiers?.length) {
-      profile.tiers.forEach((p) => prices.push(p));
-    }
-    return [...new Set(prices)].sort((a, b) => a - b);
-  },
-
-  /** Best local price estimate: lowest price seen ≥ 2 times, or overall lowest. */
-  bestLocalPrice(catFilter = "") {
-    const profile = catFilter ? this.getCategoryProfile(catFilter) : null;
-    if (profile?.tiers?.length) {
-      return Math.min(...profile.tiers.map((p) => Number(p)).filter((p) => p > 0));
-    }
-    if (profile?.recommendedPrices?.length) {
-      return Math.min(
-        ...profile.recommendedPrices.map((p) => Number(p)).filter((p) => p > 0),
-      );
-    }
-
-    const entries = this._read();
-    const rows = catFilter
-      ? entries.filter((e) => e.cat === String(catFilter))
-      : entries;
-    const counts = {};
-    rows.forEach((e) => {
-      const p = Number(e.price);
-      if (p > 0) counts[p] = (counts[p] || 0) + 1;
-    });
-    const confirmed = Object.keys(counts)
-      .map(Number)
-      .filter((p) => counts[p] >= 2)
-      .sort((a, b) => a - b);
-    if (confirmed.length) return confirmed[0];
-    const all = Object.keys(counts).map(Number).sort((a, b) => a - b);
-    return all[0] || null;
-  },
-
-  /** Summary for display. */
-  summary(catFilter = "") {
-    const entries = this._read();
-    const rows = catFilter
-      ? entries.filter((e) => e.cat === String(catFilter))
-      : entries;
-    const profile = catFilter ? this.getCategoryProfile(catFilter) : null;
-    if (!rows.length && !profile?.hasData) return null;
-
-    const prices = rows.map((e) => Number(e.price)).filter((p) => p > 0);
-    if (profile?.tiers?.length) {
-      profile.tiers.forEach((p) => prices.push(p));
-    }
-    const best = this.bestLocalPrice(catFilter);
-    const min = prices.length ? Math.min(...prices) : best;
-    const max = prices.length ? Math.max(...prices) : best;
-    const runs =
-      new Set(rows.map((e) => e.ts)).size + (profile?.runCount || 0);
-    return {
-      best,
-      min,
-      max,
-      count: rows.length,
-      runs,
-      tiers: profile?.tiers || [],
-      strategy: profile?.strategy || "",
-      recommendedPrices: profile?.recommendedPrices || [],
-    };
-  },
-
-  clear() {
-    localStorage.removeItem(this.KEY);
-    localStorage.removeItem(this.REPORTS_KEY);
-    localStorage.removeItem(this.FINGERPRINTS_KEY);
-    localStorage.removeItem(this.SEEDED_KEY);
-  },
-
-  async seedIfEmpty() {
-    if (localStorage.getItem(this.SEEDED_KEY)) return;
-    if (this._readReports().length > 0) {
-      localStorage.setItem(this.SEEDED_KEY, "1");
-      return;
-    }
-    await this.fetchSeedReportsForCategory("10004");
-  },
-
-  getPublicSeedBases() {
-    const bases = [];
-    const path =
-      (typeof CONFIG !== "undefined" && CONFIG.PUBLIC_SEED_REPORTS_PATH) ||
-      "/data/seed-reports";
-    if (typeof window !== "undefined" && window.location?.origin) {
-      const origin = window.location.origin;
-      if (
-        !origin.startsWith("chrome-extension") &&
-        !origin.startsWith("moz-extension")
-      ) {
-        bases.push(`${origin}${path}`);
-      }
-    }
-    if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      bases.push(
-        chrome.runtime.getURL("data/seed-reports").replace(/\/$/, ""),
-      );
-    }
-    return bases;
-  },
-
-  getSeedReportFileNames(catId) {
-    const id = String(catId || "");
-    const names = [];
-    if (id === "10004") names.push("kurti-10004.csv");
-    if (id) names.push(`${id}.csv`);
-    if (!names.length) names.push("kurti-10004.csv");
-    return [...new Set(names)];
-  },
-
-  getSeedReportUrls(catId) {
-    const bases = this.getPublicSeedBases();
-    const names = this.getSeedReportFileNames(catId);
-    const urls = [];
-    for (const base of bases) {
-      for (const name of names) {
-        urls.push(`${base}/${name}`);
-      }
-    }
-    return urls;
-  },
-
-  async fetchSeedReportsForCategory(catId) {
-    const urls = this.getSeedReportUrls(catId);
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) continue;
-        const text = await res.text();
-        if (!text.includes("record_type")) continue;
-        const result = this.importCsv(text);
-        if (result.ok) {
-          localStorage.setItem(this.SEEDED_KEY, "1");
-          localStorage.setItem(this.SEED_VERSION_KEY, String(this.SEED_VERSION));
-          console.log("[LocalPriceDB] Loaded public seed report:", url, result);
-          return result;
-        }
-      } catch (e) {
-        console.warn("[LocalPriceDB] Public seed fetch failed:", url, e.message);
-      }
-    }
-    return null;
-  },
-
-  async ensureCategorySeed(catId) {
-    const id = String(catId || "");
-    const storedVer = localStorage.getItem(this.SEED_VERSION_KEY);
-    if (storedVer !== String(this.SEED_VERSION)) {
-      localStorage.removeItem(this.SEEDED_KEY);
-    }
-    if (
-      id &&
-      this.getCategoryProfile(id).hasData &&
-      storedVer === String(this.SEED_VERSION)
-    ) {
-      return this.getCategoryProfile(id);
-    }
-    const fetched = await this.fetchSeedReportsForCategory(id || "10004");
-    if (fetched?.ok) {
-      localStorage.setItem(this.SEED_VERSION_KEY, String(this.SEED_VERSION));
-      return this.getCategoryProfile(fetched.categoryId || id);
-    }
-    if (!this._readReports().length) {
-      await this.seedIfEmpty();
-    }
-    return id ? this.getCategoryProfile(id) : this.getCategoryProfile("");
-  },
-
-  scoreAnalysisAlignment(v, analysisPrimary) {
-    if (!analysisPrimary?.length) return 0;
-    const kb =
-      Number(v.meta?.kb || 0) ||
-      (v.blob?.size ? Math.ceil(v.blob.size / 1024) : 0);
-    const est = this.estOf(v);
-    const style = String(
-      v.variantStyle || v.meta?.style || v.meta?.path || "",
-    ).toLowerCase();
-    let boost = 0;
-    for (const a of analysisPrimary) {
-      const aKb = Number(a.meta?.kb || 0);
-      const aEst = Number(a.estShipping ?? a.meta?.estInr ?? 0);
-      const aPath = String(a.meta?.path || "").toLowerCase();
-      if (aKb > 0 && kb > 0 && Math.abs(kb - aKb) <= 6) {
-        boost = Math.max(boost, 35);
-      }
-      if (aEst > 0 && est < 900 && Math.abs(est - aEst) <= 4) {
-        boost = Math.max(boost, 28);
-      }
-      if (aPath && style && (style.includes(aPath) || aPath.includes(style))) {
-        boost = Math.max(boost, 20);
-      }
-      if (a.meta?.recommended || a.meta?.lowest) {
-        boost = Math.max(boost, 15);
-      }
-    }
-    return boost;
-  },
 };
+
+
 
 class MeeshoShippingOptimizer {
   constructor() {
@@ -2189,33 +157,8 @@ class MeeshoShippingOptimizer {
     this.analysisPrimaryResults = [];
     this.analysisExtraResults = [];
     this.showAnalysisExtras = false;
-    this.showcaseResults = [];
-    this.showShowcaseResults = false;
-    this.isGeneratingShowcase = false;
-    this.promoLifestyleResults = [];
-    this.showPromoLifestyleResults = false;
-    this.isGeneratingPromoLifestyle = false;
-    this.tallStaticResults = [];
-    this.showTallStaticResults = false;
-    this.isGeneratingTallStatic = false;
-    this.gownStaticResults = [];
-    this.showGownStaticResults = false;
-    this.isGeneratingGownStatic = false;
-    this.localPriceMode = false;
-    this.localPriceProfile = null;
-    this.localPricePoolResults = [];
-    this._liveLearnResults = [];
     this.lastLivePricedResults = [];
     this.lastProcessedFile = null;
-    // Test Lab state — mirrors Live, isolated from currentResults
-    this.testLabCurrentResults = [];
-    this.testLabFramedExtraResults = [];
-    this.testLabShowFramedExtras = false;
-    this.testLabLiveAnalysis = null;
-    this.testLabAnalysisPrimaryResults = [];
-    this.testLabAnalysisExtraResults = [];
-    this.testLabShowAnalysisExtras = false;
-    this.activeOptimizerTab = "live";
     this.variationCount = 6;
     this.isLicensed = false;
     this.originalImageUrl = null;
@@ -2248,43 +191,13 @@ class MeeshoShippingOptimizer {
     this.init();
   }
 
-  /** Web app or extension modal with Live / Test Lab tabs */
+  /** True when generate is manual (button) instead of auto-start on file pick. */
   isTabbedOptimizerUI() {
-    return (
-      !!window.WEB_OPTIMIZER_MODE ||
-      !!document.querySelector("[data-optimizer-tab]")
-    );
+    return !!window.WEB_OPTIMIZER_MODE || !!document.getElementById("generate-btn");
   }
 
-  getTestLabModuleUrl() {
-    if (window.WEB_OPTIMIZER_MODE) {
-      return "/js/testLabBridge.mjs?v=33";
-    }
-    if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      return chrome.runtime.getURL("js/testLabBridge.mjs?v=33");
-    }
-    return "/js/testLabBridge.mjs?v=33";
-  }
 
-  getLiveAnalysisModuleUrl() {
-    if (window.WEB_OPTIMIZER_MODE) {
-      return "/js/liveAnalysisBridge.mjs?v=96";
-    }
-    if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      return chrome.runtime.getURL("js/liveAnalysisBridge.mjs?v=96");
-    }
-    return "/js/liveAnalysisBridge.mjs?v=96";
-  }
 
-  getLiveVariantReportModuleUrl() {
-    if (window.WEB_OPTIMIZER_MODE) {
-      return "/js/liveVariantReport.mjs?v=3";
-    }
-    if (typeof chrome !== "undefined" && chrome.runtime?.getURL) {
-      return chrome.runtime.getURL("js/liveVariantReport.mjs?v=3");
-    }
-    return "/js/liveVariantReport.mjs?v=3";
-  }
 
   getStaticComposeModuleUrl() {
     if (window.WEB_OPTIMIZER_MODE) {
@@ -2386,25 +299,7 @@ class MeeshoShippingOptimizer {
     );
   }
 
-  async preloadLiveAnalysisModule() {
-    return this.importOptimizerModule(
-      () => this.getLiveAnalysisModuleUrl(),
-      () => !!window.LiveAnalysis?.runLiveAnalysis,
-      "__liveAnalysisModulePromise",
-    );
-  }
 
-  async preloadLiveVariantReportModule() {
-    return this.importOptimizerModule(
-      () => this.getLiveVariantReportModuleUrl(),
-      () =>
-        !!(
-          window.LiveVariantReport?.analyzeLiveVariants &&
-          window.LiveVariantReport?.exportReportCsv
-        ),
-      "__liveVariantReportModulePromise",
-    );
-  }
 
   isStaticPromoRow(row) {
     if (row?.layers?._staticFrame) return true;
@@ -2415,304 +310,22 @@ class MeeshoShippingOptimizer {
     return style === "showcase" || style === "lifestyle_promo" || style === "tall_static" || style === "gown_static";
   }
 
-  async runLiveStaticAnalysis(file) {
-    const ready = await this.preloadLiveAnalysisModule();
-    if (!ready || !window.LiveAnalysis?.runLiveAnalysis) return null;
-    return window.LiveAnalysis.runLiveAnalysis(file, {
-      onProgress: (msg) => console.log("Analysis:", msg),
-    });
-  }
 
-  async runShowcaseGeneration(file) {
-    const ready = await this.preloadLiveAnalysisModule();
-    if (!ready || !window.LiveAnalysis?.runShowcaseGeneration) return null;
-    return window.LiveAnalysis.runShowcaseGeneration(file, {
-      onProgress: (msg) => console.log("Showcase:", msg),
-    });
-  }
 
-  async getImageFileForShowcase() {
-    if (this.lastProcessedFile) return this.lastProcessedFile;
-    const fileInput = document.getElementById("image-input");
-    if (fileInput?.files?.[0]) return fileInput.files[0];
-    if (this._pendingFile) return this._pendingFile;
-    if (window.__webPendingFile) return window.__webPendingFile;
-    return null;
-  }
 
-  async runPromoLifestyleGeneration(file) {
-    const ready = await this.preloadLiveAnalysisModule();
-    if (!ready || !window.LiveAnalysis?.runPromoLifestyleGeneration) return null;
-    return window.LiveAnalysis.runPromoLifestyleGeneration(file, {
-      onProgress: (msg) => console.log("Promo lifestyle:", msg),
-    });
-  }
 
-  async runTallStaticGeneration(file) {
-    const ready = await this.preloadLiveAnalysisModule();
-    if (!ready || !window.LiveAnalysis?.runTallStaticGeneration) return null;
-    return window.LiveAnalysis.runTallStaticGeneration(file, {
-      onProgress: (msg) => console.log("Tall static:", msg),
-    });
-  }
 
-  async runGownStaticGeneration(file) {
-    const ready = await this.preloadLiveAnalysisModule();
-    if (!ready || !window.LiveAnalysis?.runGownStaticGeneration) return null;
-    return window.LiveAnalysis.runGownStaticGeneration(file, {
-      onProgress: (msg) => console.log("Gown static:", msg),
-    });
-  }
 
-  async generatePromoLifestyleFrames() {
-    if (!window.WEB_OPTIMIZER_MODE) return;
-    if (this.isGeneratingPromoLifestyle) return;
 
-    const scrollToResults = !this.hasStaticPromoResults();
-    const file = await this.getImageFileForShowcase();
-    if (!file) {
-      OptimizerUtils.showNotification("Choose an image first", "error");
-      return;
-    }
 
-    this.lastProcessedFile = file;
-    this.isGeneratingPromoLifestyle = true;
-    this.displayLiveResultsPanel({ scroll: false });
 
-    const processingArea = document.getElementById("processing-area");
-    if (processingArea) {
-      processingArea.style.display = "block";
-      processingArea.innerHTML = `
-        <div style="text-align:center;padding:24px 16px;">
-          <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Building lifestyle promo frames…</div>
-          <div style="font-size:12px;color:#666;">Solid green frame · HOT/FLASH sale · 48–54 KB</div>
-        </div>`;
-    }
-
-    try {
-      const out = await this.runPromoLifestyleGeneration(file);
-      if (!out?.success || !out.results?.length) {
-        OptimizerUtils.showNotification(
-          "Could not generate lifestyle promo frames",
-          "error",
-        );
-        return;
-      }
-      this.promoLifestyleResults = out.results.map((r, i) =>
-        this.mapResultFromApi(r, i + 70000),
-      );
-      this.promoLifestyleResults.sort(
-        (a, b) => (a.estShipping || 999) - (b.estShipping || 999),
-      );
-      this.showPromoLifestyleResults = true;
-      OptimizerUtils.showNotification(
-        `✅ ${this.promoLifestyleResults.length} lifestyle promo frames ready (est ₹${this.promoLifestyleResults[0]?.estShipping || "—"})`,
-        "success",
-      );
-      this.displayLiveResultsPanel({ scroll: scrollToResults });
-    } catch (e) {
-      console.error("Promo lifestyle generate:", e);
-      OptimizerUtils.showNotification("Lifestyle promo generation failed", "error");
-    } finally {
-      this.isGeneratingPromoLifestyle = false;
-      if (processingArea) processingArea.style.display = "none";
-      this.displayLiveResultsPanel({ scroll: false });
-    }
-  }
-
-  async generateTallStaticFrames() {
-    if (!window.WEB_OPTIMIZER_MODE) return;
-    if (this.isGeneratingTallStatic) return;
-
-    const scrollToResults = !this.hasStaticPromoResults();
-    const file = await this.getImageFileForShowcase();
-    if (!file) {
-      OptimizerUtils.showNotification("Choose an image first", "error");
-      return;
-    }
-
-    this.lastProcessedFile = file;
-    this.isGeneratingTallStatic = true;
-    this.displayLiveResultsPanel({ scroll: false });
-
-    const processingArea = document.getElementById("processing-area");
-    if (processingArea) {
-      processingArea.style.display = "block";
-      processingArea.innerHTML = `
-        <div style="text-align:center;padding:24px 16px;">
-          <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Building tall promo frames…</div>
-          <div style="font-size:12px;color:#666;">703×1024 blue frame · corner badges · ₹50 band</div>
-        </div>`;
-    }
-
-    try {
-      const out = await this.runTallStaticGeneration(file);
-      if (!out?.success || !out.results?.length) {
-        OptimizerUtils.showNotification(
-          "Could not generate tall promo frames",
-          "error",
-        );
-        return;
-      }
-      this.tallStaticResults = out.results.map((r, i) =>
-        this.mapResultFromApi(r, i + 80000),
-      );
-      this.tallStaticResults.sort(
-        (a, b) => (a.estShipping || 999) - (b.estShipping || 999),
-      );
-      this.showTallStaticResults = true;
-      OptimizerUtils.showNotification(
-        `✅ ${this.tallStaticResults.length} tall promo frames ready (est ₹${this.tallStaticResults[0]?.estShipping || "—"})`,
-        "success",
-      );
-      this.displayLiveResultsPanel({ scroll: scrollToResults });
-    } catch (e) {
-      console.error("Tall static generate:", e);
-      OptimizerUtils.showNotification("Tall promo generation failed", "error");
-    } finally {
-      this.isGeneratingTallStatic = false;
-      if (processingArea) processingArea.style.display = "none";
-      this.displayLiveResultsPanel({ scroll: false });
-    }
-  }
-
-  async generateShowcaseFrames() {
-    if (!window.WEB_OPTIMIZER_MODE) return;
-    if (this.isGeneratingShowcase) return;
-
-    const scrollToResults = !this.hasStaticPromoResults();
-    const file = await this.getImageFileForShowcase();
-    if (!file) {
-      OptimizerUtils.showNotification("Choose an image first", "error");
-      return;
-    }
-
-    this.lastProcessedFile = file;
-    this.isGeneratingShowcase = true;
-    this.displayLiveResultsPanel({ scroll: false });
-
-    const processingArea = document.getElementById("processing-area");
-    if (processingArea) {
-      processingArea.style.display = "block";
-      processingArea.innerHTML = `
-        <div style="text-align:center;padding:24px 16px;">
-          <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Building showcase frames…</div>
-          <div style="font-size:12px;color:#666;">Tight portrait frame · static · no Meesho session</div>
-        </div>`;
-    }
-
-    try {
-      const out = await this.runShowcaseGeneration(file);
-      if (!out?.success || !out.results?.length) {
-        OptimizerUtils.showNotification(
-          "Could not generate showcase frames",
-          "error",
-        );
-        return;
-      }
-      this.showcaseResults = out.results.map((r, i) =>
-        this.mapResultFromApi(r, i + 60000),
-      );
-      this.showcaseResults.sort(
-        (a, b) => (a.estShipping || 999) - (b.estShipping || 999),
-      );
-      this.showShowcaseResults = true;
-      OptimizerUtils.showNotification(
-        `✅ ${this.showcaseResults.length} showcase frames ready (static est ₹)`,
-        "success",
-      );
-      this.displayLiveResultsPanel({ scroll: scrollToResults });
-    } catch (e) {
-      console.error("Showcase generate:", e);
-      OptimizerUtils.showNotification("Showcase generation failed", "error");
-    } finally {
-      this.isGeneratingShowcase = false;
-      if (processingArea) processingArea.style.display = "none";
-      this.displayLiveResultsPanel({ scroll: false });
-    }
-  }
-
-  async generateGownStaticFrames() {
-    if (!window.WEB_OPTIMIZER_MODE) return;
-    if (this.isGeneratingGownStatic) return;
-
-    const scrollToResults = !this.hasStaticPromoResults();
-    const file = await this.getImageFileForShowcase();
-    if (!file) {
-      OptimizerUtils.showNotification("Choose an image first", "error");
-      return;
-    }
-
-    this.lastProcessedFile = file;
-    this.isGeneratingGownStatic = true;
-    this.displayLiveResultsPanel({ scroll: false });
-
-    const processingArea = document.getElementById("processing-area");
-    if (processingArea) {
-      processingArea.style.display = "block";
-      processingArea.innerHTML = `
-        <div style="text-align:center;padding:24px 16px;">
-          <div style="font-size:15px;font-weight:600;margin-bottom:8px;">Building gown promo frames…</div>
-          <div style="font-size:12px;color:#666;">773×1094 teal frame · lifestyle scene · thick white mat · ~₹49 band</div>
-        </div>`;
-    }
-
-    try {
-      const out = await this.runGownStaticGeneration(file);
-      if (!out?.success || !out.results?.length) {
-        OptimizerUtils.showNotification(
-          "Could not generate gown promo frames",
-          "error",
-        );
-        return;
-      }
-      this.gownStaticResults = out.results.map((r, i) =>
-        this.mapResultFromApi(r, i + 90000),
-      );
-      this.gownStaticResults.sort(
-        (a, b) => (a.estShipping || 999) - (b.estShipping || 999),
-      );
-      this.showGownStaticResults = true;
-      OptimizerUtils.showNotification(
-        `✅ ${this.gownStaticResults.length} gown promo frames ready (est ₹${this.gownStaticResults[0]?.estShipping || "—"})`,
-        "success",
-      );
-      this.displayLiveResultsPanel({ scroll: scrollToResults });
-    } catch (e) {
-      console.error("Gown static generate:", e);
-      OptimizerUtils.showNotification("Gown promo generation failed", "error");
-    } finally {
-      this.isGeneratingGownStatic = false;
-      if (processingArea) processingArea.style.display = "none";
-      this.displayLiveResultsPanel({ scroll: false });
-    }
-  }
 
   displayLiveResultsPanel(options = {}) {
     this.refreshLiveResultsPanel(options);
   }
 
-  hasImageForStaticPromo() {
-    return !!(
-      this.lastProcessedFile ||
-      this._pendingFile ||
-      window.__webPendingFile ||
-      document.getElementById("image-input")?.files?.[0]
-    );
-  }
 
-  hasStaticPromoResults() {
-    return !!(
-      this.showcaseResults.length ||
-      this.promoLifestyleResults.length ||
-      this.tallStaticResults.length ||
-      this.gownStaticResults.length
-    );
-  }
 
-  shouldShowStaticPromoWorkspace() {
-    return window.WEB_OPTIMIZER_MODE && (this.hasImageForStaticPromo() || this.hasStaticPromoResults());
-  }
 
   refreshLiveResultsPanel(options = {}) {
     const resultsArea = document.getElementById("results-area");
@@ -2720,13 +333,7 @@ class MeeshoShippingOptimizer {
 
     const hasLiveContent =
       this.currentResults.length > 0 || this.analysisPrimaryResults.length > 0;
-    const hasStaticWorkspace = this.shouldShowStaticPromoWorkspace();
-
-    if (!window.WEB_OPTIMIZER_MODE) {
-      if (!hasLiveContent) return;
-    } else if (!hasLiveContent && !hasStaticWorkspace) {
-      return;
-    }
+    if (!hasLiveContent) return;
 
     resultsArea.style.display = "block";
     delete resultsArea.dataset.view;
@@ -2735,63 +342,13 @@ class MeeshoShippingOptimizer {
       this.getResultsViewOptions(),
     );
     this.setupResultsEvents();
-    this.syncStaticPromoChrome();
 
-    const shouldScroll =
-      options.scroll !== false &&
-      window.WEB_OPTIMIZER_MODE &&
-      (this.hasStaticPromoResults() || hasLiveContent);
-    if (shouldScroll) {
+    if (options.scroll !== false && window.WEB_OPTIMIZER_MODE) {
       resultsArea.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
-  syncStaticPromoChrome() {
-    const sticky = document.getElementById("generate-sticky");
-    if (!sticky) return;
-    const hideStaticBtns = this.shouldShowStaticPromoWorkspace();
-    sticky.querySelectorAll("[data-static-gen]").forEach((btn) => {
-      btn.style.display = hideStaticBtns ? "none" : "";
-    });
-  }
 
-  bindStaticPromoButtons(root = document) {
-    if (!window.WEB_OPTIMIZER_MODE) return;
-    const hasFile = this.hasImageForStaticPromo();
-
-    root.querySelectorAll('[data-static-gen="showcase"]').forEach((btn) => {
-      btn.disabled = !hasFile || this.isGeneratingShowcase;
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void this.generateShowcaseFrames();
-      };
-    });
-    root.querySelectorAll('[data-static-gen="lifestyle"]').forEach((btn) => {
-      btn.disabled = !hasFile || this.isGeneratingPromoLifestyle;
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void this.generatePromoLifestyleFrames();
-      };
-    });
-    root.querySelectorAll('[data-static-gen="tall"]').forEach((btn) => {
-      btn.disabled = !hasFile || this.isGeneratingTallStatic;
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void this.generateTallStaticFrames();
-      };
-    });
-    root.querySelectorAll('[data-static-gen="gown"]').forEach((btn) => {
-      btn.disabled = !hasFile || this.isGeneratingGownStatic;
-      btn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        void this.generateGownStaticFrames();
-      };
-    });
-  }
 
   init() {
     console.log("Initializing optimizer...");
@@ -3079,19 +636,10 @@ class MeeshoShippingOptimizer {
 
     const processingArea = document.getElementById("processing-area");
     const resultsArea = document.getElementById("results-area");
-    const testResultsArea = document.getElementById("test-results-area");
     const generateBtn = document.getElementById("generate-btn");
-    const testGenBtn = document.getElementById("test-generate-btn");
     const uploadArea = document.getElementById("upload-area");
     if (processingArea) processingArea.style.display = "none";
     if (resultsArea) resultsArea.style.display = "none";
-    if (testResultsArea) {
-      testResultsArea.style.display = "none";
-      testResultsArea.innerHTML = "";
-    }
-    this.testLabCurrentResults = [];
-    this.testLabAnalysisPrimaryResults = [];
-    this.setTestLabChromeVisible(true);
     if (uploadArea) uploadArea.style.display = "block";
     if (generateBtn) {
       generateBtn.style.display = "block";
@@ -3101,42 +649,6 @@ class MeeshoShippingOptimizer {
         document.getElementById("image-input")?.files?.[0];
       if (hasFile) generateBtn.disabled = false;
     }
-    const showcaseBtn = document.getElementById("generate-showcase-btn");
-    if (showcaseBtn) {
-      const hasFile =
-        this._pendingFile ||
-        window.__webPendingFile ||
-        document.getElementById("image-input")?.files?.[0];
-      showcaseBtn.disabled = !hasFile;
-    }
-    const promoBtn = document.getElementById("generate-promo-lifestyle-btn");
-    if (promoBtn) {
-      const hasFile =
-        this._pendingFile ||
-        window.__webPendingFile ||
-        document.getElementById("image-input")?.files?.[0];
-      promoBtn.disabled = !hasFile;
-    }
-    const tallStaticBtn = document.getElementById("generate-tall-static-btn");
-    if (tallStaticBtn) {
-      const hasFile =
-        this._pendingFile ||
-        window.__webPendingFile ||
-        document.getElementById("image-input")?.files?.[0];
-      tallStaticBtn.disabled = !hasFile;
-    }
-    const gownStaticBtn = document.getElementById("generate-gown-static-btn");
-    if (gownStaticBtn) {
-      const hasFile =
-        this._pendingFile ||
-        window.__webPendingFile ||
-        document.getElementById("image-input")?.files?.[0];
-      gownStaticBtn.disabled = !hasFile;
-    }
-    const localPriceGenBtn = document.getElementById("local-price-generate-btn");
-    if (localPriceGenBtn) {
-      /* enabled via enableAllGenerateButtons after setupMainEvents */
-    }
     document.querySelectorAll(".opt-section").forEach((s) => {
       s.style.display = "block";
     });
@@ -3144,9 +656,6 @@ class MeeshoShippingOptimizer {
     this.setupMainEvents();
     this.setupNavigationGuards();
     this.enableAllGenerateButtons();
-    this.bindStaticPromoButtons();
-
-    void this.preloadLiveAnalysisModule();
 
     try {
       if (typeof MeeshoAPI !== "undefined") {
@@ -3530,29 +1039,10 @@ Please share payment details and license key.`;
       this.setOptimizerUploadFile(file, { source: "user" });
 
       const bootMsg = document.getElementById("boot-msg");
-      const testGenBtn = document.getElementById("test-generate-btn");
-      const showcaseBtn = document.getElementById("generate-showcase-btn");
-      const promoBtn = document.getElementById("generate-promo-lifestyle-btn");
-      const tallStaticBtn = document.getElementById("generate-tall-static-btn");
-      const gownStaticBtn = document.getElementById("generate-gown-static-btn");
-      const localPriceGenBtn = document.getElementById("local-price-generate-btn");
       if (tabbedGenerateMode) {
         generateBtn.disabled = false;
-        if (testGenBtn) testGenBtn.disabled = false;
-        if (showcaseBtn) showcaseBtn.disabled = false;
-        if (promoBtn) promoBtn.disabled = false;
-        if (tallStaticBtn) tallStaticBtn.disabled = false;
-        if (gownStaticBtn) gownStaticBtn.disabled = false;
-        if (localPriceGenBtn) localPriceGenBtn.disabled = false;
-        if (bootMsg) {
-          bootMsg.textContent =
-            this.getActiveOptimizerTab() === "test"
-              ? "Image ready — tap Run Test Lab"
-              : "Image ready — tap Generate Variants";
-        }
-        this.setupOptimizerTabs();
+        if (bootMsg) bootMsg.textContent = "Image ready — tap Generate Variants";
         this.refreshLiveResultsPanel({ scroll: false });
-        this.bindStaticPromoButtons();
         return;
       }
 
@@ -3591,57 +1081,11 @@ Please share payment details and license key.`;
       OptimizerUtils.showNotification("Already generating — wait or tap Stop", "info");
       return;
     }
-        // Route by tab: Live uses existing processImage — do not modify that path for Test Lab.
-        if (this.getActiveOptimizerTab() === "test") {
-          void this.processImageTestLab(file);
-        } else {
-          void this.processImage(file);
-        }
+        void this.processImage(file);
       };
 
       generateBtn.disabled = !getUploadFile();
       generateBtn.onclick = runGenerate;
-      const testGenBtn = document.getElementById("test-generate-btn");
-      if (testGenBtn) {
-        testGenBtn.disabled = !getUploadFile();
-        testGenBtn.onclick = runGenerate;
-      }
-      const showcaseBtn = document.getElementById("generate-showcase-btn");
-      if (showcaseBtn) {
-        showcaseBtn.disabled = !getUploadFile();
-        showcaseBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void this.generateShowcaseFrames();
-        };
-      }
-      const promoBtn = document.getElementById("generate-promo-lifestyle-btn");
-      if (promoBtn) {
-        promoBtn.disabled = !getUploadFile();
-        promoBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void this.generatePromoLifestyleFrames();
-        };
-      }
-      const tallStaticBtn = document.getElementById("generate-tall-static-btn");
-      if (tallStaticBtn) {
-        tallStaticBtn.disabled = !getUploadFile();
-        tallStaticBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void this.generateTallStaticFrames();
-        };
-      }
-      const gownStaticBtn = document.getElementById("generate-gown-static-btn");
-      if (gownStaticBtn) {
-        gownStaticBtn.disabled = !getUploadFile();
-        gownStaticBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void this.generateGownStaticFrames();
-        };
-      }
     }
 
     if (uploadArea) {
@@ -3676,11 +1120,6 @@ Please share payment details and license key.`;
     }
     this.loadCategoryDropdown();
 
-    // Live vs Test Lab tabs (web + extension modal)
-    if (this.isTabbedOptimizerUI()) {
-      this.setupOptimizerTabs();
-    }
-
     const categorySelect = document.getElementById("category-select");
     if (categorySelect && !document.getElementById("category-search")) {
       categorySelect.onchange = () => {
@@ -3688,140 +1127,16 @@ Please share payment details and license key.`;
         if (categoryId && typeof MeeshoAPI !== "undefined") {
           MeeshoAPI.setCategory(categoryId);
         }
-        void this.refreshLocalPriceFromPublicSeed(categorySelect.value || "");
       };
     }
 
     this.wireClearUploadButton();
-    this.wireLocalPriceButtons();
     this.setupNavigationGuards();
   }
 
-  wireLocalPriceButtons() {
-    const genBtn = document.getElementById("local-price-generate-btn");
-    if (genBtn) {
-      genBtn.onclick = () => {
-        const file = this.getImageFileForGenerate();
-        if (!file) {
-          OptimizerUtils.showNotification("Choose an image first", "error");
-          return;
-        }
-        if (this.isProcessing) {
-          OptimizerUtils.showNotification("Still running — wait or tap Stop", "info");
-          return;
-        }
-        void this.processImageLocalPrice(file);
-      };
-    }
 
-    const importBtn = document.getElementById("local-price-import-btn");
-    const importInput = document.getElementById("local-price-import-input");
-    if (importBtn && importInput) {
-      importBtn.onclick = () => importInput.click();
-      importInput.onchange = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const result = LocalPriceDB.importCsv(ev.target.result);
-          if (result.ok) {
-            OptimizerUtils.showNotification(
-              `Imported ${result.variantCount} variants · cat ${result.categoryId} · tiers ₹${result.tiers.join(", ")} · recommend ₹${result.recommendedPrices.join(", ")}`,
-              "success",
-              8000,
-            );
-            this.refreshLocalPriceUI();
-          } else {
-            OptimizerUtils.showNotification(result.error || "Import failed", "error");
-          }
-        };
-        reader.readAsText(file);
-        importInput.value = "";
-      };
-    }
 
-    const saveBtn = document.getElementById("local-price-save-btn");
-    if (saveBtn) saveBtn.onclick = () => this.saveLocalPriceSnapshot();
-    const viewBtn = document.getElementById("local-price-view-btn");
-    if (viewBtn) viewBtn.onclick = () => this.showLocalPriceReport();
-    const downloadBtn = document.getElementById("local-price-download-btn");
-    if (downloadBtn) downloadBtn.onclick = () => this.downloadLocalPriceCsv();
-    const clearBtn = document.getElementById("local-price-clear-btn");
-    if (clearBtn) {
-      clearBtn.onclick = () => {
-        if (!confirm("Clear all local price history?")) return;
-        LocalPriceDB.clear();
-        OptimizerUtils.showNotification("Local price history cleared.", "info");
-        this.refreshLocalPriceUI();
-      };
-    }
 
-    void LocalPriceDB.seedIfEmpty().then(() => this.refreshLocalPriceUI());
-    void LocalPriceDB.ensureCategorySeed(
-      document.getElementById("category-select")?.value || "10004",
-    ).then(() => this.refreshLocalPriceUI());
-
-    const pickSelect = document.getElementById("local-price-pick-count");
-    if (pickSelect) {
-      pickSelect.onchange = () => this.updateLocalPriceGenerateLabel();
-      this.updateLocalPriceGenerateLabel();
-    }
-  }
-
-  updateLocalPriceGenerateLabel() {
-    const btn = document.getElementById("local-price-generate-btn");
-    const n = LocalPriceDB.clampPickCount(
-      document.getElementById("local-price-pick-count")?.value,
-    );
-    if (btn) btn.textContent = `📍 Generate ${n} Local Variants`;
-  }
-
-  refreshLocalPriceUI() {
-    const hint = document.getElementById("local-price-hint");
-    if (!hint) return;
-    const categorySelect = document.getElementById("category-select");
-    const catId = String(categorySelect?.value || "").trim();
-    const effectiveCatId = catId || "10004";
-    const cap = effectiveCatId
-      ? LocalPriceDB.syncTargetShippingSelect(effectiveCatId)
-      : null;
-    const summary = LocalPriceDB.summary(effectiveCatId);
-    const profile = LocalPriceDB.getCategoryProfile(effectiveCatId);
-    const learned = effectiveCatId
-      ? LocalPriceDB.getLowestTierLearnedStats(effectiveCatId)
-      : null;
-
-    if (summary) {
-      const tierText =
-        summary.tiers?.length
-          ? `tiers ₹${summary.tiers.join(", ")}`
-          : `range ₹${summary.min}–₹${summary.max}`;
-      const recText = summary.recommendedPrices?.length
-        ? ` → recommend ₹${summary.recommendedPrices.join(" + ₹")}`
-        : "";
-      const learnText = learned?.fingerprintCount
-        ? ` · ${learned.fingerprintCount} learned low-shipping refs`
-        : "";
-      hint.textContent = `📦 Local best ₹${summary.best} · ${tierText}${recText} (${summary.runs} reports)${learnText}${cap ? ` · cap ≤₹${cap}` : ""}`;
-      hint.style.color = "#047857";
-    } else if (profile?.hasData) {
-      const learnText = learned?.fingerprintCount
-        ? ` · ${learned.fingerprintCount} learned refs (est/KB/style)`
-        : "";
-      hint.textContent = `📦 Tiers ₹${profile.tiers.join(", ")} · recommend ₹${profile.recommendedPrices.join(", ")}${learnText}${cap ? ` · live cap ≤₹${cap}` : ""}${profile.strategy === "rupee_pair" ? " · local ignores high live slab" : ""}`;
-      hint.style.color = "#047857";
-    } else {
-      hint.textContent =
-        "Auto-loads seed + live learn · Clear history if picks look wrong · Live = real ₹";
-      hint.style.color = "#6b7280";
-    }
-  }
-
-  async refreshLocalPriceFromPublicSeed(catId) {
-    if (!catId) return;
-    await LocalPriceDB.ensureCategorySeed(catId);
-    this.refreshLocalPriceUI();
-  }
 
   categoryMatchesQuery(cat, query) {
     if (!query) return true;
@@ -4040,7 +1355,6 @@ Please share payment details and license key.`;
     const previewImg = document.getElementById("preview-img");
     const uploadArea = document.getElementById("upload-area");
     const generateBtn = document.getElementById("generate-btn");
-    const testGenBtn = document.getElementById("test-generate-btn");
     const bootMsg = document.getElementById("boot-msg");
 
     const showPreview = (dataUrl) => {
@@ -4066,25 +1380,7 @@ Please share payment details and license key.`;
 
     const enable = () => {
       if (generateBtn) generateBtn.disabled = false;
-      if (testGenBtn) testGenBtn.disabled = false;
-      [
-        "generate-showcase-btn",
-        "generate-promo-lifestyle-btn",
-        "generate-tall-static-btn",
-        "generate-gown-static-btn",
-        "local-price-generate-btn",
-        "local-price-import-btn",
-        "local-price-import-btn",
-      ].forEach((id) => {
-        const btn = document.getElementById(id);
-        if (btn) btn.disabled = false;
-      });
-      if (bootMsg) {
-        bootMsg.textContent =
-          this.getActiveOptimizerTab?.() === "test"
-            ? "Image ready — tap Run Test Lab"
-            : "Image ready — tap Generate Variants";
-      }
+      if (bootMsg) bootMsg.textContent = "Image ready — tap Generate Variants";
     };
     enable();
 
@@ -4690,7 +1986,6 @@ Please share payment details and license key.`;
         clearBtn.style.display = "none";
         this.refreshCategoryApiPreview();
         this.applyPageCategoryIfAvailable({ force: true });
-        this.refreshLocalPriceUI();
         search.focus();
         this.updateCategoryAutocompleteSuggestions();
       };
@@ -4771,7 +2066,6 @@ Please share payment details and license key.`;
     } else {
       this.refreshCategoryApiPreview();
     }
-    this.refreshLocalPriceUI();
     return true;
   }
 
@@ -4886,7 +2180,6 @@ Please share payment details and license key.`;
       source: options.source || "user",
       cat,
     });
-    void this.refreshLocalPriceFromPublicSeed(String(cat.id));
     return true;
   }
 
@@ -5055,213 +2348,11 @@ Please share payment details and license key.`;
     }
   }
 
-  // ─── Optimizer tabs (web + extension) ───────────────────────────────────
-  // Live tab → processImage() — production path, unchanged below.
-  // Test Lab tab → processImageTestLab() — isolated experiments only.
 
-  getActiveOptimizerTab() {
-    if (!this.isTabbedOptimizerUI()) return "live";
-    return this.activeOptimizerTab || "live";
-  }
 
-  setupOptimizerTabs() {
-    const tabs = document.querySelectorAll("[data-optimizer-tab]");
-    if (!tabs.length) return;
 
-    const switchTab = (tabName) => {
-      this.activeOptimizerTab = tabName === "test" ? "test" : "live";
-      tabs.forEach((btn) => {
-        const active = btn.dataset.optimizerTab === this.activeOptimizerTab;
-        btn.classList.toggle("active", active);
-        btn.setAttribute("aria-selected", active ? "true" : "false");
-      });
-      document.querySelectorAll("[data-optimizer-panel]").forEach((panel) => {
-        panel.classList.toggle(
-          "active",
-          panel.dataset.optimizerPanel === this.activeOptimizerTab
-        );
-      });
 
-      const genBtn = document.getElementById("generate-btn");
-      const testGenBtn = document.getElementById("test-generate-btn");
-      const isTest = this.activeOptimizerTab === "test";
-      if (genBtn) {
-        genBtn.style.display = isTest ? "none" : "block";
-      }
-      if (testGenBtn) {
-        testGenBtn.style.display = isTest ? "block" : "none";
-        if (genBtn && isTest) {
-          testGenBtn.disabled = genBtn.disabled;
-        }
-      }
 
-      if (isTest) {
-        this.preloadLiveAnalysisModule();
-        this.refreshTestLabSessionHint();
-      }
-
-      const resultsArea = document.getElementById("results-area");
-      const testResults = document.getElementById("test-results-area");
-      if (testResults) {
-        testResults.style.display = "none";
-        testResults.innerHTML = "";
-      }
-      this.refreshResultsAreaForActiveTab();
-
-      const boot = document.getElementById("boot-msg");
-      const hasFile =
-        this._pendingFile ||
-        window.__webPendingFile ||
-        document.getElementById("image-input")?.files?.[0];
-      if (boot && hasFile) {
-        boot.textContent =
-          this.activeOptimizerTab === "test"
-            ? "Image ready — tap Run Test Lab"
-            : "Image ready — tap Generate Variants";
-      }
-    };
-
-    tabs.forEach((btn) => {
-      btn.onclick = () => switchTab(btn.dataset.optimizerTab || "live");
-    });
-
-    switchTab(this.activeOptimizerTab || "live");
-  }
-
-  refreshTestLabSessionHint() {
-    const el = document.getElementById("test-lab-session-hint");
-    if (!el) return;
-    const ready =
-      typeof MeeshoAPI !== "undefined" && MeeshoAPI.isReady?.();
-    if (window.WEB_OPTIMIZER_MODE) {
-      el.style.display = "block";
-      el.className = ready
-        ? "session-hint session-status ok"
-        : "session-hint session-status warn";
-      el.textContent = ready
-        ? "✅ Meesho session ready — adaptive live hunt enabled"
-        : "⚠️ Add Meesho session for live adaptive hunt (static analysis still runs)";
-      return;
-    }
-    el.style.display = "block";
-    el.className = ready
-      ? "session-hint session-status ok"
-      : "session-hint session-status warn";
-    el.textContent = ready
-      ? "✅ Logged into Meesho — adaptive hunt uses your supplier session"
-      : "⚠️ Open supplier.meesho.com while logged in for live adaptive hunt";
-  }
-
-  async preloadTestLabModule() {
-    if (window.TestLabOptimizer?.runTestLab) return true;
-    if (!window.__testLabModulePromise) {
-      window.__testLabModulePromise = (async () => {
-        try {
-          await import(this.getTestLabModuleUrl());
-          window.__testLabLoadError = null;
-          return !!window.TestLabOptimizer?.runTestLab;
-        } catch (e) {
-          window.__testLabLoadError = e;
-          console.warn("Test Lab preload:", e);
-          return false;
-        }
-      })();
-    }
-    return window.__testLabModulePromise;
-  }
-
-  async waitForTestLabReady(timeoutMs = 15000) {
-    if (window.TestLabOptimizer?.runTestLab) return true;
-    await this.preloadTestLabModule();
-    if (window.TestLabOptimizer?.runTestLab) return true;
-    if (window.__testLabLoadError) return false;
-    if (window.__testLabReady) return !!window.TestLabOptimizer?.runTestLab;
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(false), timeoutMs);
-      const finish = () => {
-        clearTimeout(timer);
-        resolve(!!window.TestLabOptimizer?.runTestLab);
-      };
-      window.addEventListener("testlab-ready", finish, { once: true });
-    });
-  }
-
-  refreshResultsAreaForActiveTab() {
-    const resultsArea = document.getElementById("results-area");
-    const testResults = document.getElementById("test-results-area");
-    if (testResults) {
-      testResults.style.display = "none";
-      testResults.innerHTML = "";
-    }
-    if (!resultsArea) return;
-
-    if (
-      this.activeOptimizerTab === "test" &&
-      (this.testLabCurrentResults.length || this.testLabAnalysisPrimaryResults.length)
-    ) {
-      resultsArea.style.display = "block";
-      resultsArea.dataset.view = "test";
-      resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-        this.testLabCurrentResults,
-        this.getTestLabResultsViewOptions()
-      );
-      this.setupResultsEvents();
-      return;
-    }
-
-    if (
-      this.activeOptimizerTab === "live" &&
-      (this.currentResults.length ||
-        this.analysisPrimaryResults.length ||
-        this.shouldShowStaticPromoWorkspace())
-    ) {
-      resultsArea.style.display = "block";
-      delete resultsArea.dataset.view;
-      resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-        this.currentResults,
-        this.getResultsViewOptions()
-      );
-      this.setupResultsEvents();
-      return;
-    }
-
-    resultsArea.style.display = "none";
-    resultsArea.innerHTML = "";
-    delete resultsArea.dataset.view;
-  }
-
-  setTestLabChromeVisible(visible) {
-    const ids = [
-      "upload-area",
-      "preview-box",
-      "generate-sticky",
-      "optimizer-tabs",
-      "boot-msg",
-    ];
-    ids.forEach((id) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      if (visible) {
-        el.classList.remove("optimizer-chrome-hidden");
-      } else {
-        el.classList.add("optimizer-chrome-hidden");
-      }
-    });
-    document.querySelectorAll("[data-optimizer-panel]").forEach((panel) => {
-      if (visible) {
-        panel.classList.remove("optimizer-chrome-hidden");
-      } else {
-        panel.classList.add("optimizer-chrome-hidden");
-      }
-    });
-    if (visible) {
-      this.setupOptimizerTabs();
-    }
-  }
-
-  restoreTestLabFormUi() {
-    this.resetToUploadForm({ keepImage: true });
-  }
 
   resetToUploadForm(options = {}) {
     const keepImage = !!options.keepImage;
@@ -5275,25 +2366,7 @@ Please share payment details and license key.`;
     this.analysisPrimaryResults = [];
     this.analysisExtraResults = [];
     this.showAnalysisExtras = false;
-    this.showcaseResults = [];
-    this.showShowcaseResults = false;
-    this.isGeneratingShowcase = false;
-    this.promoLifestyleResults = [];
-    this.showPromoLifestyleResults = false;
-    this.isGeneratingPromoLifestyle = false;
-    this.tallStaticResults = [];
-    this.showTallStaticResults = false;
-    this.isGeneratingTallStatic = false;
-    this.gownStaticResults = [];
-    this.showGownStaticResults = false;
-    this.isGeneratingGownStatic = false;
-    this.testLabCurrentResults = [];
-    this.testLabFramedExtraResults = [];
-    this.testLabShowFramedExtras = false;
-    this.testLabLiveAnalysis = null;
-    this.testLabAnalysisPrimaryResults = [];
-    this.testLabAnalysisExtraResults = [];
-    this.testLabShowAnalysisExtras = false;
+    this.lastLivePricedResults = [];
 
     if (!keepImage) {
       this._pendingFile = null;
@@ -5305,17 +2378,14 @@ Please share payment details and license key.`;
     }
 
     this.closeVariantEditor();
-    this.setTestLabChromeVisible(true);
 
     const processingArea = document.getElementById("processing-area");
     const resultsArea = document.getElementById("results-area");
-    const testResultsArea = document.getElementById("test-results-area");
     const uploadArea = document.getElementById("upload-area");
     const previewBox = document.getElementById("preview-box");
     const previewImg = document.getElementById("preview-img");
     const imageInput = document.getElementById("image-input");
     const generateBtn = document.getElementById("generate-btn");
-    const testGenBtn = document.getElementById("test-generate-btn");
     const generateSticky = document.getElementById("generate-sticky");
 
     if (processingArea) {
@@ -5326,10 +2396,6 @@ Please share payment details and license key.`;
       resultsArea.style.display = "none";
       resultsArea.innerHTML = "";
       delete resultsArea.dataset.view;
-    }
-    if (testResultsArea) {
-      testResultsArea.style.display = "none";
-      testResultsArea.innerHTML = "";
     }
 
     const hasFile =
@@ -5357,254 +2423,18 @@ Please share payment details and license key.`;
 
     if (generateSticky) generateSticky.style.display = "";
     if (generateBtn) {
-      generateBtn.style.display =
-        this.getActiveOptimizerTab() === "test" ? "none" : "block";
+      generateBtn.style.display = "block";
       generateBtn.disabled = !hasFile;
     }
-    if (testGenBtn) {
-      testGenBtn.style.display =
-        this.getActiveOptimizerTab() === "test" ? "block" : "none";
-      testGenBtn.disabled = !hasFile;
-    }
 
-    this.setupOptimizerTabs();
-    this.syncStaticPromoChrome();
     if (window.WEB_OPTIMIZER_MODE && hasFile) {
       this.refreshLiveResultsPanel({ scroll: false });
     }
   }
 
-  /**
-   * TEST LAB — mirrors Live processImage but uses smartSearchAdaptive (skips higher ₹).
-   * Does not modify Live tab state or MeeshoAPI.smartSearch.
-   */
-  async processImageTestLab(file) {
-    if (!file) {
-      OptimizerUtils.showNotification("Choose an image first", "error");
-      return;
-    }
-    if (this.isProcessing) {
-      OptimizerUtils.showNotification("Already generating — wait or tap Stop", "info");
-      return;
-    }
 
-    if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
-      MeeshoAPI.syncFromSession?.();
-    }
-
-    const categorySelect = document.getElementById("category-select");
-    const resolved = this.resolveCategoryForLiveApi(categorySelect);
-    if (resolved.error) {
-      OptimizerUtils.showNotification(
-        resolved.message || "Select a category for live Meesho shipping checks",
-        "error",
-      );
-      return;
-    }
-    if (resolved.id && typeof MeeshoAPI !== "undefined") {
-      MeeshoAPI.setCategory(resolved.id);
-      const cat = resolved.cat || this.findCategoryById(resolved.id);
-      const label = cat
-        ? this.formatCategoryUi(cat, { source: resolved.source }).title
-        : `ID ${resolved.id}`;
-      console.log(`📁 Live API category (${resolved.source}):`, label);
-    }
-
-    const manualMode = this.isManualShippingMode();
-
-    this.isProcessing = true;
-    this.shouldStop = false;
-    this.testLabCurrentResults = [];
-    this.testLabFramedExtraResults = [];
-    this.testLabShowFramedExtras = false;
-    this.testLabLiveAnalysis = null;
-    this.testLabAnalysisPrimaryResults = [];
-    this.testLabAnalysisExtraResults = [];
-    this.testLabShowAnalysisExtras = false;
-
-    const uploadArea = document.getElementById("upload-area");
-    const sections = document.querySelectorAll(".opt-section");
-    const processingArea = document.getElementById("processing-area");
-    const resultsArea = document.getElementById("results-area");
-    const generateBtn = document.getElementById("generate-btn");
-    const testGenBtn = document.getElementById("test-generate-btn");
-
-    if (uploadArea) uploadArea.style.display = "none";
-    if (testGenBtn) testGenBtn.style.display = "none";
-    sections.forEach((s) => (s.style.display = "none"));
-    if (resultsArea) {
-      resultsArea.style.display = "none";
-      resultsArea.innerHTML = "";
-    }
-
-    const targetShipping =
-      parseInt(document.getElementById("test-target-shipping")?.value) ||
-      parseInt(document.getElementById("target-shipping")?.value) ||
-      50;
-    const maxAttempts =
-      parseInt(document.getElementById("test-max-attempts")?.value, 10) ||
-      parseInt(document.getElementById("max-attempts")?.value, 10) ||
-      100;
-
-    const startTime = Date.now();
-    const renderProgress = (attempt, max, bestSoFar, noPidCount, skipHigher, phaseLabel) => {
-      if (!processingArea || this.shouldStop) return;
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      processingArea.innerHTML = this.getSmartModeHTML(
-        attempt,
-        max,
-        targetShipping,
-        bestSoFar,
-        noPidCount,
-        elapsed,
-        {
-          testLab: true,
-          skipHigherCount: skipHigher || 0,
-          phaseLabel: phaseLabel || "",
-        }
-      );
-      const stopBtn = document.getElementById("stop-btn");
-      if (stopBtn) stopBtn.onclick = () => { this.shouldStop = true; };
-    };
-
-    if (processingArea) {
-      processingArea.style.display = "block";
-      renderProgress(0, maxAttempts, null, 0, 0);
-    }
-
-    try {
-      const blob = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          fetch(e.target.result).then((r) => r.blob()).then(resolve);
-        };
-        reader.readAsDataURL(file);
-      });
-
-      await this.ensureOriginalImageUrl(file);
-      this.gatherSettings();
-
-      const analysisPromise = this.runLiveStaticAnalysis(file).catch((e) => {
-        console.warn("Test Lab static analysis failed:", e);
-        return null;
-      });
-
-      let result = { success: false, results: [] };
-
-      if (
-        !manualMode &&
-        typeof MeeshoAPI.smartSearchAdaptive === "function" &&
-        (!window.WEB_OPTIMIZER_MODE || MeeshoAPI.isReady())
-      ) {
-        OptimizerUtils.showNotification(
-          "🧪 Test Lab adaptive hunt — skipping higher ₹ after best is found",
-          "info"
-        );
-        result = await MeeshoAPI.smartSearchAdaptive(
-          blob,
-          targetShipping,
-          maxAttempts,
-          (attempt, max, bestSoFar, noPidCount, skipHigher, phaseLabel) => {
-            renderProgress(attempt, max, bestSoFar, noPidCount, skipHigher, phaseLabel);
-          },
-          (foundResult) => {
-            OptimizerUtils.showNotification(
-              `🎉 Test Lab target ₹${foundResult.shippingCost}!`,
-              "success"
-            );
-          },
-          () => this.shouldStop
-        );
-      }
-
-      if (
-        window.WEB_OPTIMIZER_MODE &&
-        (manualMode || !result.success || !result.results.length)
-      ) {
-        result = await MeeshoAPI.generateLocalVariations(
-          blob,
-          maxAttempts,
-          (attempt, max) => renderProgress(attempt, max, null, 0, 0),
-          () => this.shouldStop
-        );
-      }
-
-      const analysisOut = await analysisPromise;
-      if (analysisOut?.success) {
-        this.testLabLiveAnalysis = analysisOut.analysis;
-        this.testLabAnalysisPrimaryResults = (analysisOut.primary || []).map(
-          (r, i) => this.mapResultFromApi(r, i + 40000)
-        );
-        this.testLabAnalysisExtraResults = (analysisOut.seeMore || []).map(
-          (r, i) => this.mapResultFromApi(r, i + 50000)
-        );
-        this.testLabAnalysisPrimaryResults.sort(
-          (a, b) => (a.estShipping || 999) - (b.estShipping || 999)
-        );
-        this.testLabShowAnalysisExtras = false;
-      }
-
-      if (result.success && result.results.length > 0) {
-        this.testLabCurrentResults = result.results.map((r, i) =>
-          this.mapResultFromApi(r, i)
-        );
-        this.testLabFramedExtraResults = (result.framedExtras || []).map(
-          (r, i) => this.mapResultFromApi(r, i + 45000)
-        );
-        this.testLabShowFramedExtras = false;
-
-        const skipNote = result.skipHigherCount
-          ? ` · ${result.skipHigherCount} higher skipped`
-          : "";
-        const recoveryNote = result.recoveryTriggered ? " · recovery mode used" : "";
-        OptimizerUtils.showNotification(
-          `🧪 Best: ₹${result.bestResult?.shippingCost || "—"}${skipNote}${recoveryNote}`,
-          "success"
-        );
-      } else if (this.testLabAnalysisPrimaryResults.length > 0) {
-        OptimizerUtils.showNotification(
-          `📊 Test Lab: ${this.testLabAnalysisPrimaryResults.length} analysis options (est ₹)`,
-          "success"
-        );
-      } else {
-        OptimizerUtils.showNotification(
-          "Test Lab: no results — check Meesho session or try another image",
-          "error"
-        );
-      }
-    } catch (err) {
-      console.error("Test Lab error:", err);
-      OptimizerUtils.showNotification("Test Lab: " + err.message, "error");
-    }
-
-    if (processingArea) processingArea.style.display = "none";
-
-    if (
-      this.testLabCurrentResults.length > 0 ||
-      this.testLabAnalysisPrimaryResults.length > 0
-    ) {
-      if (resultsArea) {
-        resultsArea.style.display = "block";
-        resultsArea.dataset.view = "test";
-        await this.prepareEditableResultPreviews(this.testLabCurrentResults);
-        resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-          this.testLabCurrentResults,
-          this.getTestLabResultsViewOptions()
-        );
-        this.setupResultsEvents();
-      }
-    } else {
-      this.restoreTestLabFormUi();
-    }
-
-    this.finishOptimizerRun();
-  }
-
-  // LIVE MODE ONLY — production generate path. Test Lab uses processImageTestLab().
+  // LIVE MODE — production generate path.
   async processImage(file, options = {}) {
-    const purpose = options.purpose === "learn" ? "learn" : "main";
-    this.localPriceMode = false;
-    this.localPriceProfile = null;
     if (!file) {
       OptimizerUtils.showNotification("Choose an image first", "error");
       return;
@@ -5615,7 +2445,6 @@ Please share payment details and license key.`;
       return;
     }
 
-    // Sync session + category before generation
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.syncFromSession?.();
     }
@@ -5642,9 +2471,8 @@ Please share payment details and license key.`;
 
     this.isProcessing = true;
     this.shouldStop = false;
-    this.localPriceMode = false;
     this.lastProcessedFile = file;
-    this._liveLearnResults = [];
+    this.lastLivePricedResults = [];
     this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
@@ -5652,58 +2480,28 @@ Please share payment details and license key.`;
     this.analysisPrimaryResults = [];
     this.analysisExtraResults = [];
     this.showAnalysisExtras = false;
-    this.showcaseResults = [];
-    this.showShowcaseResults = false;
-    this.isGeneratingShowcase = false;
-    this.promoLifestyleResults = [];
-    this.showPromoLifestyleResults = false;
-    this.isGeneratingPromoLifestyle = false;
-    this.tallStaticResults = [];
-    this.showTallStaticResults = false;
-    this.isGeneratingTallStatic = false;
-    this.gownStaticResults = [];
-    this.showGownStaticResults = false;
-    this.isGeneratingGownStatic = false;
 
     const uploadArea = document.getElementById("upload-area");
     const sections = document.querySelectorAll(".opt-section");
     const processingArea = document.getElementById("processing-area");
-    const generateBtn = document.getElementById("generate-btn");
 
     if (uploadArea) uploadArea.style.display = "none";
     this.prepareOptimizerSectionsForRun();
 
-    // ALWAYS use Smart Mode
-    const categorySelectEl = document.getElementById("category-select");
-    const liveCatId = categorySelectEl?.value || resolved?.id || "";
-    const runSettings =
-      purpose === "learn"
-        ? LocalPriceDB.readLearnForLocalSettings(liveCatId)
-        : LocalPriceDB.readMainSmartModeSettings();
+    const runSettings = LiveSmart.readMainSmartModeSettings();
     const targetShipping = runSettings.targetShipping;
     const maxAttempts = runSettings.maxAttempts;
-    const shippingCap =
-      purpose === "learn"
-        ? runSettings.maxShippingCap
-        : LocalPriceDB.getShippingCap(liveCatId);
+    const shippingCap = LiveSmart.getShippingCap();
     const smartSearchCap = runSettings.maxShippingCap;
 
-    if (purpose === "main") {
-      OptimizerUtils.showNotification(
-        `🚀 Generate Variants · up to ${maxAttempts} · target ≤ ₹${targetShipping}`,
-        "info",
-        4000,
-      );
-    } else {
-      OptimizerUtils.showNotification(
-        `📚 Learn live run · ${maxAttempts} tries · floor ≤ ₹${targetShipping} (Smart Mode dropdown ignored)`,
-        "info",
-        6000,
-      );
-    }
+    OptimizerUtils.showNotification(
+      `🚀 Generate Variants · up to ${maxAttempts} · target ≤ ₹${targetShipping}`,
+      "info",
+      4000,
+    );
 
     console.log(
-      `🎯 [${purpose}] Target ≤ ₹${targetShipping}, Max: ${maxAttempts}${smartSearchCap ? `, live cap ≤₹${smartSearchCap}` : ""}`,
+      `🎯 Target ≤ ₹${targetShipping}, Max: ${maxAttempts}${smartSearchCap ? `, live cap ≤₹${smartSearchCap}` : ""}`,
     );
 
     if (processingArea) {
@@ -5725,11 +2523,9 @@ Please share payment details and license key.`;
         };
     }
 
-    // Start timer
     const startTime = Date.now();
 
     try {
-      // Convert file to blob
       const blob = await new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -5807,7 +2603,7 @@ Please share payment details and license key.`;
           );
         } else {
           OptimizerUtils.showNotification(
-            "Generating image variants locally…",
+            "Generating image variants…",
             "info"
           );
         }
@@ -5843,8 +2639,7 @@ Please share payment details and license key.`;
         const framedMapped = (result.framedExtras || []).map((r, i) =>
           this.mapResultFromApi(r, i + 10000),
         );
-        const policy = LocalPriceDB.applyLiveResultPolicy(mapped, liveCatId);
-        this._liveLearnResults = policy.allPriced;
+        const policy = LiveSmart.applyLiveResultPolicy(mapped);
         this.lastLivePricedResults = [...policy.allPriced];
         this.currentResults = policy.display;
         this.framedExtraResults = framedMapped;
@@ -5870,31 +2665,6 @@ Please share payment details and license key.`;
             "success",
             6000,
           );
-        }
-
-        const floorCap = LocalPriceDB.getShippingCap(liveCatId);
-        const highSlabCount = floorCap
-          ? policy.allPriced.filter(
-              (p) => Number(p.shippingCost) > Number(floorCap),
-            ).length
-          : 0;
-        if (highSlabCount > 0 && floorCap) {
-          const floorInRun = policy.allPriced.filter(
-            (p) => Number(p.shippingCost) <= Number(floorCap),
-          ).length;
-          if (floorInRun === 0) {
-            const recLabel =
-              policy.recommendation?.picks?.length
-                ? policy.recommendation.picks
-                    .map((p) => `₹${p.shippingCost}`)
-                    .join("+")
-                : `≤₹${floorCap}`;
-            OptimizerUtils.showNotification(
-              `⚠️ ${highSlabCount} at high slab (e.g. ₹68) on this image — use 📍 Generate Local for ${recLabel} band picks to upload`,
-              "info",
-              9000,
-            );
-          }
         }
 
         if (result.localOnly) {
@@ -5931,26 +2701,10 @@ Please share payment details and license key.`;
       OptimizerUtils.showNotification("Error: " + err.message, "error");
     }
 
-    // Auto-save priced results to local price DB + learn fingerprints
-    try {
-      const learn = this.saveToLocalPriceDB();
-      if (learn?.learned > 0) {
-        OptimizerUtils.showNotification(
-          `📚 Learned ${learn.learned} live variants (${learn.lowestCount} at ₹${learn.lowest}) — local picks improved`,
-          "info",
-          6000,
-        );
-        this.refreshLocalPriceUI();
-      }
-    } catch (e) {
-      console.warn("LocalPriceDB save:", e);
-    }
-
-    // Show results
     const resultsArea = document.getElementById("results-area");
     if (processingArea) processingArea.style.display = "none";
 
-    if (this.currentResults.length > 0 || (window.WEB_OPTIMIZER_MODE && (this.showcaseResults.length > 0 || this.promoLifestyleResults.length > 0 || this.tallStaticResults.length > 0 || this.gownStaticResults.length > 0))) {
+    if (this.currentResults.length > 0) {
       await this.prepareEditableResultPreviews(this.currentResults);
       if (resultsArea) {
         resultsArea.style.display = "block";
@@ -5978,373 +2732,11 @@ Please share payment details and license key.`;
     this.finishOptimizerRun();
   }
 
+
   /**
    * Generate exactly 2 local variants for lowest shipping (no live Meesho API).
    * Pool uses live-pattern variants only (standard generateVariation — no ultra/analysis).
    */
-  async processImageLocalPrice(file) {
-    const pickCount = LocalPriceDB.clampPickCount(
-      document.getElementById("local-price-pick-count")?.value,
-    );
-    const LOCAL_POOL_SIZE = LocalPriceDB.poolSizeForPickCount(pickCount);
-
-    if (this.isProcessing) {
-      OptimizerUtils.showNotification("Already generating — wait or tap Stop", "info");
-      return;
-    }
-    this.isProcessing = true;
-    this.shouldStop = false;
-    this.localPriceMode = true;
-    this.localPricePoolResults = [];
-    this.lastProcessedFile = file;
-
-    const processingArea = document.getElementById("processing-area");
-    const resultsArea = document.getElementById("results-area");
-    const uploadArea = document.getElementById("upload-area");
-    const sections = document.querySelectorAll(".opt-section");
-    const generateBtn = document.getElementById("generate-btn");
-    const localGenBtn = document.getElementById("local-price-generate-btn");
-
-    this.currentResults = [];
-    this.framedExtraResults = [];
-    this.analysisPrimaryResults = [];
-    this.analysisExtraResults = [];
-    this.showFramedExtras = false;
-    this.showAnalysisExtras = false;
-    this.liveAnalysis = null;
-    // Keep lastLivePricedResults / _liveLearnResults from prior live run for report + picks
-
-    if (uploadArea) uploadArea.style.display = "none";
-    this.prepareOptimizerSectionsForRun();
-
-    const categorySelect = document.getElementById("category-select");
-    const catId = String(categorySelect?.value || "").trim();
-    const effectiveCatId = catId || "10004";
-
-    await LocalPriceDB.ensureCategorySeed(effectiveCatId);
-    const categoryProfile = LocalPriceDB.getCategoryProfile(effectiveCatId);
-    const sessionPriced = (this.lastLivePricedResults || []).filter(
-      (r) =>
-        Number(r.shippingCost) > 0 &&
-        !r.localOnly &&
-        !r.meta?.localPrice,
-    );
-    const sessionPrices = sessionPriced.map((r) => Number(r.shippingCost));
-    const sessionLocalProfile = LocalPriceDB.buildSessionProfile(
-      effectiveCatId,
-      sessionPrices,
-    );
-    const useFloorBand = LocalPriceDB.shouldUseCategoryFloorBandLocal(
-      effectiveCatId,
-      sessionPrices,
-      sessionPriced,
-    );
-    const pickProfile = useFloorBand
-      ? categoryProfile
-      : sessionLocalProfile || categoryProfile;
-
-    this.localPriceProfile = pickProfile;
-
-    if (!pickProfile.hasData) {
-      OptimizerUtils.showNotification(
-        "Loading public seed reports… if this persists, run live once on this category.",
-        "info",
-        6000,
-      );
-    } else {
-      const tierLabel = (pickProfile.recommendedPrices || pickProfile.tiers || [])
-        .slice(0, 3)
-        .map((p) => `₹${p}`)
-        .join(", ");
-      const scope = useFloorBand
-        ? "category floor"
-        : sessionLocalProfile
-          ? "this image"
-          : "category";
-      OptimizerUtils.showNotification(
-        `📍 Local mode (${scope}) · ${tierLabel} · ${pickProfile.strategyReason}`,
-        "info",
-        6000,
-      );
-    }
-
-    if (processingArea) {
-      processingArea.style.display = "block";
-      processingArea.innerHTML = `
-        <div style="text-align:center;padding:24px;">
-          <div style="font-size:40px;margin-bottom:8px;">📍</div>
-          <h3 style="margin:0 0 6px;color:#047857;font-size:16px;">Generating Local Price Variants</h3>
-          <p style="color:#6b7280;font-size:12px;">Only Meesho-tested live variants — small pool, no untested ultra tiers</p>
-        </div>`;
-    }
-
-    const startTime = Date.now();
-
-    try {
-      const blob = await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          fetch(e.target.result).then((r) => r.blob()).then(resolve);
-        };
-        reader.readAsDataURL(file);
-      });
-
-      await this.ensureOriginalImageUrl(file);
-      this.gatherSettings();
-
-      const sessionFloorRefs = this.getSessionFloorRefs(effectiveCatId);
-      const highSlabSession =
-        useFloorBand || this.isSessionHighSlabDominant(effectiveCatId);
-      const liveRefs = useFloorBand
-        ? sessionFloorRefs.length
-          ? sessionFloorRefs
-          : LocalPriceDB.getCategoryFloorRefs(effectiveCatId)
-        : this.getLiveRefsForLocal(effectiveCatId);
-      const liveHints = LocalPriceDB.getLiveGenerationHints(effectiveCatId);
-      const floorProfiles = LocalPriceDB.getFloorBandGenerationProfiles(
-        effectiveCatId,
-        sessionFloorRefs.length ? sessionFloorRefs : null,
-      );
-      const cap = LocalPriceDB.getShippingCap(effectiveCatId, pickProfile);
-      const sessionRefs = liveRefs.filter((r) => {
-        const ship = Number(r.shippingCost);
-        if (ship <= 0) return false;
-        if (cap != null && ship > cap) return false;
-        return (
-          r.liveVerified ||
-          r.isVerified ||
-          LocalPriceDB.variantKb(r) > 0 ||
-          r.categoryLearned
-        );
-      });
-      let targetTier =
-        pickProfile.recommendedPrices?.[0] ||
-        liveHints?.tier ||
-        null;
-      if (!targetTier && sessionRefs.length) {
-        const ships = sessionRefs
-          .map((r) => Number(r.shippingCost))
-          .filter((p) => p > 0);
-        if (ships.length) targetTier = Math.min(...ships);
-      }
-
-      const sessionLearned =
-        targetTier &&
-        LocalPriceDB.hasLiveTierLearned(effectiveCatId, targetTier);
-      const categoryLearned = LocalPriceDB.hasCategoryLiveLearn(effectiveCatId);
-
-      if (!sessionRefs.length && !sessionLearned && !categoryLearned) {
-        OptimizerUtils.showNotification(
-          "Run Live generate first — local needs Meesho-tested tiers for this category",
-          "error",
-          8000,
-        );
-        if (processingArea) processingArea.style.display = "none";
-        if (uploadArea) uploadArea.style.display = "block";
-        sections.forEach((s) => (s.style.display = "block"));
-        this.finishOptimizerRun();
-        return;
-      }
-
-      const refKbs = sessionRefs.map((r) => LocalPriceDB.variantKb(r)).filter((k) => k > 0);
-      const refKbMin = refKbs.length ? Math.min(...refKbs) : null;
-      const refBorder =
-        sessionRefs.length
-          ? Math.round(
-              sessionRefs.reduce(
-                (s, r) => s + Number(r.meta?.borderPx || 0),
-                0,
-              ) / sessionRefs.length,
-            )
-          : null;
-      const genHints = liveHints
-        ? {
-            ...liveHints,
-            borderMax: refBorder || liveHints.borderMax,
-            borderMin:
-              refBorder
-                ? Math.max(8, refBorder - 4)
-                : liveHints.borderMin,
-            maxKb: liveHints.maxKb || (refKbMin ? refKbMin + 6 : null),
-          }
-        : refKbMin
-          ? {
-              maxKb: refKbMin + 6,
-              borderMin: refBorder ? Math.max(8, refBorder - 4) : null,
-              borderMax: refBorder || null,
-              badgeCount: 0,
-            }
-          : categoryLearned
-            ? {
-                maxKb: null,
-                borderMin:
-                  floorProfiles[0]?.borderMin ?? LIVE_STANDARD_BORDER_MIN,
-                borderMax:
-                  floorProfiles[0]?.borderMax ?? LIVE_STANDARD_BORDER_MAX,
-                badgeCount: 0,
-              }
-            : null;
-
-      const variationPromise =
-        typeof MeeshoAPI.generateLocalVariations === "function"
-          ? MeeshoAPI.generateLocalVariations(
-              blob,
-              LOCAL_POOL_SIZE,
-              (attempt, max) => {
-                if (processingArea && !this.shouldStop) {
-                  const elapsed = Math.floor((Date.now() - startTime) / 1000);
-                  processingArea.innerHTML = this.getSmartModeHTML(
-                    attempt,
-                    max,
-                    targetTier || 0,
-                    null,
-                    0,
-                    elapsed,
-                    {
-                      testLab: true,
-                      phaseLabel: highSlabSession
-                        ? `Category floor ₹${targetTier} band (high-slab image)`
-                        : `Match this image's live ₹${targetTier} winners`,
-                    },
-                  );
-                }
-              },
-              () => this.shouldStop,
-              {
-                livePatternOnly: true,
-                maxKb: null,
-                variantOptions: (attempt) => {
-                  const prof =
-                    floorProfiles.length
-                      ? floorProfiles[(attempt - 1) % floorProfiles.length]
-                      : null;
-                  const opts = { lowBias: highSlabSession };
-                  opts.badgeCount =
-                    prof?.badgeCount ?? genHints?.badgeCount ?? 0;
-                  const borderMin =
-                    prof?.borderMin ??
-                    genHints?.borderMin ??
-                    (highSlabSession ? null : LIVE_STANDARD_BORDER_MIN);
-                  const borderMax =
-                    prof?.borderMax ??
-                    genHints?.borderMax ??
-                    (highSlabSession ? null : LIVE_STANDARD_BORDER_MAX);
-                  if (borderMin != null && borderMax != null) {
-                    opts.borderMin = borderMin;
-                    opts.borderMax = borderMax;
-                  }
-                  return opts;
-                },
-              },
-            ).catch((e) => {
-              console.warn("Local variation pool failed:", e);
-              return null;
-            })
-          : Promise.resolve(null);
-
-      const result = await variationPromise;
-
-      let rawResults = result?.success ? result.results || [] : [];
-
-      rawResults = rawResults.map((r, i) => this.mapResultFromApi(r, i));
-      rawResults = LocalPriceDB.filterLivePatternPool(rawResults);
-
-      if (!rawResults.length) {
-        OptimizerUtils.showNotification(
-          "No live-pattern variants built — try another image",
-          "error",
-        );
-      }
-
-      rawResults = LocalPriceDB.sortVariantsStable(rawResults);
-      this.localPricePoolResults = rawResults;
-      const display = LocalPriceDB.buildLocalPicks(
-        rawResults,
-        effectiveCatId,
-        pickCount,
-        liveRefs,
-        pickProfile,
-      );
-      const finalDisplay =
-        display.length > 0
-          ? display
-          : rawResults
-              .slice(0, pickCount)
-              .map((v, i) => {
-                const tiers =
-                  pickProfile.recommendedPrices?.length
-                    ? pickProfile.recommendedPrices
-                    : [targetTier || pickProfile.tiers?.[0] || 0];
-                const tier = tiers[i % tiers.length] || tiers[0];
-                return LocalPriceDB._tagLocalVariant(
-                  v,
-                  tier,
-                  pickProfile.recommendedPrices?.includes(Number(tier)),
-                );
-              });
-      finalDisplay.forEach((row) =>
-        this.freezeRowPricing(row, {
-          estShipping: row.meta?.staticEst ?? row.estShipping,
-          shippingCost: 0,
-          pricingImageUrl: row.pricingImageUrl,
-          dataUrl: row.dataUrl,
-          meta: row.meta,
-        }),
-      );
-
-      this.currentResults = finalDisplay;
-
-      const bestKb =
-        finalDisplay[0]?.meta?.kb ||
-        (finalDisplay[0]?.blob?.size
-          ? Math.ceil(finalDisplay[0].blob.size / 1024)
-          : "—");
-      const pickKbs = finalDisplay
-        .map((d) => LocalPriceDB.variantKb(d))
-        .filter((k) => k > 0);
-      const kbSpread =
-        pickKbs.length >= 2
-          ? Math.max(...pickKbs) - Math.min(...pickKbs)
-          : 0;
-      const bandPrices = (pickProfile.recommendedPrices || [])
-        .slice(0, 3)
-        .map((p) => `₹${p}`)
-        .join("+");
-      const tierLabel = bandPrices || (targetTier ? `₹${targetTier}` : "live");
-      OptimizerUtils.showNotification(
-        pickProfile.hasData || liveRefs.length
-          ? `📍 ${finalDisplay.length} picks · ${tierLabel} floor band ~${bestKb}KB (spread ${kbSpread}KB) — verify on Live`
-          : `📍 ${finalDisplay.length} local picks — run Live once on this category`,
-        "success",
-        8000,
-      );
-    } catch (err) {
-      console.error("Local price generate failed:", err);
-      OptimizerUtils.showNotification("Local price failed: " + err.message, "error");
-    }
-
-    if (processingArea) processingArea.style.display = "none";
-
-    if (this.currentResults.length > 0) {
-      if (resultsArea) {
-        resultsArea.style.display = "block";
-        delete resultsArea.dataset.view;
-        await this.prepareEditableResultPreviews(this.currentResults);
-        resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-          this.currentResults,
-          this.getResultsViewOptions(),
-        );
-        this.setupResultsEvents();
-      }
-      this.restoreOptimizerChromeAfterResults();
-    } else {
-      if (resultsArea) resultsArea.style.display = "none";
-      if (uploadArea) uploadArea.style.display = "block";
-      this.restoreOptimizerChromeAfterResults();
-    }
-
-    this.finishOptimizerRun();
-  }
 
   // Smart Mode HTML - Enhanced
   getSmartModeHTML(
@@ -6356,7 +2748,6 @@ Please share payment details and license key.`;
     elapsedTime = 0,
     options = {}
   ) {
-    const testLab = !!options.testLab;
     const skipHigherCount = options.skipHigherCount || 0;
     const phaseLabel = options.phaseLabel || "";
     const pct = Math.round((attempt / maxAttempts) * 100);
@@ -6381,16 +2772,11 @@ Please share payment details and license key.`;
     return `
             <div style="text-align:center;padding:20px;">
                 <div style="font-size:50px;margin-bottom:10px;">🎯</div>
-                <h3 style="margin:0 0 5px 0;color:#10b981;font-size:18px;">${testLab ? "🧪 Test Lab — Adaptive Lowest ₹ Hunt" : "AI Is Finding Best Shipping"}</h3>
+                <h3 style="margin:0 0 5px 0;color:#10b981;font-size:18px;">AI Is Finding Best Shipping</h3>
                 <p style="color:##0f0f10;font-size:14px;margin-bottom:3px;">Target: ≤ ₹${target}</p>
                 <p style="color:#9ca3af;font-size:11px;margin-bottom:5px;">${attempt} / ${maxAttempts}${
       noPidCount > 0 ? ` • ${noPidCount} no PID (kept)` : ""
     }${skipHigherCount > 0 ? ` • ${skipHigherCount} skipped higher` : ""}</p>
-                ${
-                  testLab && phaseLabel
-                    ? `<p style="color:#047857;font-size:11px;margin-bottom:8px;">${phaseLabel}</p>`
-                    : ""
-                }
                 <p style="color:#667eea;font-size:12px;margin-bottom:12px;">⏱️ ${timeStr}${
       estRemaining ? ` • ${estRemaining}` : ""
     }</p>
@@ -6435,178 +2821,10 @@ Please share payment details and license key.`;
         `;
   }
 
-  async testVariations(variations) {
-    const processingArea = document.getElementById("processing-area");
-    const resultsArea = document.getElementById("results-area");
-
-    console.log("🔄 Testing", variations.length, "variations");
-
-    // Check if MeeshoAPI is available
-    if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.isValidCatalogPage()) {
-      console.log("✅ Using Meesho API");
-
-      // Check if API is ready
-      if (!MeeshoAPI.isReady()) {
-        console.log("⚠️ API not ready, waiting...");
-        await new Promise((r) => setTimeout(r, 1000));
-        MeeshoAPI.detectAllValues();
-      }
-
-      // Use real Meesho API
-      const apiResult = await MeeshoAPI.testVariationsShipping(
-        variations,
-        (current, total, name) => {
-          if (this.shouldStop) return;
-          if (processingArea) {
-            processingArea.innerHTML = OptimizerUI.getProcessingHTML(
-              current,
-              total,
-              this.originalImageUrl
-            );
-            const stopBtn = document.getElementById("stop-btn");
-            if (stopBtn) stopBtn.onclick = () => this.stopProcessing();
-          }
-        }
-      );
-
-      if (apiResult.success && apiResult.results.length > 0) {
-        // Store results with uploaded URLs for accurate apply
-        this.currentResults = apiResult.results.map((r) => ({
-          name: r.name,
-          imageUrl: r.dataUrl,
-          uploadedUrl: r.uploadedUrl, // Keep this for reference
-          shippingCost: r.shippingCost,
-          savings: r.savings || 0,
-          isRealPrice: true,
-        }));
-
-        console.log("✅ Got", this.currentResults.length, "real prices");
-
-        if (apiResult.failed > 0) {
-          OptimizerUtils.showNotification(
-            `${apiResult.failed} failed, ${this.currentResults.length} success`,
-            "warning"
-          );
-        }
-      } else {
-        console.warn("⚠️ API failed, using estimation");
-        OptimizerUtils.showNotification(
-          "API failed, using estimation",
-          "warning"
-        );
-        await this.testVariationsWithEstimation(variations, processingArea);
-      }
-    } else {
-      console.log("⚠️ Not on catalog page, using estimation");
-      await this.testVariationsWithEstimation(variations, processingArea);
-    }
-
-    // Show results
-    if (processingArea) processingArea.style.display = "none";
-    if (resultsArea && this.currentResults.length > 0) {
-      resultsArea.style.display = "block";
-      resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-        this.currentResults,
-        this.getResultsViewOptions()
-      );
-      this.setupResultsEvents();
-
-      const best = this.currentResults[0];
-      const priceType = best.isRealPrice ? "✅ Real" : "📊 Est.";
-      OptimizerUtils.showNotification(
-        `Best: ₹${best.shippingCost} ${priceType}`,
-        "success"
-      );
-    }
-  }
 
   // Fallback estimation method
-  async testVariationsWithEstimation(variations, processingArea) {
-    const baseCost = this.detectShipping() || 50;
 
-    for (let i = 0; i < variations.length; i++) {
-      if (this.shouldStop) break;
 
-      const v = variations[i];
-
-      if (processingArea) {
-        processingArea.innerHTML = OptimizerUI.getProcessingHTML(
-          i + 1,
-          variations.length,
-          this.originalImageUrl
-        );
-        const stopBtn = document.getElementById("stop-btn");
-        if (stopBtn) stopBtn.onclick = () => this.stopProcessing();
-      }
-
-      const estimatedCost = v.estimatedShipping || baseCost;
-      const savings = v.savings || 0;
-
-      this.currentResults.push({
-        name: v.name,
-        imageUrl: v.dataUrl,
-        shippingCost: estimatedCost,
-        savings: savings,
-        isRealPrice: false,
-      });
-
-      await new Promise((r) => setTimeout(r, 30));
-    }
-
-    this.currentResults.sort((a, b) => a.shippingCost - b.shippingCost);
-  }
-
-  async uploadAndGetShipping(dataUrl) {
-    try {
-      const resp = await fetch(dataUrl);
-      const blob = await resp.blob();
-      const file = new File([blob], "product-" + Date.now() + ".jpg", {
-        type: "image/jpeg",
-      });
-
-      const imageInput = document.querySelector("#changeFrontImage");
-      if (!imageInput) {
-        return this.currentShippingCost || 100;
-      }
-
-      const oldShipping = this.detectShipping();
-
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      imageInput.files = dt.files;
-
-      imageInput.dispatchEvent(new Event("change", { bubbles: true }));
-      imageInput.dispatchEvent(new Event("input", { bubbles: true }));
-
-      await new Promise((r) => setTimeout(r, 2000));
-
-      await this.triggerPriceRefresh();
-
-      await new Promise((r) => setTimeout(r, 2500));
-
-      const newShipping = await this.waitForShippingUpdate(oldShipping);
-
-      return newShipping;
-    } catch (err) {
-      console.error("Upload error:", err);
-      return this.currentShippingCost || 100;
-    }
-  }
-
-  async waitForShippingUpdate(oldValue) {
-    for (let i = 0; i < 10; i++) {
-      const currentValue = this.detectShipping();
-
-      if (currentValue && currentValue > 0) {
-        this.lastDetectedCost = currentValue;
-        return currentValue;
-      }
-
-      await new Promise((r) => setTimeout(r, 300));
-    }
-
-    return this.currentShippingCost || 100;
-  }
 
   async triggerPriceRefresh() {
     const priceSelectors = [
@@ -6705,198 +2923,14 @@ Please share payment details and license key.`;
     return 0;
   }
 
-  getSessionFloorRefs(catId) {
-    const pools = [
-      ...(this.lastLivePricedResults || []),
-      ...(this._liveLearnResults || []),
-    ];
-    const priced = pools.filter(
-      (r) =>
-        Number(r.shippingCost) > 0 &&
-        !r.localOnly &&
-        !r.meta?.localPrice,
-    );
-    const sessionPrices = priced.map((r) => Number(r.shippingCost));
-    const sessionProfile = LocalPriceDB.buildSessionProfile(catId, sessionPrices);
-    if (!sessionProfile) return [];
-
-    const cap = LocalPriceDB.getShippingCap(catId, sessionProfile);
-    const recommendedSet = new Set(
-      (sessionProfile.recommendedPrices || []).map((p) => Number(p)),
-    );
-    const seen = new Set();
-    const refs = [];
-    for (const r of pools) {
-      if (r.localOnly || r.meta?.localPrice) continue;
-      const ship = Number(r.shippingCost);
-      if (ship <= 0) continue;
-      if (cap != null && ship > cap) continue;
-      if (recommendedSet.size && !recommendedSet.has(ship)) continue;
-      const id = String(r.variantId || "");
-      if (id && seen.has(id)) continue;
-      if (id) seen.add(id);
-      refs.push(r);
-    }
-    return refs.sort(
-      (a, b) => Number(a.shippingCost) - Number(b.shippingCost),
-    );
-  }
 
   /** Session priced only above category recommend cap (no floor winners at all). */
-  isSessionHighSlabDominant(catId) {
-    const categoryProfile = LocalPriceDB.getCategoryProfile(catId);
-    const cap = LocalPriceDB.getShippingCap(catId, categoryProfile);
-    if (cap == null) return false;
-    const pools = [
-      ...(this.lastLivePricedResults || []),
-      ...(this._liveLearnResults || []),
-    ];
-    const priced = pools.filter(
-      (r) =>
-        Number(r.shippingCost) > 0 &&
-        !r.localOnly &&
-        !r.meta?.localPrice,
-    );
-    if (!priced.length) return false;
-    const floorCount = priced.filter(
-      (r) => Number(r.shippingCost) <= Number(cap),
-    ).length;
-    const highCount = priced.filter(
-      (r) => Number(r.shippingCost) > Number(cap),
-    ).length;
-    return floorCount === 0 && highCount > 0;
-  }
 
-  getLiveRefsForLocal(catId) {
-    const sessionFloor = this.getSessionFloorRefs(catId);
-    if (sessionFloor.length) {
-      return sessionFloor;
-    }
-    return LocalPriceDB.getCategoryFloorRefs(catId);
-  }
 
-  buildLiveReportContext() {
-    const categorySelect = document.getElementById("category-select");
-    const peek = this.peekCategoryForLiveApi(categorySelect);
-    const cat = peek?.cat || this.findCategoryById(peek?.id);
-    const display = cat
-      ? this.formatCategoryUi(cat, { source: peek?.source })
-      : peek?.id
-      ? this.formatCategoryIdUi(peek.id, { source: peek?.source })
-      : { title: "", path: "" };
-    const productLabel =
-      document.getElementById("custom-text")?.value?.trim() ||
-      document.querySelector("[data-product-name]")?.textContent?.trim() ||
-      "";
 
-    return {
-      generatedAt: new Date().toISOString(),
-      baselineShipping: this.getBaselineShipping(),
-      categoryId: peek?.id || "",
-      categoryName: display.title || cat?.name || "",
-      categoryPath: display.path || cat?.path || "",
-      categorySource: peek?.source || "",
-      manualMode: this.isManualShippingMode(),
-      productLabel,
-      primaryResults: this.currentResults,
-      framedExtras: this.framedExtraResults,
-      liveAnalysis: this.liveAnalysis || null,
-    };
-  }
 
-  getPricedResultsForReport() {
-    const learn = (this._liveLearnResults || []).filter(
-      (r) => Number(r.shippingCost) > 0,
-    );
-    if (learn.length) return learn;
-    const cached = (this.lastLivePricedResults || []).filter(
-      (r) => Number(r.shippingCost) > 0,
-    );
-    if (cached.length) return cached;
-    return [...(this.currentResults || []), ...(this.framedExtraResults || [])]
-      .filter(
-        (r) =>
-          Number(r.shippingCost) > 0 &&
-          !r.localOnly &&
-          !r.meta?.localPrice &&
-          (r.liveVerified || r.isVerified),
-      );
-  }
-
-  async createLiveVariantReport() {
-    const priced = this.getPricedResultsForReport();
-    if (!priced.length) {
-      OptimizerUtils.showNotification(
-        "Run Live generate first (need Meesho ₹ on variants), then create report",
-        "error",
-      );
-      return null;
-    }
-
-    const ready = await this.preloadLiveVariantReportModule();
-    if (
-      !ready ||
-      !window.LiveVariantReport?.analyzeLiveVariants ||
-      !window.LiveVariantReport?.exportReportCsv
-    ) {
-      OptimizerUtils.showNotification("Report module failed to load", "error");
-      return null;
-    }
-
-    try {
-      const context = this.buildLiveReportContext();
-      const framed = (this.framedExtraResults || []).filter(
-        (r) => Number(r.shippingCost) > 0,
-      );
-      const variants = [...priced, ...framed];
-      const analysis = window.LiveVariantReport.analyzeLiveVariants(
-        variants,
-        context,
-      );
-      const csv = window.LiveVariantReport.exportReportCsv(analysis);
-      const importResult = LocalPriceDB.importCsv(csv);
-      if (importResult?.ok) {
-        this.refreshLocalPriceUI();
-      }
-      window.LiveVariantReport.downloadReportBlob(
-        csv,
-        window.LiveVariantReport.buildReportFilename(analysis, "csv"),
-        "text/csv;charset=utf-8",
-      );
-      const rec = analysis.recommendation;
-      const pickPrices = (rec.picks || [])
-        .map((p) => `₹${p.shippingCost}`)
-        .join(" + ");
-      OptimizerUtils.showNotification(
-        rec.picks?.length
-          ? `Report saved — recommend ${pickPrices} (${rec.strategy})`
-          : "Report saved",
-        "success",
-      );
-      return analysis;
-    } catch (e) {
-      console.error("Create report failed:", e);
-      OptimizerUtils.showNotification(
-        "Report failed: " + (e.message || "unknown error"),
-        "error",
-      );
-      return null;
-    }
-  }
 
   /** Auto-save priced results to local DB after every report or generate run. */
-  saveToLocalPriceDB() {
-    const pricedLive =
-      this._liveLearnResults?.length
-        ? this._liveLearnResults
-        : (this.currentResults || []).filter((r) => r.shippingCost > 0);
-    const all = [...pricedLive, ...(this.framedExtraResults || [])];
-    const context = this.buildLiveReportContext();
-    return LocalPriceDB.learnFromLiveVariants(all, {
-      ...context,
-      learnNote: "Auto-learned from live generate — improves local picks",
-    });
-  }
 
   prepareOptimizerSectionsForRun() {
     document.querySelectorAll(".opt-section").forEach((s) => {
@@ -6907,9 +2941,7 @@ Please share payment details and license key.`;
   hasOptimizerSession() {
     return (
       !!this.getImageFileForGenerate() ||
-      (this.currentResults || []).length > 0 ||
-      (this.testLabCurrentResults || []).length > 0 ||
-      (this.localPricePoolResults || []).length > 0
+      (this.currentResults || []).length > 0
     );
   }
 
@@ -6955,37 +2987,17 @@ Please share payment details and license key.`;
     const hasFile = !!this.getImageFileForGenerate();
     const sticky = document.getElementById("generate-sticky");
     if (sticky) sticky.style.display = "";
-
-    const setBtn = (id, display) => {
-      const btn = document.getElementById(id);
-      if (!btn) return;
-      if (display != null) btn.style.display = display;
+    const btn = document.getElementById("generate-btn");
+    if (btn) {
+      btn.style.display = "block";
       btn.disabled = !hasFile;
-    };
-
-    setBtn("generate-btn", "block");
-    setBtn("local-price-generate-btn", "");
-    if (this.isTabbedOptimizerUI()) {
-      setBtn(
-        "test-generate-btn",
-        this.getActiveOptimizerTab() === "test" ? "block" : "none",
-      );
     }
-    [
-      "generate-showcase-btn",
-      "generate-promo-lifestyle-btn",
-      "generate-tall-static-btn",
-      "generate-gown-static-btn",
-      "local-price-import-btn",
-    ].forEach((id) => setBtn(id, null));
-    this.bindStaticPromoButtons();
   }
+
 
   finishOptimizerRun() {
     this.isProcessing = false;
     this.enableAllGenerateButtons();
-    this.wireLocalPriceButtons();
-    this.refreshLocalPriceUI();
   }
 
   restoreOptimizerChromeAfterResults() {
@@ -7007,8 +3019,6 @@ Please share payment details and license key.`;
       uploadArea.style.display = hasFile ? "none" : "block";
     }
     this.enableAllGenerateButtons();
-    this.wireLocalPriceButtons();
-    this.refreshLocalPriceUI();
   }
 
   ensureGenerateChromeVisible() {
@@ -7024,86 +3034,8 @@ Please share payment details and license key.`;
     return null;
   }
 
-  showLocalPriceReport() {
-    const categorySelect = document.getElementById("category-select");
-    const catId = categorySelect?.value || "";
-    const summary = LocalPriceDB.summary(catId);
-    const profile = catId ? LocalPriceDB.getCategoryProfile(catId) : null;
-    const prices = LocalPriceDB.allPrices(catId);
 
-    if (!summary && !profile?.hasData) {
-      OptimizerUtils.showNotification(
-        "No local price history — import CSV reports or run live shipping, then save.",
-        "error",
-      );
-      return;
-    }
 
-    const lines = [
-      `📦 Local Price${catId ? ` · category ${catId}` : ""}`,
-      summary
-        ? `Reports: ${summary.runs}  |  Variants: ${summary.count}`
-        : `Reports: ${profile?.runCount || 0}`,
-    ];
-
-    if (profile?.tiers?.length) {
-      lines.push(`Tiers: ₹${profile.tiers.join(", ")}`);
-      lines.push(`Strategy: ${profile.strategy} — ${profile.strategyReason}`);
-      lines.push(`Recommend: ₹${profile.recommendedPrices.join(" + ₹")}`);
-    } else if (summary) {
-      lines.push(`Range: ₹${summary.min} – ₹${summary.max}`);
-      lines.push(`Best estimate: ₹${summary.best}`);
-    }
-
-    if (prices.length) {
-      lines.push(`All prices: ${prices.map((p) => "₹" + p).join(", ")}`);
-    }
-
-    for (let i = 0; i < prices.length - 1; i++) {
-      if (prices[i + 1] - prices[i] === 1) {
-        lines.push(`✓ ₹1 pair: ₹${prices[i]} + ₹${prices[i + 1]} — test BOTH`);
-        break;
-      }
-    }
-
-    OptimizerUtils.showNotification(lines.join("\n"), "success", 10000);
-    console.log("[LocalPriceDB] Reports:", LocalPriceDB._readReports());
-    console.log("[LocalPriceDB] Variants:", LocalPriceDB._read());
-  }
-
-  saveLocalPriceSnapshot() {
-    this.saveToLocalPriceDB();
-    const categorySelect = document.getElementById("category-select");
-    const catId = categorySelect?.value || "";
-    const summary = LocalPriceDB.summary(catId);
-    if (summary) {
-      OptimizerUtils.showNotification(
-        `Saved! Best local price: ₹${summary.best}  (${summary.runs} runs, ${summary.count} variants)`,
-        "success",
-      );
-    } else {
-      OptimizerUtils.showNotification("Saved to local history.", "success");
-    }
-  }
-
-  downloadLocalPriceCsv() {
-    const pool = this.localPricePoolResults || [];
-    const picks = this.currentResults || [];
-    if (!pool.length && !picks.length) {
-      OptimizerUtils.showNotification(
-        "Generate local price first, then download CSV",
-        "error",
-      );
-      return;
-    }
-    const context = this.buildLiveReportContext();
-    LocalPriceDB.downloadLocalCsv(pool.length ? pool : picks, picks, context);
-    OptimizerUtils.showNotification(
-      `CSV saved — ${pool.length || picks.length} pool variants, ${picks.length} picks (est-sorted)`,
-      "success",
-      6000,
-    );
-  }
 
   getResultsViewOptions() {
     return {
@@ -7111,48 +3043,15 @@ Please share payment details and license key.`;
       baselineShipping: this.getBaselineShipping(),
       framedExtras: this.framedExtraResults,
       showFramedExtras: this.showFramedExtras,
-      liveAnalysis: this.localPriceMode ? null : this.liveAnalysis,
-      analysisPrimary: this.localPriceMode ? [] : this.analysisPrimaryResults,
-      analysisExtras: this.localPriceMode ? [] : this.analysisExtraResults,
+      liveAnalysis: this.liveAnalysis,
+      analysisPrimary: this.analysisPrimaryResults,
+      analysisExtras: this.analysisExtraResults,
       showAnalysisExtras: this.showAnalysisExtras,
-      showcaseResults: this.showcaseResults,
-      showShowcaseResults: this.showShowcaseResults,
-      isGeneratingShowcase: this.isGeneratingShowcase,
-      showcaseVariantCount: 25,
-      promoLifestyleResults: this.promoLifestyleResults,
-      showPromoLifestyleResults: this.showPromoLifestyleResults,
-      isGeneratingPromoLifestyle: this.isGeneratingPromoLifestyle,
-      promoLifestyleVariantCount: 25,
-      tallStaticResults: this.tallStaticResults,
-      showTallStaticResults: this.showTallStaticResults,
-      isGeneratingTallStatic: this.isGeneratingTallStatic,
-      tallStaticVariantCount: 25,
-      gownStaticResults: this.gownStaticResults,
-      showGownStaticResults: this.showGownStaticResults,
-      isGeneratingGownStatic: this.isGeneratingGownStatic,
-      gownStaticVariantCount: 25,
-      staticPromoHubActive: this.shouldShowStaticPromoWorkspace(),
-      localPriceMode: this.localPriceMode,
-      localPriceProfile: this.localPriceProfile,
-      livePricedResults:
-        this.lastLivePricedResults?.length
-          ? this.lastLivePricedResults
-          : this._liveLearnResults,
+      livePricedResults: this.lastLivePricedResults || [],
     };
   }
 
-  getTestLabResultsViewOptions() {
-    return {
-      manualMode: this.isManualShippingMode(),
-      baselineShipping: this.getBaselineShipping(),
-      framedExtras: this.testLabFramedExtraResults,
-      showFramedExtras: this.testLabShowFramedExtras,
-      liveAnalysis: this.testLabLiveAnalysis,
-      analysisPrimary: this.testLabAnalysisPrimaryResults,
-      analysisExtras: this.testLabAnalysisExtraResults,
-      showAnalysisExtras: this.testLabShowAnalysisExtras,
-    };
-  }
+
 
   getVariantLayerCaps(row) {
     if (
@@ -7364,7 +3263,6 @@ Please share payment details and license key.`;
       liveVerified: r.liveVerified,
       liveTotalPrice: r.liveTotalPrice,
       meeshoPriceUsed: r.meeshoPriceUsed,
-      testLab: !!r.testLab,
       noPid: !!r.noPid,
       analysisMode: !!r.analysisMode,
     };
@@ -7382,42 +3280,24 @@ Please share payment details and license key.`;
     return row;
   }
 
-  isTestLabResultsActive() {
-    const resultsArea = document.getElementById("results-area");
-    return !!(
-      (this.testLabCurrentResults.length ||
-        this.testLabAnalysisPrimaryResults.length) &&
-      resultsArea?.style.display === "block" &&
-      resultsArea?.dataset?.view === "test"
-    );
-  }
 
   getActiveResultList() {
-    if (this.isTestLabResultsActive()) return this.testLabCurrentResults;
-    return this.currentResults;
+    return this.currentResults || [];
   }
+
 
   getBestActiveResult() {
     const list = this.getActiveResultList();
-    if (list.length) return list[0];
-    if (this.isTestLabResultsActive() && this.testLabAnalysisPrimaryResults.length) {
-      return this.testLabAnalysisPrimaryResults[0];
+    if (!list.length) {
+      if (this.analysisPrimaryResults.length) return this.analysisPrimaryResults[0];
+      return null;
     }
-    if (this.analysisPrimaryResults.length) return this.analysisPrimaryResults[0];
-    if (window.WEB_OPTIMIZER_MODE && this.gownStaticResults.length) {
-      return this.gownStaticResults[0];
-    }
-    if (window.WEB_OPTIMIZER_MODE && this.tallStaticResults.length) {
-      return this.tallStaticResults[0];
-    }
-    if (window.WEB_OPTIMIZER_MODE && this.promoLifestyleResults.length) {
-      return this.promoLifestyleResults[0];
-    }
-    if (window.WEB_OPTIMIZER_MODE && this.showcaseResults.length) {
-      return this.showcaseResults[0];
-    }
-    return null;
+    const priced = list.filter((r) => Number(r.shippingCost) > 0);
+    if (!priced.length) return list[0];
+    const lowest = Math.min(...priced.map((r) => Number(r.shippingCost)));
+    return priced.find((r) => Number(r.shippingCost) === lowest) || list[0];
   }
+
 
   resolveDownloadUrl(result) {
     if (!result) return "";
@@ -7509,70 +3389,20 @@ Please share payment details and license key.`;
     overlay.style.display = "flex";
   }
 
-  openTestLabImagePreview(row) {
-    if (!row) return;
-    const src = this.resolveResultImageSrc(row);
-    if (!src) {
-      OptimizerUtils.showNotification("No preview for this variant", "error");
-      return;
-    }
 
-    let overlay = document.getElementById("test-lab-preview-overlay");
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.id = "test-lab-preview-overlay";
-      overlay.style.cssText =
-        "position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;";
-      overlay.innerHTML = `
-        <button type="button" id="test-lab-preview-close" style="position:absolute;top:12px;right:12px;background:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;">Close</button>
-        <img id="test-lab-preview-img" alt="Preview" style="max-width:100%;max-height:70vh;object-fit:contain;border-radius:8px;background:#fff;">
-        <div id="test-lab-preview-title" style="color:#fff;font-size:13px;margin-top:10px;text-align:center;"></div>`;
-      this.mountOptimizerOverlay(overlay);
-      overlay.querySelector("#test-lab-preview-close").onclick = () => {
-        overlay.style.display = "none";
-      };
-      overlay.onclick = (e) => {
-        if (e.target === overlay) overlay.style.display = "none";
-      };
-    }
-
-    const img = overlay.querySelector("#test-lab-preview-img");
-    const title = overlay.querySelector("#test-lab-preview-title");
-    if (img) img.src = src;
-    if (title) title.textContent = row.name || "Test Lab variant";
-    this.mountOptimizerOverlay(overlay);
-    overlay.style.display = "flex";
-  }
-
-  wireTestLabImageFallbacks() {
-    document.querySelectorAll(".result-img[data-variant-id]").forEach((img) => {
-      const variantId = img.dataset.variantId;
-      if (!variantId) return;
-      img.onerror = () => {
-        const row = this.findResultRow(variantId);
-        const alt = this.resolveResultImageSrc(row);
-        if (alt && img.src !== alt) img.src = alt;
-      };
-    });
-  }
 
   findResultRow(variantId) {
+    if (variantId == null || variantId === "") return null;
+    const id = String(variantId);
     return (
-      this.currentResults.find((r) => r.variantId === variantId) ||
-      this.framedExtraResults.find((r) => r.variantId === variantId) ||
-      this.analysisPrimaryResults.find((r) => r.variantId === variantId) ||
-      this.analysisExtraResults.find((r) => r.variantId === variantId) ||
-      this.showcaseResults.find((r) => r.variantId === variantId) ||
-      this.promoLifestyleResults.find((r) => r.variantId === variantId) ||
-      this.tallStaticResults.find((r) => r.variantId === variantId) ||
-      this.gownStaticResults.find((r) => r.variantId === variantId) ||
-      this.testLabCurrentResults.find((r) => r.variantId === variantId) ||
-      this.testLabFramedExtraResults.find((r) => r.variantId === variantId) ||
-      this.testLabAnalysisPrimaryResults.find((r) => r.variantId === variantId) ||
-      this.testLabAnalysisExtraResults.find((r) => r.variantId === variantId) ||
+      this.currentResults.find((r) => String(r.variantId) === id) ||
+      this.framedExtraResults.find((r) => String(r.variantId) === id) ||
+      this.analysisPrimaryResults.find((r) => String(r.variantId) === id) ||
+      this.analysisExtraResults.find((r) => String(r.variantId) === id) ||
       null
     );
   }
+
 
   async setVariantEdits(variantId, editFlags) {
     const row = this.findResultRow(variantId);
@@ -10395,32 +6225,13 @@ Please share payment details and license key.`;
   refreshResultsView() {
     const resultsArea = document.getElementById("results-area");
     if (!resultsArea) return;
-    if (this.isTestLabResultsActive()) {
-      if (
-        !this.testLabCurrentResults.length &&
-        !this.testLabAnalysisPrimaryResults.length
-      ) {
-        return;
-      }
-      resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-        this.testLabCurrentResults,
-        this.getTestLabResultsViewOptions()
-      );
-    } else {
-      if (
-        !this.currentResults.length &&
-        !this.analysisPrimaryResults.length &&
-        !(
-          window.WEB_OPTIMIZER_MODE && this.shouldShowStaticPromoWorkspace()
-        )
-      ) {
-        return;
-      }
-      resultsArea.innerHTML = OptimizerUI.getResultsHTML(
-        this.currentResults,
-        this.getResultsViewOptions()
-      );
+    if (!this.currentResults.length && !this.analysisPrimaryResults.length) {
+      return;
     }
+    resultsArea.innerHTML = OptimizerUI.getResultsHTML(
+      this.currentResults,
+      this.getResultsViewOptions()
+    );
     this.setupResultsEvents();
   }
 
@@ -10562,11 +6373,7 @@ Please share payment details and license key.`;
     const toggleFramed = document.getElementById("toggle-framed-extras");
     if (toggleFramed) {
       toggleFramed.onclick = () => {
-        if (this.isTestLabResultsActive()) {
-          this.testLabShowFramedExtras = !this.testLabShowFramedExtras;
-        } else {
-          this.showFramedExtras = !this.showFramedExtras;
-        }
+        this.showFramedExtras = !this.showFramedExtras;
         this.refreshResultsView();
       };
     }
@@ -10574,66 +6381,7 @@ Please share payment details and license key.`;
     const toggleAnalysis = document.getElementById("toggle-analysis-extras");
     if (toggleAnalysis) {
       toggleAnalysis.onclick = () => {
-        if (this.isTestLabResultsActive()) {
-          this.testLabShowAnalysisExtras = !this.testLabShowAnalysisExtras;
-        } else {
-          this.showAnalysisExtras = !this.showAnalysisExtras;
-        }
-        this.refreshResultsView();
-      };
-    }
-
-    const generateShowcaseBtn = document.getElementById("generate-showcase-btn");
-    if (generateShowcaseBtn && !this.shouldShowStaticPromoWorkspace()) {
-      generateShowcaseBtn.onclick = () => {
-        void this.generateShowcaseFrames();
-      };
-    }
-
-    const toggleShowcase = document.getElementById("toggle-showcase-results");
-    if (toggleShowcase) {
-      toggleShowcase.onclick = () => {
-        this.showShowcaseResults = !this.showShowcaseResults;
-        this.refreshResultsView();
-      };
-    }
-
-    const generatePromoBtn = document.getElementById("generate-promo-lifestyle-btn");
-    if (generatePromoBtn && !this.shouldShowStaticPromoWorkspace()) {
-      generatePromoBtn.onclick = () => {
-        void this.generatePromoLifestyleFrames();
-      };
-    }
-
-    const togglePromo = document.getElementById("toggle-promo-lifestyle-results");
-    if (togglePromo) {
-      togglePromo.onclick = () => {
-        this.showPromoLifestyleResults = !this.showPromoLifestyleResults;
-        this.refreshResultsView();
-      };
-    }
-
-    const generateTallBtn = document.getElementById("generate-tall-static-btn");
-    if (generateTallBtn && !this.shouldShowStaticPromoWorkspace()) {
-      generateTallBtn.onclick = () => {
-        void this.generateTallStaticFrames();
-      };
-    }
-
-    this.bindStaticPromoButtons();
-
-    const toggleTall = document.getElementById("toggle-tall-static-results");
-    if (toggleTall) {
-      toggleTall.onclick = () => {
-        this.showTallStaticResults = !this.showTallStaticResults;
-        this.refreshResultsView();
-      };
-    }
-
-    const toggleGown = document.getElementById("toggle-gown-static-results");
-    if (toggleGown) {
-      toggleGown.onclick = () => {
-        this.showGownStaticResults = !this.showGownStaticResults;
+        this.showAnalysisExtras = !this.showAnalysisExtras;
         this.refreshResultsView();
       };
     }
@@ -10656,37 +6404,11 @@ Please share payment details and license key.`;
         applyBestBtn.textContent = price ? `Download Best ₹${price}` : "Download Best";
         applyBestBtn.onclick = () => this.downloadImage(best);
       } else {
+        applyBestBtn.textContent = best?.shippingCost
+          ? `Apply Best ₹${best.shippingCost}`
+          : "Apply Best Variant";
         applyBestBtn.onclick = () => this.applyImage(best);
       }
-    }
-
-    const createReportBtn = document.getElementById("create-report-btn");
-    if (createReportBtn) {
-      createReportBtn.onclick = () => {
-        void this.createLiveVariantReport();
-      };
-    }
-
-    const localPriceDownloadBtn = document.getElementById(
-      "local-price-download-btn",
-    );
-    if (localPriceDownloadBtn) {
-      localPriceDownloadBtn.onclick = () => this.downloadLocalPriceCsv();
-    }
-
-    const generateLiveFromResults = document.getElementById(
-      "generate-live-from-results-btn",
-    );
-    if (generateLiveFromResults) {
-      generateLiveFromResults.onclick = () => {
-        const file = this.getImageFileForGenerate();
-        if (!file) {
-          OptimizerUtils.showNotification("Choose an image first", "error");
-          return;
-        }
-        this.localPriceMode = false;
-        void this.processImage(file, { purpose: "learn" });
-      };
     }
 
     const restartBtn = document.getElementById("restart-btn");
@@ -10694,15 +6416,6 @@ Please share payment details and license key.`;
       restartBtn.onclick = () => {
         this.resetToUploadForm();
       };
-    }
-
-    const localPriceSaveBtn = document.getElementById("local-price-save-btn");
-    if (localPriceSaveBtn) {
-      localPriceSaveBtn.onclick = () => this.saveLocalPriceSnapshot();
-    }
-    const localPriceViewBtn = document.getElementById("local-price-view-btn");
-    if (localPriceViewBtn) {
-      localPriceViewBtn.onclick = () => this.showLocalPriceReport();
     }
   }
 

@@ -17,8 +17,6 @@ const CONFIG = {
   EXTENSION_NAME: "Meesho Shipping Cost Optimizer",
   VERSION: "1.1.0",
 
-  /** Public path for bundled live shipping seed CSVs (web + extension). */
-  PUBLIC_SEED_REPORTS_PATH: "/data/seed-reports",
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 
   // Demo keys are now fetched from server

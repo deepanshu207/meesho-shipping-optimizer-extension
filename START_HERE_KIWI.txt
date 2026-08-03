@@ -26,4 +26,4 @@ There must be NO file named _headers (Chrome/Kiwi block names starting with _).
 3. Select the folder with manifest.json
 4. Open supplier.meesho.com → AI Optimizer button
 
-No license key needed — opens directly to Live / Test Lab.
+No license key needed — opens directly to Live generate / preview / apply.

@@ -2,7 +2,7 @@
 "update_url": "https://clients2.google.com/service/update2/crx",
 
   "manifest_version": 3,
-   "version": "1.6.37",
+   "version": "1.7.0",
   "name": "Meesho Shipping Cost Optimizer AI - Unlimited",
   "short_name": "Meesho Optimizer",
   "description": "AI tool for Meesho sellers that cuts shipping costs up to 80% using smart image optimization.",
@@ -75,7 +75,6 @@
         "js/*.mjs",
         "js/lib/*.mjs",
         "data/*.json",
-        "data/seed-reports/*.csv",
         "Badge/*.png",
         "icons/*.png"
       ],
