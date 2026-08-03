@@ -3574,7 +3574,6 @@ Please share payment details and license key.`;
       manualMode: this.isManualShippingMode(),
       baselineShipping: this.getBaselineShipping(),
       selectedVariantId: this.selectedVariantId,
-      canApplyToMeesho: this.canApplyToMeeshoPage(),
       framedExtras: this.framedExtraResults,
       showFramedExtras: this.showFramedExtras,
       liveAnalysis: this.liveAnalysis,
@@ -7429,7 +7428,10 @@ Please share payment details and license key.`;
       };
     }
 
-    this.updateApplyBestButton();
+    const applyBestBtn = document.getElementById("apply-best-btn");
+    if (applyBestBtn) {
+      this.updateApplyBestButton();
+    }
 
     const restartBtn = document.getElementById("restart-btn");
     if (restartBtn) {

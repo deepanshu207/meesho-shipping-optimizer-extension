@@ -380,34 +380,10 @@ const OptimizerUI = {
                     display: block !important;
                     width: 100% !important;
                 }
-                #opt-modal .result-card-actions-stacked,
-                .result-card-actions-stacked {
-                    display: flex !important;
-                    flex-direction: column !important;
-                    gap: 4px;
-                    width: 100% !important;
-                }
-                #opt-modal .result-card-actions-stacked .result-card-save,
-                #opt-modal .result-card-actions-stacked .result-card-apply,
-                .result-card-actions-stacked .result-card-save,
-                .result-card-actions-stacked .result-card-apply {
-                    width: 100% !important;
-                    max-width: 100% !important;
-                    display: block !important;
-                    flex: none !important;
-                }
-                #opt-modal .result-card-apply,
-                .result-card-apply {
-                    background: rgba(5,150,105,0.14) !important;
-                    color: #047857 !important;
-                    border: none !important;
-                    padding: 8px 4px !important;
-                    border-radius: 6px !important;
-                    cursor: pointer;
-                    font-size: 11px !important;
-                    font-weight: 700 !important;
-                    box-sizing: border-box !important;
-                    min-height: 30px;
+                .result-card-badge-spacer {
+                    display: block;
+                    height: 17px;
+                    margin: 0 auto 6px;
                 }
                 .result-card-best {
                     border-color: #10b981 !important;
@@ -805,16 +781,8 @@ const OptimizerUI = {
     const baseline = options.baselineShipping || 0;
     const manualMode = !!options.manualMode;
     const analysisMode = !!options.analysisMode || !!r.analysisMode;
-    const isWeb = !!window.WEB_OPTIMIZER_MODE;
-    const applyLabel = isWeb ? "Save" : "Apply";
     const isRecommended = !!r.recommended || !!r.meta?.recommended;
     const isBest = !!options.isBest;
-    const canApplyToMeesho = !!options.canApplyToMeesho;
-    const showPerCardApply =
-      !isWeb && canApplyToMeesho && !isBest && !analysisMode;
-    const actionsClass = showPerCardApply
-      ? "result-card-actions result-card-actions-stacked"
-      : "result-card-actions result-card-actions-single";
     const vid = r.variantId || "var-" + i;
     const isSelected = options.selectedVariantId === vid;
     const staticEst =
@@ -894,7 +862,7 @@ const OptimizerUI = {
                         ? '<div class="result-card-badge result-card-badge-best">🏆 BEST</div>'
                         : isRecommended
                         ? '<div class="result-card-badge result-card-badge-recommend">★ TOP</div>'
-                        : ""
+                        : '<div class="result-card-badge-spacer" aria-hidden="true"></div>'
                     }
                     <span class="result-edit-badge" data-variant-id="${vid}" style="display:${
       edited ? "block" : "none"
@@ -936,13 +904,8 @@ const OptimizerUI = {
                           }" min="0" max="999" placeholder="₹" style="width:100%;margin-top:0;padding:4px;font-size:12px;text-align:center;box-sizing:border-box;">`
                         : ""
                     }
-                    <div class="${actionsClass}">
-                        <button type="button" class="result-card-save" data-variant-id="${vid}">Save</button>
-                        ${
-                          showPerCardApply
-                            ? `<button type="button" class="result-card-apply apply-btn" data-variant-id="${vid}">${applyLabel}</button>`
-                            : ""
-                        }
+                    <div class="result-card-actions result-card-actions-single">
+                        <button type="button" class="result-card-save" data-variant-id="${vid}" style="display:block;width:100%;max-width:100%;box-sizing:border-box;">Save</button>
                     </div>
                     </div>
                 </div>
@@ -1139,7 +1102,6 @@ const OptimizerUI = {
           baselineShipping: baseline,
           manualMode,
           selectedVariantId,
-          canApplyToMeesho: !!options.canApplyToMeesho,
           isBest:
             lowestLivePrice != null &&
             Number(r.shippingCost) === lowestLivePrice &&
@@ -1178,7 +1140,6 @@ const OptimizerUI = {
           baselineShipping: baseline,
           manualMode,
           selectedVariantId,
-          canApplyToMeesho: !!options.canApplyToMeesho,
           isBest: i === 0 && r.shippingCost > 0,
         });
       });
