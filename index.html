@@ -10,18 +10,18 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: #f5f5f5;
+      font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+      background: #fff8ee;
       color: #111;
       min-height: 100vh;
     }
     .topbar {
-      background: linear-gradient(135deg, #FFD700, #C9A227) !important;
+      background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%) !important;
       padding: 16px 20px;
       text-align: center;
     }
-    .topbar h1 { font-size: 20px; font-weight: 700; color: #111; }
-    .topbar p { font-size: 13px; margin-top: 4px; color: #222; }
+    .topbar h1 { font-size: 20px; font-weight: 800; color: #3d2914; }
+    .topbar p { font-size: 13px; margin-top: 4px; color: rgba(61,41,20,0.8); }
     .wrap { max-width: 520px; margin: 0 auto; padding: 12px 12px 32px; }
     #optimizer-app {
       background: #fff;
@@ -30,9 +30,9 @@
       overflow-x: hidden;
     }
     .opt-header {
-      background: linear-gradient(135deg, #FFD700, #C9A227);
+      background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
       padding: 18px 20px;
-      color: #111;
+      color: #3d2914;
     }
     .opt-header h2 { font-size: 18px; font-weight: 700; }
     .opt-body { padding: 16px; background: #fff; }
@@ -43,7 +43,7 @@
       margin-bottom: 12px;
       background: #fafafa;
     }
-    .opt-section-title { font-size: 13px; font-weight: 700; color: #047857; margin-bottom: 8px; }
+    .opt-section-title { font-size: 13px; font-weight: 700; color: #c45f12; margin-bottom: 8px; }
     .opt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .opt-label { display: block; font-size: 11px; color: #666; margin-bottom: 4px; font-weight: 600; }
     .opt-select, .opt-input {
@@ -56,11 +56,11 @@
       color: #111;
     }
     .opt-upload-box {
-      border: 2px dashed #C9A227;
+      border: 2px dashed #e8c98a;
       border-radius: 12px;
       padding: 28px 16px;
       text-align: center;
-      background: #fffef5;
+      background: #fffdf7;
       cursor: pointer;
       position: relative;
       display: block;
@@ -70,8 +70,8 @@
       display: inline-block;
       margin-top: 12px;
       padding: 14px 28px;
-      background: linear-gradient(135deg, #FFD700, #C9A227);
-      color: #111;
+      background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+      color: #3d2914;
       font-weight: 700;
       font-size: 15px;
       border-radius: 10px;
@@ -88,10 +88,10 @@
       padding: 16px;
       border: none;
       border-radius: 10px;
-      background: linear-gradient(135deg, #FFD700, #C9A227);
-      color: #111;
+      background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+      color: #3d2914;
       font-size: 16px;
-      font-weight: 700;
+      font-weight: 800;
       cursor: pointer;
       touch-action: manipulation;
     }
@@ -175,7 +175,7 @@
     }
     .category-ac-list.open { display: block; }
     .category-ac-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f3f4f6; font-size: 12px; content-visibility: auto; contain-intrinsic-size: auto 44px; }
-    .category-ac-item:hover, .category-ac-item.active { background: rgba(102,126,234,0.12); }
+    .category-ac-item:hover, .category-ac-item.active { background: rgba(245,166,35,0.14); }
     .category-ac-item-name { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: #111827; }
     .category-ac-item-id { font-size: 10px; color: #6b7280; font-weight: 500; }
     .category-ac-item-path { font-size: 10px; color: #4b5563; margin-top: 2px; }
@@ -211,7 +211,7 @@
     .opt-tab.active {
       color: #047857;
       background: #fff;
-      box-shadow: inset 0 -3px 0 #C9A227;
+      box-shadow: inset 0 -3px 0 #e67e22;
     }
     .opt-tab-panel { display: none; }
     .opt-tab-panel.active { display: block; }
@@ -244,8 +244,8 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Meesho Shipping Cost Optimizer</h1>
-    <p>Upload image → AI creates variations → finds lowest shipping</p>
+    <h1>meesho. Shipping Cost Optimizer</h1>
+    <p>Generate · Preview · Apply — lower Meesho shipping costs</p>
   </header>
 
   <main class="wrap">
@@ -392,6 +392,7 @@
     </div>
 
     <p class="api-note">Generate variants here, upload each on Meesho, then type the shipping ₹ on each result. No cookie needed in manual mode.</p>
+    <p style="text-align:center;font-size:11px;color:#6b7280;margin-top:16px;">Built by <strong style="color:#c45f12;">Deepanshu Arora</strong></p>
   </main>
 
   <script src="/web-shim.js"></script>

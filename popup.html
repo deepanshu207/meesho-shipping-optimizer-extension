@@ -1,377 +1,282 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Shipping Optimizer</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meesho Shipping Cost Optimizer</title>
+  <style>
+    :root {
+      --mso-gold: #ffd700;
+      --mso-amber: #f5a623;
+      --mso-orange: #e67e22;
+      --mso-ink: #3d2914;
+      --mso-text: #1f2937;
+      --mso-muted: #6b7280;
+      --mso-bg: #fff8ee;
+      --mso-surface: #ffffff;
+      --mso-border: #f0e0c8;
+      --mso-success: #059669;
+      --mso-font: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+      --mso-grad: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+    }
 
-        body {
-            width: 360px;
-            min-height: 480px;
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #FFD700, #C9A227);
-            color: #e4e4e7;
-            overflow-x: hidden;
-        }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        .header {
-            background: linear-gradient(135deg, #FFD700, #C9A227);
-            padding: 24px 20px;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-        }
+    body {
+      width: 360px;
+      min-height: 460px;
+      font-family: var(--mso-font);
+      background:
+        radial-gradient(ellipse at top right, rgba(255, 215, 0, 0.28), transparent 55%),
+        radial-gradient(ellipse at bottom left, rgba(230, 126, 34, 0.12), transparent 50%),
+        var(--mso-bg);
+      color: var(--mso-text);
+    }
 
-        .header::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
-            animation: pulse 4s ease-in-out infinite;
-        }
+    .header {
+      background: var(--mso-grad);
+      padding: 22px 20px 18px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
 
-        @keyframes pulse {
+    .header::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(255,255,255,0.18), transparent 60%);
+      pointer-events: none;
+    }
 
-            0%,
-            100% {
-                transform: scale(1);
-                opacity: 0.5;
-            }
+    .version-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1;
+      background: rgba(61, 41, 20, 0.12);
+      color: var(--mso-ink);
+      padding: 3px 9px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
 
-            50% {
-                transform: scale(1.1);
-                opacity: 0.8;
-            }
-        }
+    .brand {
+      position: relative;
+      z-index: 1;
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--mso-ink);
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+    }
 
-        .logo {
-            font-size: 42px;
-            margin-bottom: 10px;
-            position: relative;
-            z-index: 1;
-        }
+    .brand span {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-top: 6px;
+      color: rgba(61, 41, 20, 0.85);
+    }
 
-        .title {
-            font-size: 20px;
-            font-weight: 700;
-            margin-bottom: 6px;
-            position: relative;
-            z-index: 1;
-        }
+    .subtitle {
+      position: relative;
+      z-index: 1;
+      margin-top: 8px;
+      font-size: 12px;
+      color: rgba(61, 41, 20, 0.78);
+      line-height: 1.4;
+    }
 
-        .subtitle {
-            font-size: 13px;
-            opacity: 0.9;
-            position: relative;
-            z-index: 1;
-        }
+    .content { padding: 16px 16px 8px; }
 
-        .version-badge {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(255, 255, 255, 0.2);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 600;
-        }
+    .status-card {
+      background: var(--mso-surface);
+      border: 1px solid var(--mso-border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 16px rgba(196, 95, 18, 0.06);
+    }
 
-        .content {
-            padding: 20px;
-        }
+    .status-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
 
-        .status-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 14px;
-            padding: 18px;
-            margin-bottom: 18px;
-        }
+    .status-title {
+      font-size: 12px;
+      color: var(--mso-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
 
-        .status-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 12px;
-        }
+    .status-badge {
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--mso-grad);
+      color: var(--mso-ink);
+    }
 
-        .status-title {
-            font-size: 13px;
-            color: #9ca3af;
-            font-weight: 500;
-        }
+    .status-card p {
+      font-size: 13px;
+      color: var(--mso-text);
+      line-height: 1.5;
+    }
 
-        .status-badge {
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
+    .features { margin-bottom: 14px; }
 
-        .status-badge.active {
-            background: linear-gradient(135deg, #FFD700, #C9A227);
-            color: white;
-        }
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 12px;
+      background: var(--mso-surface);
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
 
-        .status-badge.inactive {
-            background: rgba(239, 68, 68, 0.2);
-            color: #ef4444;
-            border: 1px solid rgba(239, 68, 68, 0.3);
-        }
+    .feature-icon {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      background: var(--mso-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: var(--mso-ink);
+      font-weight: 800;
+    }
 
-        .license-key {
-            font-family: 'Consolas', monospace;
-            font-size: 13px;
-            color: #a78bfa;
-            background: rgba(167, 139, 250, 0.1);
-            padding: 8px 12px;
-            border-radius: 8px;
-            word-break: break-all;
-        }
+    .feature-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--mso-ink);
+      margin-bottom: 2px;
+    }
 
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 18px;
-        }
+    .feature-desc {
+      font-size: 11px;
+      color: var(--mso-muted);
+      line-height: 1.35;
+    }
 
-        .stat-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 12px;
-            padding: 16px;
-            text-align: center;
-        }
+    .btn {
+      width: 100%;
+      padding: 13px 14px;
+      border: none;
+      border-radius: 11px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      margin-bottom: 8px;
+      min-height: 46px;
+    }
 
-        .stat-value {
-            font-size: 26px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #FFD700, #C9A227);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+    .btn-primary {
+      background: var(--mso-grad);
+      color: var(--mso-ink);
+      box-shadow: 0 6px 18px rgba(230, 126, 34, 0.28);
+    }
 
-        .stat-label {
-            font-size: 11px;
-            color: #9ca3af;
-            margin-top: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(230, 126, 34, 0.35);
+    }
 
-        .features {
-            margin-bottom: 18px;
-        }
+    .btn-secondary {
+      background: var(--mso-surface);
+      color: var(--mso-ink);
+      border: 1px solid var(--mso-border);
+    }
 
-        .feature-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 10px;
-            margin-bottom: 8px;
-            transition: all 0.2s;
-        }
+    .btn-secondary:hover {
+      background: #fff3df;
+    }
 
-        .feature-item:hover {
-            background: rgba(102, 126, 234, 0.1);
-        }
+    .footer {
+      text-align: center;
+      padding: 12px 16px 16px;
+      font-size: 11px;
+      color: var(--mso-muted);
+      line-height: 1.45;
+    }
 
-        .feature-icon {
-            width: 36px;
-            height: 36px;
-            background: linear-gradient(135deg, #FFD700, #C9A227) 0%, rgba(118, 75, 162, 0.2) 100%);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-        }
-
-        .feature-text {
-            flex: 1;
-        }
-
-        .feature-title {
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 2px;
-        }
-
-        .feature-desc {
-            font-size: 11px;
-            color: #9ca3af;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 14px;
-            border: none;
-            border-radius: 12px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin-bottom: 10px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #FFD700, #C9A227);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.05);
-            color: #e4e4e7;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .footer {
-            text-align: center;
-            padding: 15px 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 11px;
-            color: #6b7280;
-        }
-
-        .footer a {
-            color: #a78bfa;
-            text-decoration: none;
-        }
-
-        .footer a:hover {
-            text-decoration: underline;
-        }
-
-        .input-group {
-            margin-bottom: 12px;
-        }
-
-        .input-label {
-            display: block;
-            font-size: 12px;
-            color: #9ca3af;
-            margin-bottom: 6px;
-            font-weight: 500;
-        }
-
-        .input-field {
-            width: 100%;
-            padding: 12px 14px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 10px;
-            /* color: #e4e4e7; */
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-
-        .input-field:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-        }
-
-        .input-field::placeholder {
-            color: #6b7280;
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        .expiry-warning {
-            background: rgba(245, 158, 11, 0.1);
-            border: 1px solid rgba(245, 158, 11, 0.3);
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-top: 10px;
-            font-size: 12px;
-            color: #f59e0b;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-    </style>
+    .footer strong {
+      color: var(--mso-ink);
+      font-weight: 700;
+    }
+  </style>
 </head>
+<body>
+  <div class="header">
+    <span class="version-badge">v1.8.0</span>
+    <div class="brand">
+      meesho.
+      <span>Shipping Cost AI Optimizer</span>
+    </div>
+    <p class="subtitle">Lower shipping costs with smart image variants</p>
+  </div>
 
-<body style="background:#ffffff;color:#111">
-    <div class="header">
-        <span class="version-badge">v1.2.0</span>
-        <div class="title">Meesho Shipping Cost Optimizer</div>
-        <div class="subtitle">Reduce Meesho shipping costs by up to 70%</div>
+  <div class="content">
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-title">Status</span>
+        <span class="status-badge" id="status-badge">Ready</span>
+      </div>
+      <p>
+        Open a Meesho supplier catalog page, then tap
+        <strong>Open Image Optimizer</strong> to generate, preview, and apply.
+      </p>
     </div>
 
-    <div class="content">
-        <div class="status-card">
-            <div class="status-header">
-                <span class="status-title">Status</span>
-                <span class="status-badge active" id="status-badge">Ready</span>
-            </div>
-            <p style="font-size:13px;color:#374151;line-height:1.5;">
-                Open a Meesho supplier catalog page and tap <strong>Open Image Optimizer</strong>.
-                Live generate, preview, and one-click apply — no license required.
-            </p>
+    <div class="features">
+      <div class="feature-item">
+        <div class="feature-icon">1</div>
+        <div>
+          <div class="feature-title">Generate variants</div>
+          <div class="feature-desc">Smart borders &amp; badges tuned for lower shipping</div>
         </div>
-
-        <!-- Features -->
-        <div class="features">
-            <div class="feature-item">
-                <div class="feature-icon">🎨</div>
-                <div class="feature-text">
-                    <div class="feature-title">Smart AI Image Variations</div>
-                    <div class="feature-desc">Generate unique variations with borders & badges</div>
-                </div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">📊</div>
-                <div class="feature-text">
-                    <div class="feature-title">Live Shipping Detection</div>
-                    <div class="feature-desc">Real-time shipping cost analysis</div>
-                </div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">⚡</div>
-                <div class="feature-text">
-                    <div class="feature-title">One-Click Apply</div>
-                    <div class="feature-desc">Instantly apply the best optimized image</div>
-                </div>
-            </div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">2</div>
+        <div>
+          <div class="feature-title">Live shipping check</div>
+          <div class="feature-desc">See real Meesho shipping on each variant</div>
         </div>
-
-        <button class="btn btn-primary" id="open-catalog" style="margin-bottom:10px;">
-            <span style="margin-right:8px;">🚀</span> Open Image Optimizer
-        </button>
-        <button class="btn btn-primary" id="open-meesho">Open Meesho Supplier Panel</button>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">3</div>
+        <div>
+          <div class="feature-title">One-click apply</div>
+          <div class="feature-desc">Publish the best image to your catalog</div>
+        </div>
+      </div>
     </div>
 
+    <button class="btn btn-primary" id="open-catalog">Open Image Optimizer</button>
+    <button class="btn btn-secondary" id="open-meesho">Open Meesho Supplier Panel</button>
+  </div>
 
-    <script src="config.js"></script>
-    <script src="popup.js"></script>
+  <div class="footer">
+    Built by <strong>Deepanshu Arora</strong><br>
+    For Meesho sellers · Desktop &amp; mobile
+  </div>
+
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
 </body>
-
 </html>

@@ -15,53 +15,219 @@ const OptimizerUI = {
   createModalHTML: function () {
     const styles = `
             <style>
-                .opt-modal * { box-sizing: border-box; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif; }
-                .opt-modal {  color: black; border-radius: 16px; }
-                .opt-header { background: linear-gradient(135deg, #FFD700, #C9A227); padding: 18px 22px; border-radius: 16px 16px 0 0; display: flex; justify-content: space-between; align-items: center; }
-                .opt-header h2 { margin: 0; font-size: 18px; font-weight: 700; color: white; display: flex; align-items: center; gap: 10px; }
-                .opt-close { background: rgba(255,255,255,0.2); border: none; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; }
-                .opt-close:hover { background: rgba(255,255,255,0.3); }
-                .opt-body { padding: 20px;background:white; }
-                .opt-section { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 15px; margin-bottom: 15px; }
-                .opt-section-title { font-size: 13px; font-weight: 600; color: #a78bfa; margin-bottom: 10px; }
-                .opt-label { display: block; font-size: 11px; color: #9ca3af; margin-bottom: 5px; }
-                .opt-select, .opt-input { width: 100%; padding: 10px 12px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; color: black; font-size: 13px; }
-                .opt-select:focus, .opt-input:focus { outline: none; border-color: #667eea; }
-                .opt-select option { background: #ffffff; }
+                .opt-modal, .opt-modal * {
+                    box-sizing: border-box;
+                    font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+                }
+                .opt-modal {
+                    color: #1f2937;
+                    border-radius: 16px;
+                    overflow: hidden;
+                    background: #fff8ee;
+                }
+                .opt-header {
+                    background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+                    padding: 16px 18px;
+                    border-radius: 16px 16px 0 0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 10px;
+                }
+                .opt-header h2 {
+                    margin: 0;
+                    font-size: 17px;
+                    font-weight: 800;
+                    color: #3d2914;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    letter-spacing: -0.01em;
+                    line-height: 1.25;
+                }
+                .opt-close {
+                    background: rgba(61,41,20,0.12);
+                    border: none;
+                    color: #3d2914;
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 10px;
+                    cursor: pointer;
+                    font-size: 20px;
+                    flex-shrink: 0;
+                }
+                .opt-close:hover { background: rgba(61,41,20,0.2); }
+                .opt-body {
+                    padding: 16px;
+                    background:
+                      radial-gradient(ellipse at top right, rgba(255,215,0,0.12), transparent 50%),
+                      #fff8ee;
+                }
+                .opt-section {
+                    background: #ffffff;
+                    border: 1px solid #f0e0c8;
+                    border-radius: 12px;
+                    padding: 14px;
+                    margin-bottom: 12px;
+                }
+                .opt-section-title {
+                    font-size: 13px;
+                    font-weight: 700;
+                    color: #c45f12;
+                    margin-bottom: 10px;
+                }
+                .opt-label {
+                    display: block;
+                    font-size: 11px;
+                    color: #6b7280;
+                    margin-bottom: 5px;
+                    font-weight: 600;
+                }
+                .opt-select, .opt-input {
+                    width: 100%;
+                    padding: 10px 12px;
+                    background: #ffffff;
+                    border: 1px solid #e8d5b8;
+                    border-radius: 10px;
+                    color: #1f2937;
+                    font-size: 13px;
+                    font-family: inherit;
+                }
+                .opt-select:focus, .opt-input:focus {
+                    outline: none;
+                    border-color: #e67e22;
+                    box-shadow: 0 0 0 3px rgba(230,126,34,0.15);
+                }
+                .opt-select option { background: #ffffff; color: #1f2937; }
                 .opt-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                .opt-btn { padding: 12px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
-                .opt-btn-primary { background: linear-gradient(135deg, #FFD700, #C9A227); color: white; }
-                .opt-btn-success { background: linear-gradient(135deg, #FFD700, #C9A227); color: white; }
-                .opt-btn-danger { background: #ef4444; color: white; }
-                .opt-btn-secondary { background: rgba(255,255,255,0.1); color: black; }
-                .opt-btn-whatsapp { background: linear-gradient(135deg, #FFD700, #C9A227); color: white; display: flex; align-items: center; justify-content: center; gap: 8px; }
-                .opt-btn-whatsapp:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(37,211,102,0.4); }
-                .opt-range { width: 100%; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); -webkit-appearance: none; }
-                .opt-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #667eea; cursor: pointer; }
+                .opt-btn {
+                    padding: 12px 18px;
+                    border: none;
+                    border-radius: 10px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    font-family: inherit;
+                }
+                .opt-btn-primary,
+                .opt-btn-success,
+                .opt-btn-whatsapp,
+                .opt-file-btn,
+                .generate-btn {
+                    background: linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);
+                    color: #3d2914;
+                }
+                .opt-btn-danger { background: #dc2626; color: #fff; }
+                .opt-btn-secondary {
+                    background: #ffffff;
+                    color: #3d2914;
+                    border: 1px solid #f0e0c8;
+                }
+                .opt-btn-whatsapp {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                }
+                .opt-range {
+                    width: 100%;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: #f0e0c8;
+                    -webkit-appearance: none;
+                }
+                .opt-range::-webkit-slider-thumb {
+                    -webkit-appearance: none;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 50%;
+                    background: #e67e22;
+                    cursor: pointer;
+                }
                 .opt-badge-pos { display: flex; flex-wrap: wrap; gap: 6px; }
-                .opt-badge-item { padding: 6px 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; cursor: pointer; font-size: 11px; }
-                .opt-badge-item.active { background: rgba(102,126,234,0.2); border-color: #667eea; }
-                .opt-shipping { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); border-radius: 10px; padding: 12px; text-align: center; margin-bottom: 15px; }
-                .opt-shipping-value { font-size: 24px; font-weight: 700; color: #10b981; }
-                .opt-upload-box { border: 2px dashed rgba(102,126,234,0.5); border-radius: 10px; padding: 25px; text-align: center; background: rgba(102,126,234,0.05); margin-bottom: 15px; }
-                .opt-upload-box:hover { border-color: #667eea; background: rgba(102,126,234,0.1); }
-                .opt-file-btn { display: inline-block; background: linear-gradient(135deg, #FFD700, #C9A227); color: white; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 13px; margin-top: 10px; }
+                .opt-badge-item {
+                    padding: 6px 10px;
+                    background: #fff8ee;
+                    border: 1px solid #f0e0c8;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 11px;
+                }
+                .opt-badge-item.active {
+                    background: rgba(230,126,34,0.15);
+                    border-color: #e67e22;
+                    color: #c45f12;
+                }
+                .opt-shipping {
+                    background: rgba(5,150,105,0.1);
+                    border: 1px solid rgba(5,150,105,0.28);
+                    border-radius: 12px;
+                    padding: 12px;
+                    text-align: center;
+                    margin-bottom: 12px;
+                }
+                .opt-shipping-value {
+                    font-size: 24px;
+                    font-weight: 800;
+                    color: #059669;
+                }
+                .opt-upload-box {
+                    border: 2px dashed #e8c98a;
+                    border-radius: 12px;
+                    padding: 22px 16px;
+                    text-align: center;
+                    background: #fffdf7;
+                    margin-bottom: 12px;
+                }
+                .opt-upload-box:hover {
+                    border-color: #e67e22;
+                    background: #fff6e8;
+                }
+                .opt-file-btn {
+                    display: inline-block;
+                    padding: 10px 22px;
+                    border-radius: 10px;
+                    cursor: pointer;
+                    font-weight: 700;
+                    font-size: 13px;
+                    margin-top: 10px;
+                }
                 .opt-preview { margin-top: 12px; display: none; }
-                .opt-preview img { max-width: 120px; max-height: 120px; border-radius: 8px; border: 2px solid #10b981; }
-                .opt-divider { display: flex; align-items: center; margin: 15px 0; color: #0f0f10; font-size: 12px; }
-                .opt-divider::before, .opt-divider::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.1); }
+                .opt-preview img {
+                    max-width: 120px;
+                    max-height: 120px;
+                    border-radius: 8px;
+                    border: 2px solid #059669;
+                }
+                .opt-divider {
+                    display: flex;
+                    align-items: center;
+                    margin: 15px 0;
+                    color: #6b7280;
+                    font-size: 12px;
+                }
+                .opt-divider::before, .opt-divider::after {
+                    content: '';
+                    flex: 1;
+                    height: 1px;
+                    background: #f0e0c8;
+                }
                 .opt-divider span { padding: 0 10px; }
-                .opt-tabs { display: flex; border-bottom: 2px solid #eee; background: #fafafa; }
-                .opt-tab { flex: 1; padding: 12px 10px; border: none; background: transparent; font-size: 13px; font-weight: 700; color: #666; cursor: pointer; min-height: 44px; }
-                .opt-tab.active { color: #047857; background: #fff; box-shadow: inset 0 -3px 0 #C9A227; }
-                .opt-tab-panel { display: none; }
-                .opt-tab-panel.active { display: block; }
-                .test-lab-note { font-size: 11px; color: #666; margin-top: 8px; padding: 8px; background: #eff6ff; border-radius: 6px; line-height: 1.45; border: 1px solid #dbeafe; }
-                .generate-btn { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; border: none; border-radius: 10px; cursor: pointer; background: linear-gradient(135deg, #FFD700, #C9A227); color: #fff; min-height: 48px; }
-                .generate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+                .generate-btn {
+                    width: 100%;
+                    padding: 14px;
+                    font-size: 16px;
+                    font-weight: 800;
+                    border: none;
+                    border-radius: 12px;
+                    cursor: pointer;
+                    min-height: 48px;
+                    box-shadow: 0 6px 18px rgba(230,126,34,0.25);
+                }
+                .generate-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
                 .generate-sticky { padding: 8px 0 4px; margin-top: 8px; }
-                .session-hint { font-size: 11px; color: #666; line-height: 1.4; }
-                .session-status.ok { color: #047857; }
+                .session-hint { font-size: 11px; color: #6b7280; line-height: 1.4; }
+                .session-status.ok { color: #059669; }
                 .session-status.warn { color: #b45309; }
                 .optimizer-chrome-hidden { display: none !important; }
                 .category-picker-hint { font-size: 10px; color: #6b7280; margin-top: 4px; line-height: 1.4; }
@@ -73,9 +239,9 @@ const OptimizerUI = {
                     min-height: 44px;
                     width: 100%;
                     padding-right: 32px;
-                    color: #111827;
+                    color: #1f2937;
                     background: #fff;
-                    border-color: #d1d5db;
+                    border-color: #e8d5b8;
                 }
                 #category-clear {
                     position: absolute;
@@ -100,9 +266,9 @@ const OptimizerUI = {
                     overflow-y: auto;
                     -webkit-overflow-scrolling: touch;
                     background: #fff;
-                    border: 1px solid #d1d5db;
-                    border-radius: 8px;
-                    box-shadow: 0 10px 28px rgba(0,0,0,0.15);
+                    border: 1px solid #e8d5b8;
+                    border-radius: 10px;
+                    box-shadow: 0 10px 28px rgba(196,95,18,0.15);
                     list-style: none;
                     margin: 0;
                     padding: 0;
@@ -119,13 +285,13 @@ const OptimizerUI = {
                 }
                 .category-ac-item:hover,
                 .category-ac-item.active {
-                    background: rgba(102,126,234,0.12);
+                    background: rgba(245,166,35,0.14);
                 }
                 .category-ac-item-name {
                     display: flex;
                     justify-content: space-between;
                     gap: 8px;
-                    color: #111827;
+                    color: #1f2937;
                     font-weight: 600;
                 }
                 .category-ac-item-id { font-size: 10px; color: #6b7280; font-weight: 500; white-space: nowrap; }
@@ -135,17 +301,28 @@ const OptimizerUI = {
                     padding: 8px 12px;
                     font-size: 10px;
                     color: #6b7280;
-                    background: #f9fafb;
-                    border-bottom: 1px solid #f3f4f6;
+                    background: #fff8ee;
+                    border-bottom: 1px solid #f0e0c8;
                 }
-                .category-ac-footer { border-bottom: none; border-top: 1px solid #f3f4f6; }
+                .category-ac-footer { border-bottom: none; border-top: 1px solid #f0e0c8; }
                 .category-ac-empty { padding: 12px; color: #6b7280; font-size: 12px; }
+                .opt-developer {
+                    text-align: center;
+                    font-size: 10px;
+                    color: #6b7280;
+                    margin-top: 8px;
+                    padding-top: 8px;
+                }
+                .opt-developer strong { color: #c45f12; }
                 @media (max-width: 640px) {
                     .opt-modal-ext { border-radius: 0 !important; min-height: 100vh; }
                     .opt-modal-ext .opt-header { border-radius: 0 !important; }
-                    .opt-tab { font-size: 14px; padding: 14px 8px; }
-                    .opt-body { padding: 14px !important; }
+                    .opt-body { padding: 12px !important; }
                     .opt-row { grid-template-columns: 1fr !important; }
+                    .opt-header h2 { font-size: 15px; }
+                }
+                @media (min-width: 900px) {
+                    .opt-modal-ext { max-width: 520px; margin: 0 auto; }
                 }
             </style>
         `;
@@ -163,12 +340,12 @@ const OptimizerUI = {
     return `
             <div class="opt-modal">
                 <div class="opt-header">
-                    <h2><span>🚀</span> Upload & Optimize</h2>
+                    <h2>meesho. Upload &amp; Optimize</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
-                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, #FFD700, #C9A227),rgba(102,126,234,0.1));border:1px solid rgba(16,185,129,0.3);">
-                        <div class="opt-section-title" style="color:#10b981;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
+                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%),rgba(230,126,34,0.1));border:1px solid rgba(16,185,129,0.3);">
+                        <div class="opt-section-title" style="color:#c45f12;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
                         <div class="opt-row" style="margin-bottom:10px;">
                             <div>
                                 <label class="opt-label">Target Shipping</label>
@@ -221,6 +398,7 @@ const OptimizerUI = {
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
+                    <div class="opt-developer">Built by <strong>Deepanshu Arora</strong></div>
                 </div>
             </div>
         `;
@@ -231,14 +409,14 @@ const OptimizerUI = {
     return `
             <div class="opt-modal">
                 <div class="opt-header">
-                    <h2><span>🔐</span> License Required</h2>
+                    <h2>License Required</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
                     <div style="text-align:center;padding:10px 0;">
                         <div style="font-size:40px;margin-bottom:8px;">🚀</div>
-                        <h3 style="margin:0 0 5px 0;color:black;">Meesho Shipping Cost AI Optimizer</h3>
-                        <p style="color:#9ca3af;font-size:12px;margin-bottom:10px;">Reduce shipping costs by up to 40%</p>
+                        <h3 style="margin:0 0 5px 0;color:#3d2914;">meesho. Shipping Cost Optimizer</h3>
+                        <p style="color:#6b7280;font-size:12px;margin-bottom:10px;">By Deepanshu Arora · Reduce shipping with smart image variants</p>
                     </div>
                     
                     <!-- Pricing Plans -->
@@ -248,31 +426,31 @@ const OptimizerUI = {
                             <!-- Monthly -->
                             <button class="plan-buy-btn" data-plan="monthly" data-price="599" data-duration="1 Month" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s;color:black;">
                                 <div style="font-size:11px;color:#9ca3af;">Monthly</div>
-                                <div style="font-size:20px;font-weight:700;color:#667eea;">₹599</div>
+                                <div style="font-size:20px;font-weight:700;color:#e67e22;">₹599</div>
                                 <div style="font-size:9px;color:#0f0f10;">30 days</div>
                             </button>
                             <!-- 3 Months -->
                             <button class="plan-buy-btn" data-plan="quarterly" data-price="1399" data-duration="3 Months" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s;color:black;">
                                 <div style="font-size:11px;color:#9ca3af;">3 Months</div>
-                                <div style="font-size:20px;font-weight:700;color:#667eea;">₹1399</div>
+                                <div style="font-size:20px;font-weight:700;color:#e67e22;">₹1399</div>
                                 <div style="font-size:9px;color:#10b981;">Save ₹1000</div>
                             </button>
                             <!-- 6 Months -->
                             <button class="plan-buy-btn" data-plan="halfyearly" data-price="2299" data-duration="6 Months" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s;color:black;">
                                 <div style="font-size:11px;color:#9ca3af;">6 Months</div>
-                                <div style="font-size:20px;font-weight:700;color:#667eea;">₹2299</div>
+                                <div style="font-size:20px;font-weight:700;color:#e67e22;">₹2299</div>
                                 <div style="font-size:9px;color:#10b981;">Save ₹3000</div>
                             </button>
                             <!-- Yearly - Best Value -->
-                            <button class="plan-buy-btn" data-plan="yearly" data-price="3099" data-duration="1 Year" style="background:linear-gradient(135deg, #FFD700, #C9A227),rgba(118,75,162,0.15));border:2px solid #667eea;border-radius:8px;padding:10px;text-align:center;position:relative;cursor:pointer;transition:all 0.2s;color:black;">
-                                <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg, #FFD700, #C9A227);color:white;padding:2px 8px;border-radius:10px;font-size:8px;font-weight:700;">BEST VALUE</div>
-                                <div style="font-size:11px;color:#a78bfa;margin-top:4px;">Yearly</div>
+                            <button class="plan-buy-btn" data-plan="yearly" data-price="3099" data-duration="1 Year" style="background:linear-gradient(180deg, #fff8ee, #ffffff);border:2px solid #e67e22;border-radius:8px;padding:10px;text-align:center;position:relative;cursor:pointer;transition:all 0.2s;color:black;">
+                                <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);color:white;padding:2px 8px;border-radius:10px;font-size:8px;font-weight:700;">BEST VALUE</div>
+                                <div style="font-size:11px;color:#c45f12;margin-top:4px;">Yearly</div>
                                 <div style="font-size:20px;font-weight:700;color:#10b981;">₹3099</div>
                                 <div style="font-size:9px;color:#10b981;">Save ₹8000</div>
                             </button>
                         </div>
                         <div style="margin-top:10px;padding:8px;background:rgba(167,139,250,0.1);border-radius:6px;border:1px solid rgba(167,139,250,0.2);">
-                            <div style="font-size:10px;color:#a78bfa;font-weight:600;margin-bottom:4px;">✨ Yearly Plan Exclusive:</div>
+                            <div style="font-size:10px;color:#c45f12;font-weight:600;margin-bottom:4px;">✨ Yearly Plan Exclusive:</div>
                             <div style="font-size:9px;color:#9ca3af;line-height:1.4;">Beta Updates • Upcoming Features • Premium Badges • Priority Support • Advanced Analytics</div>
                         </div>
                     </div>
@@ -297,7 +475,7 @@ const OptimizerUI = {
     return `
             <div class="opt-modal opt-modal-ext">
                 <div class="opt-header">
-                    <h2><span>🚀</span> Meesho Shipping Cost AI Optimizer</h2>
+                    <h2>meesho. Shipping Cost Optimizer</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div class="opt-body">
@@ -309,7 +487,7 @@ const OptimizerUI = {
                     <div class="opt-section" style="padding:12px;">
                         <div class="opt-section-title" style="display:flex;justify-content:space-between;align-items:center;">
                             <span>📁 Category (Required)</span>
-                            <button id="refresh-categories" style="background:rgba(102,126,234,0.2);border:none;color:#a78bfa;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:10px;display:none;" title="Refresh">🔄</button>
+                            <button id="refresh-categories" style="background:rgba(230,126,34,0.15);border:none;color:#c45f12;padding:4px 8px;border-radius:8px;cursor:pointer;font-size:10px;display:none;" title="Refresh">🔄</button>
                         </div>
                         <div id="category-ac-wrap">
                             <input type="text" id="category-search" class="opt-input" placeholder="Search 3777 categories by name or ID…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="category-ac-list" disabled>
@@ -322,16 +500,16 @@ const OptimizerUI = {
                         <div id="category-error" style="display:none;margin-top:8px;padding:8px;background:rgba(239,68,68,0.15);border-radius:6px;border:1px solid rgba(239,68,68,0.3);">
                             <span style="font-size:11px;color:#ef4444;">⚠️ Categories not loaded. Click 🔄 Refresh or reload page.</span>
                         </div>
-                        <div id="selected-category" style="margin-top:8px;padding:8px;background:rgba(102,126,234,0.15);border-radius:6px;display:none;">
-                            <span style="font-size:11px;color:#a78bfa;">✓ </span>
+                        <div id="selected-category" style="margin-top:8px;padding:8px;background:rgba(230,126,34,0.12);border:1px solid #f0e0c8;border-radius:8px;display:none;">
+                            <span style="font-size:11px;color:#c45f12;">✓ </span>
                             <span id="selected-category-name" style="font-size:12px;color:black;font-weight:600;"></span>
                             <div id="selected-category-detail" style="font-size:10px;color:#4b5563;margin-top:4px;line-height:1.4;"></div>
                         </div>
                         <div id="category-api-preview" style="font-size:10px;color:#9ca3af;margin-top:6px;line-height:1.4;display:none;"></div>
                     </div>
 
-                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, #FFD700, #C9A227),rgba(102,126,234,0.1));border:1px solid rgba(16,185,129,0.3);">
-                        <div class="opt-section-title" style="color:#10b981;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
+                    <div class="opt-section" style="padding:12px;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%),rgba(230,126,34,0.1));border:1px solid rgba(16,185,129,0.3);">
+                        <div class="opt-section-title" style="color:#c45f12;">🎯 Smart Mode <span style="font-size:9px;font-weight:500;color:#9ca3af;">(🚀 Generate Variants)</span></div>
                         <div class="opt-row" style="margin-bottom:10px;">
                             <div>
                                 <label class="opt-label">Target Shipping</label>
@@ -386,6 +564,7 @@ const OptimizerUI = {
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
+                    <div class="opt-developer">Built by <strong>Deepanshu Arora</strong></div>
                 </div>
             </div>
         `;
@@ -413,17 +592,17 @@ const OptimizerUI = {
                   imgUrl
                     ? '<img src="' +
                       imgUrl +
-                      '" style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:2px solid #667eea;margin-bottom:15px;">'
+                      '" style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:2px solid #e67e22;margin-bottom:15px;">'
                     : ""
                 }
-                <div style="width:50px;height:50px;border:4px solid rgba(255,255,255,0.1);border-top:4px solid #667eea;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 15px;"></div>
+                <div style="width:50px;height:50px;border:4px solid rgba(255,255,255,0.1);border-top:4px solid #e67e22;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 15px;"></div>
                 <h3 style="margin:0 0 8px 0;color:black;font-size:16px;">Processing Images</h3>
                 <p style="color:#9ca3af;font-size:12px;margin-bottom:8px;">Testing variation ${current} of ${total}</p>
-                <p style="color:#667eea;font-size:11px;margin-bottom:15px;">${estText}</p>
+                <p style="color:#e67e22;font-size:11px;margin-bottom:15px;">${estText}</p>
                 <div style="background:rgba(255,255,255,0.1);border-radius:8px;height:10px;margin-bottom:8px;overflow:hidden;">
-                    <div style="width:${pct}%;background:linear-gradient(135deg, #FFD700, #C9A227);height:100%;border-radius:8px;transition:width 0.3s;"></div>
+                    <div style="width:${pct}%;background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);height:100%;border-radius:8px;transition:width 0.3s;"></div>
                 </div>
-                <div style="font-size:11px;color:#a78bfa;margin-bottom:15px;">${pct}% Complete</div>
+                <div style="font-size:11px;color:#c45f12;margin-bottom:15px;">${pct}% Complete</div>
                 <button id="stop-btn" class="opt-btn opt-btn-danger" style="padding:8px 20px;font-size:12px;">Stop & Show Results</button>
             </div>
             <style>@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}</style>
@@ -509,7 +688,7 @@ const OptimizerUI = {
                     }
                     <span class="result-edit-badge" data-variant-id="${vid}" style="display:${
       edited ? "block" : "none"
-    };position:absolute;top:4px;right:4px;background:#667eea;color:#fff;font-size:8px;padding:2px 5px;border-radius:4px;">✂️</span>
+    };position:absolute;top:4px;right:4px;background:#e67e22;color:#fff;font-size:8px;padding:2px 5px;border-radius:4px;">✂️</span>
                     <img src="${imgSrc}" class="result-img" data-variant-id="${vid}" title="${
       canEdit
         ? staticPromoEditor
@@ -550,7 +729,7 @@ const OptimizerUI = {
                     <div style="display:flex;gap:4px;margin-top:4px;">
                         <button class="dl-btn" data-variant-id="${vid}" style="${
       showPerCardApply ? "flex:1;" : "width:100%;"
-    }background:rgba(102,126,234,0.2);color:#a78bfa;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:9px;">Save</button>
+    }background:rgba(230,126,34,0.15);color:#c45f12;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:9px;">Save</button>
                         ${
                           showPerCardApply
                             ? `<button class="apply-btn" data-variant-id="${vid}" style="flex:1;background:rgba(255,255,255,0.1);color:white;border:none;padding:3px;border-radius:4px;cursor:pointer;font-size:9px;">${applyLabel}</button>`

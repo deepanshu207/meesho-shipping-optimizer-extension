@@ -59,10 +59,10 @@ const OptimizerUtils = {
         notification.className = 'optimizer-notification';
         
         const colors = {
-            success: { bg: 'linear-gradient(135deg, #FFD700, #C9A227)', icon: '✓' },
-            error: { bg: 'linear-gradient(135deg, #FFD700, #C9A227)', icon: '✕' },
-            info: { bg: 'linear-gradient(135deg, #FFD700, #C9A227)', icon: 'ℹ' },
-            warning: { bg: 'linear-gradient(135deg, #FFD700, #C9A227)', icon: '⚠' }
+            success: { bg: 'linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%)', icon: '✓' },
+            error: { bg: 'linear-gradient(135deg, #dc2626, #b91c1c)', icon: '✕' },
+            info: { bg: 'linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%)', icon: 'ℹ' },
+            warning: { bg: 'linear-gradient(135deg, #f59e0b, #d97706)', icon: '⚠' }
         };
         
         const style = colors[type] || colors.info;
@@ -74,18 +74,18 @@ const OptimizerUtils = {
             right: 12px;
             padding: 12px 14px;
             border-radius: 10px;
-            color: #111;
+            color: #3d2914;
             font-size: 12px;
             font-weight: 600;
             line-height: 1.35;
             z-index: 999999;
             max-width: none;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+            box-shadow: 0 8px 24px rgba(196,95,18,0.22);
             background: ${style.bg};
             display: flex;
             align-items: flex-start;
             gap: 10px;
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
             animation: slideIn 0.3s ease;
             word-break: break-word;
         `;
