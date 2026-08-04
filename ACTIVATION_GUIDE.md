@@ -1,131 +1,136 @@
 # Activation & support guide
 
-How license keys work, where data is saved, and how to help customers.
+How license keys work, how they are generated, and where data is saved.
 
 ## There is no user login
 
-The extension does **not** use email/password or Google sign-in. Authentication is:
-
-```
-License key  +  Device ID (machineId)  →  access granted
-```
-
-| Piece | What it is |
-|-------|------------|
-| **License key** | What you send after payment (`MEESHO-XXXX-…`) or a demo key (`MEESHO-DEMOFREE`) |
-| **Device ID** | Auto-generated per Chrome profile, e.g. `M7K2F9A3B1C4` — shown in extension popup |
-
-One paid key = **one device** unless you **Reset device** in Firebase admin.
+Authentication = **license key** + **device ID** (`machineId`). No email/password.
 
 ---
 
-## When and where the key is saved
+## How keys are generated (unique)
 
-### 1. On the user's computer (Chrome extension storage)
+### Paid license keys (you create after payment)
 
-Saved **immediately** when they tap **Activate License** and verification succeeds.
+**Format:** `MEESHO-XXXX-XXXX-XXXX`  
+Each `XXXX` is 4 random uppercase letters/numbers.
 
-| Storage | Keys | Synced across PCs? |
-|---------|------|-------------------|
-| `chrome.storage.sync` | `licenseKey`, `licenseStatus`, `licenseInfo`, `lastVerified` | Yes (same Google account) |
-| `chrome.storage.local` | `machineId` | No — per browser profile |
+**Examples:** `MEESHO-K7M2-P9X4-R3N8`, `MEESHO-A1B2-C3D4-E5F6`
 
-**`licenseInfo` example (local copy):**
+**Uniqueness:**
+1. Generate random key in format above
+2. Check it does **not** already exist in:
+   - `shipping_optimizer_licenses`
+   - `shipping_optimizer_demo_keys`
+   - `demo_keys` map in config
+3. If collision → generate again (up to 12 tries)
+4. Document ID in Firestore **is** the key → guaranteed unique per license
+
+Use **Generate (🎲)** in admin UI or `FirebaseLicense.generateUniqueLicenseKey()` in code.
+
+### Demo / promo keys (you choose the name)
+
+You define the key string, e.g. `MEESHO-DEMOFREE`. Must not match an existing paid license key.
+
+---
+
+## Activation & expiry by plan
+
+### Paid licenses
+
+| Stage | `activatedAt` | `expiresAt` |
+|-------|---------------|-------------|
+| **You create key** (after payment) | empty | empty (recommended) |
+| **Customer activates** | set to now | **now + planDays** |
+
+**`planDays`** comes from the plan you select when creating the license (Monthly=30, Yearly=365, etc.).
+
+Example: Yearly plan (`planDays: 365`)
+- You create key on Aug 4 — customer is **not** active yet
+- Customer activates on Aug 10 → `activatedAt: Aug 10`, `expiresAt: Aug 10 next year`
+
+Set `expiry_starts_on_activation: false` and a fixed `expiresAt` only if you need a custom override.
+
+### Demo keys
+
+| Stage | `activatedAt` | `expiresAt` |
+|-------|---------------|-------------|
+| Customer enters demo key | now | now + demo `days` (e.g. 30) |
+
+Saved locally only (no `shipping_optimizer_licenses` document).
+
+---
+
+## Optional customer fields (admin only)
+
+Store on `shipping_optimizer_licenses/{KEY}` for your support — extension does not read these:
+
+| Field | Example |
+|-------|---------|
+| `customer_name` | `Rahul Kumar` |
+| `customer_phone` | `919876543210` |
+| `customer_email` | `rahul@example.com` |
+| `support_notes` | `Paid UPI 4 Aug, yearly plan` |
+
+---
+
+## Where data is saved
+
+### User's browser (on Activate)
+
+| Storage | Fields |
+|---------|--------|
+| `chrome.storage.sync` | `licenseKey`, `licenseStatus`, `licenseInfo`, `lastVerified` |
+| `chrome.storage.local` | `machineId` |
+
+### Firebase (paid keys)
+
+Path: `shipping_optimizer_licenses/{KEY}`
+
+| Field | Who writes | When |
+|-------|------------|------|
+| `planId`, `planDays`, customer fields | **You** | Create license |
+| `machineId`, `activatedAt`, `expiresAt` | **Extension** | First activation |
+| `lastVerifiedAt` | **Extension** | Every ~5 min |
+
+---
+
+## Your workflow after WhatsApp payment
+
+1. Customer taps plan → WhatsApp to you  
+2. Confirm payment  
+3. Admin: **Create license** — pick plan, optional customer name/phone/notes, generate unique key  
+4. Send key on WhatsApp  
+5. Customer taps **Activate** → active for `planDays` from that moment  
+
+---
+
+## Support
+
+| Issue | Fix |
+|-------|-----|
+| Key already exists | Generate new unique key |
+| Not activated yet | Normal — expires only after they activate |
+| Wrong device | Reset `machineId` in Firebase |
+| Customer help | Ask them to **Copy support info** in popup |
+
+---
+
+## License document template
 
 ```json
 {
-  "key": "MEESHO-A1B2-C3D4-E5F6",
+  "active": true,
+  "planId": "yearly",
   "planType": "yearly",
-  "expiresAt": "2027-08-04T23:59:59.000Z",
-  "activatedAt": "2026-08-04T20:15:00.000Z"
-}
-```
-
-- **Demo keys:** `activatedAt` and `expiresAt` are set at activation (`expiresAt` = now + demo days).
-- **Paid keys:** `expiresAt` comes from Firebase; `activatedAt` is set on first successful activation.
-
-### 2. In Firebase (source of truth for paid keys)
-
-Path: `shipping_optimizer_licenses/{LICENSE_KEY}`
-
-| Field | When set | Who sets it |
-|-------|----------|-------------|
-| Document created | After you confirm payment | **You** (admin UI / Console) |
-| `machineId`, `activatedAt`, `lastVerifiedAt` | First time user activates on a device | **Extension** (automatic) |
-| `lastVerifiedAt` | Every successful re-check (~5 min) | **Extension** |
-
-Before activation: `machineId` is empty → key is valid but **not bound** to any device yet.
-
----
-
-## Step-by-step: paid customer
-
-```
-1. User taps plan        → WhatsApp only (no key yet)
-2. User pays you         → You create license in Firebase
-3. You send key on WA    → User still NOT active
-4. User enters key       → Extension verifies Firebase
-5. First activation      → Firebase gets machineId + timestamps
-6. Extension unlocks     → Generate / Apply work
-```
-
-**User is active at step 4–5**, not after WhatsApp alone.
-
----
-
-## Step-by-step: demo customer
-
-```
-1. User enters MEESHO-DEMOFREE
-2. Extension matches demo_keys (Firebase or built-in)
-3. Saves to chrome.storage.sync immediately
-4. Active — no Firebase license document needed
-```
-
----
-
-## Support scenarios
-
-| Customer says | You do |
-|---------------|--------|
-| "Paid but no key" | Create `shipping_optimizer_licenses/{KEY}` in Firebase, send key |
-| "Key invalid" | Check key exists, `active: true`, not expired |
-| "Already on another device" | Firebase → **Reset device** (clear `machineId`) |
-| "Was working, stopped" | Check `active`, expiry; ask them to **Copy support info** from popup |
-| "New laptop" | Reset device, they activate again with same key |
-
-Ask customer to tap **Copy support info** in the popup — it includes key, Device ID, plan, dates, extension version.
-
-### Optional Firebase fields (for your admin UI)
-
-Add to license documents for your own notes (extension ignores these):
-
-```json
-{
-  "customer_name": "Rahul",
+  "planDays": 365,
+  "expiry_starts_on_activation": true,
+  "expiresAt": "",
+  "machineId": "",
+  "activatedAt": "",
+  "customer_name": "Rahul Kumar",
   "customer_phone": "919876543210",
-  "support_notes": "Paid UPI 4 Aug, yearly plan"
+  "customer_email": "",
+  "support_notes": "Paid UPI — yearly"
 }
 ```
-
----
-
-## Background re-check
-
-- Runs ~3 seconds after extension load, then every **5 minutes**
-- Re-reads Firebase for paid keys
-- If revoked/expired → sets `licenseStatus: inactive` locally
-
-Demo keys are checked by **local expiry** in `licenseInfo.expiresAt`.
-
----
-
-## Quick reference
-
-| Question | Answer |
-|----------|--------|
-| Login? | No — license key only |
-| When saved locally? | On successful Activate |
-| When saved in Firebase? | You create doc; extension writes device fields on activate |
-| One key, two PCs? | No — reset device or issue second key |
-| WhatsApp = activated? | No — only starts sale |

@@ -162,6 +162,66 @@ const FirebaseLicense = {
     ];
   },
 
+  normalizeKey(key) {
+    return CONFIG.normalizeLicenseKey
+      ? CONFIG.normalizeLicenseKey(key)
+      : String(key || "")
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, "-");
+  },
+
+  /** MEESHO-XXXX-XXXX-XXXX — 4-char segments, uppercase alphanumeric */
+  generateLicenseKey() {
+    const seg = () => {
+      let s = Math.random().toString(36).substring(2, 6).toUpperCase();
+      while (s.length < 4) s += "X";
+      return s.substring(0, 4);
+    };
+    return `MEESHO-${seg()}-${seg()}-${seg()}`;
+  },
+
+  async licenseKeyExists(key) {
+    const normalized = this.normalizeKey(key);
+    if (!normalized) return true;
+    const lic = await this.fetchDoc("licenses", normalized);
+    if (lic) return true;
+    const demoKeys = await this.getDemoKeysMap();
+    return !!demoKeys[normalized];
+  },
+
+  async generateUniqueLicenseKey(maxAttempts = 12) {
+    for (let i = 0; i < maxAttempts; i++) {
+      const key = this.generateLicenseKey();
+      if (!(await this.licenseKeyExists(key))) return key;
+    }
+    const tail = Date.now().toString(36).toUpperCase().slice(-8);
+    return `MEESHO-${tail.slice(0, 4)}-${tail.slice(4)}-UNIQ`;
+  },
+
+  async getPlanById(planId) {
+    const plans = await this.getPricingPlans();
+    return plans.find((p) => p.id === planId) || null;
+  },
+
+  async resolvePlanDays(lic) {
+    if (lic.planDays != null) return Number(lic.planDays) || 30;
+    if (lic.plan_days != null) return Number(lic.plan_days) || 30;
+    const planId = lic.planId || lic.plan_id || lic.planType || lic.plan_type;
+    if (planId) {
+      const plan = await this.getPlanById(planId);
+      if (plan) return plan.days;
+    }
+    return 365;
+  },
+
+  /** Expiry from activation time + plan days (default for paid licenses) */
+  computeExpiresAt(activatedAtIso, planDays) {
+    const days = Number(planDays) || 30;
+    const start = activatedAtIso ? new Date(activatedAtIso) : new Date();
+    return new Date(start.getTime() + days * 86400000).toISOString();
+  },
+
   normalizePlans(raw) {
     if (!raw) return this.defaultPlans();
     if (Array.isArray(raw)) {
@@ -295,24 +355,37 @@ const FirebaseLicense = {
     }
 
     const expiresAt = lic.expiresAt || lic.expires_at || null;
-    if (expiresAt) {
-      const exp = new Date(expiresAt);
-      if (new Date() > exp) {
-        return { valid: false, reason: "License expired" };
-      }
+    const bound = lic.machineId || lic.machine_id || "";
+
+    if (bound && expiresAt && new Date() > new Date(expiresAt)) {
+      return { valid: false, reason: "License expired" };
     }
 
-    const bound = lic.machineId || lic.machine_id || "";
+    const planDays = await this.resolvePlanDays(lic);
+    let resolvedExpiresAt = expiresAt;
+    let resolvedActivatedAt = lic.activatedAt || lic.activated_at || null;
+
     if (!bound) {
+      const activatedAt = new Date().toISOString();
+      resolvedActivatedAt = activatedAt;
+      const expiryOnActivation =
+        lic.expiry_starts_on_activation !== false &&
+        lic.expiryStartsOnActivation !== false;
+
+      if (expiryOnActivation || !resolvedExpiresAt) {
+        resolvedExpiresAt = this.computeExpiresAt(activatedAt, planDays);
+      }
+
       await this.patchDoc(
         "licenses",
         key,
         {
           machineId,
-          activatedAt: new Date().toISOString(),
-          lastVerifiedAt: new Date().toISOString(),
+          activatedAt,
+          expiresAt: resolvedExpiresAt,
+          lastVerifiedAt: activatedAt,
         },
-        ["machineId", "activatedAt", "lastVerifiedAt"],
+        ["machineId", "activatedAt", "expiresAt", "lastVerifiedAt"],
       );
     } else if (bound !== machineId) {
       return {
@@ -320,6 +393,7 @@ const FirebaseLicense = {
         reason: "License already activated on another device",
       };
     } else {
+      resolvedExpiresAt = expiresAt;
       await this.patchDoc(
         "licenses",
         key,
@@ -328,13 +402,20 @@ const FirebaseLicense = {
       );
     }
 
+    if (resolvedExpiresAt && new Date() > new Date(resolvedExpiresAt)) {
+      return { valid: false, reason: "License expired" };
+    }
+
     return {
       valid: true,
       license: {
         key,
-        planType: lic.planType || lic.plan_type || "premium",
-        expiresAt: expiresAt,
-        activatedAt: lic.activatedAt || new Date().toISOString(),
+        planType: lic.planType || lic.plan_type || lic.planId || "premium",
+        planDays,
+        expiresAt: resolvedExpiresAt,
+        activatedAt: resolvedActivatedAt || new Date().toISOString(),
+        customerName: lic.customer_name || lic.customerName || "",
+        customerPhone: lic.customer_phone || lic.customerPhone || "",
       },
     };
   },

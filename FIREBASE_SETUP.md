@@ -69,6 +69,8 @@ Create document **`app`** with fields:
 
 You can change prices, add/remove plans, or update WhatsApp here — the extension popup and license modal refresh from Firebase (5‑minute cache).
 
+**Easiest way to manage:** Swagstree → **Superadmin** tab → **Shipping Optimizer Extension** panel (Config & Pricing / Demo Keys / Paid Licenses).
+
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 
 One document per promo code. Document ID = the key (uppercase recommended).
@@ -92,14 +94,26 @@ Create a document when a customer pays. Document ID = license key.
 ```json
 {
   "active": true,
+  "planId": "yearly",
   "planType": "yearly",
-  "expiresAt": "2027-08-04T00:00:00.000Z",
+  "planDays": 365,
+  "expiry_starts_on_activation": true,
+  "expiresAt": "",
   "machineId": "",
-  "activatedAt": ""
+  "activatedAt": "",
+  "customer_name": "Rahul Kumar",
+  "customer_phone": "919876543210",
+  "customer_email": "",
+  "support_notes": "Paid UPI 4 Aug 2026 — yearly plan",
+  "createdAt": "<timestamp>",
+  "createdBy": "superadmin@swagstree.com"
 }
 ```
 
-- On first activation, the extension writes `machineId` and `activatedAt`.
+- **`planDays`** — copied from the plan at creation; expiry = activation time + this many days.
+- **`expiry_starts_on_activation`** — default `true`: `expiresAt` is set when the user first activates (not when you create the key).
+- **`expiresAt`** — leave empty until activation (recommended), or set a fixed date to override.
+- **Optional support fields:** `customer_name`, `customer_phone`, `customer_email`, `support_notes` (extension ignores these; for your admin UI only).
 - If `machineId` is already set on another device, activation is rejected.
 - Set `active: false` to revoke a license.
 
@@ -112,30 +126,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isShippingOptimizerSuperAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'superadmin@swagstree.com';
+    }
+
     // ... your existing Swagstree rules ...
 
-    // Shipping Optimizer — public read, limited client write for activation
+    // Shipping Optimizer — extension reads; superadmin manages via Swagstree panel
     match /shipping_optimizer_config/{doc} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isShippingOptimizerSuperAdmin();
     }
 
     match /shipping_optimizer_demo_keys/{key} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isShippingOptimizerSuperAdmin();
     }
 
     match /shipping_optimizer_licenses/{key} {
       allow read: if true;
+      allow create, update, delete: if isShippingOptimizerSuperAdmin();
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['machineId', 'activatedAt', 'lastVerifiedAt']);
-      allow create, delete: if false;
+        .hasOnly(['machineId', 'activatedAt', 'lastVerifiedAt', 'expiresAt']);
     }
   }
 }
 ```
 
-Manage config, demo keys, and new licenses from **Firebase Console** or **Admin SDK** (server). The extension only patches `machineId` / `activatedAt` / `lastVerifiedAt` on paid licenses.
+Superadmin manages config, demo keys, and licenses from **Swagstree → Superadmin → Shipping Optimizer Extension**. The extension only patches `machineId` / `activatedAt` / `lastVerifiedAt` on paid licenses during customer activation.
 
 ## Fallback chain
 
