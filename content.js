@@ -368,6 +368,13 @@ class MeeshoShippingOptimizer {
         if (message.action === "openOptimizer") {
           this.openModal();
           sendResponse({ success: true });
+        } else if (message.type === "LICENSE_UPDATED") {
+          void this.checkLicense().then((valid) => {
+            if (!valid && this.modal && this.isLicensed === false) {
+              this.closeModal();
+            }
+          });
+          sendResponse({ success: true });
         }
         return true;
       });

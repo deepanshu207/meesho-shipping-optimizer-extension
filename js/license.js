@@ -1,4 +1,4 @@
-// License management for Meesho Shipping Optimizer v6.0.0
+// License management for Shipping Optimizer v1.0.0
 
 const LicenseManager = {
   isLicensed: false,
