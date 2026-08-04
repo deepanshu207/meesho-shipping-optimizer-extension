@@ -828,202 +828,61 @@ const MeeshoAPI = {
     });
     const beforeUrl = ctx.previewImg?.currentSrc || ctx.previewImg?.src || "";
 
-    // Poll until the preview img src changes to a new CDN URL.
-    const waitForPreview = async (ms) => {
-      const deadline = Date.now() + ms;
-      while (Date.now() < deadline) {
-        const fresh = this.findFrontImageUploadContext();
-        const src = fresh.previewImg?.currentSrc || fresh.previewImg?.src || "";
-        if (src && src !== beforeUrl && !src.startsWith("data:")) return true;
-        await this._sleep(300);
-      }
-      return false;
-    };
-
-    // Inject a File into a file input in a way React recognises.
-    const injectFile = (input) => {
+    const tryFileInput = async (input) => {
       if (!input) return false;
-      const dt = new DataTransfer();
-      try {
-        dt.items.add(file);
-      } catch (e) {
+      if (!this.assignFileToCatalogInput(input, file, { skipLabelClick: true })) {
         return false;
       }
-      // Override the files property so any reader (React or Meesho) sees our file.
-      try {
-        Object.defineProperty(input, "files", {
-          get: () => dt.files,
-          configurable: true,
-          enumerable: true,
-        });
-      } catch (e) {
-        // Fallback: direct assignment (works on desktop Chrome)
-        try {
-          input.files = dt.files;
-        } catch (e2) {
-          return false;
-        }
-      }
-      // Clear React's internal value tracker so it sees the change.
-      try {
-        const tracker = input._valueTracker;
-        if (tracker && typeof tracker.setValue === "function") {
-          tracker.setValue("");
-        }
-      } catch (e) {}
-      // Dispatch change so React and Meesho handlers fire.
-      input.dispatchEvent(new Event("change", { bubbles: true, cancelable: false }));
-      return true;
-    };
-
-    // ── Strategy 1: File input already in DOM (static hidden input) ─────────
-    const existingInput = ctx.fileInput || this.findCatalogFileInput();
-    if (existingInput && injectFile(existingInput)) {
-      if (await waitForPreview(8000)) return true;
-    }
-
-    // ── Helper: reach empty-state (Upload button visible) ───────────────────
-    const ensureEmptyState = async () => {
-      ctx = this.findFrontImageUploadContext();
-      if (ctx.state === "preview" && ctx.removeButton) {
-        ctx.removeButton.click();
-        for (let i = 0; i < 20; i++) {
-          await this._sleep(200);
-          ctx = this.findFrontImageUploadContext();
-          if (ctx.state === "empty") return true;
-        }
-      }
-      return ctx.state === "empty" || !!ctx.uploadButton;
-    };
-
-    // ── Strategy 2: Intercept HTMLInputElement.prototype.click ───────────────
-    // Meesho creates the file input dynamically (not in DOM) then calls .click()
-    // on it to open the native picker. We temporarily patch the prototype so we
-    // capture that input before the picker opens, inject our file, and let
-    // Meesho's own onChange handler upload it through their normal flow.
-    const interceptUploadClick = async (uploadBtn) => {
-      if (!uploadBtn) return false;
-      return new Promise((resolve) => {
-        const origClick = HTMLInputElement.prototype.click;
-        let done = false;
-        let timer;
-
-        const restore = () => {
-          if (HTMLInputElement.prototype.click !== origClick) {
-            HTMLInputElement.prototype.click = origClick;
-          }
-          clearTimeout(timer);
-        };
-
-        HTMLInputElement.prototype.click = function () {
-          if (this.type === "file" && !done) {
-            done = true;
-            restore();
-            // Inject our file and suppress the native picker.
-            const ok = injectFile(this);
-            resolve(ok);
-            // Do NOT call origClick — we don't want the native picker to open.
-            return;
-          }
-          return origClick.call(this);
-        };
-
-        // Timeout in case the Upload button does something unexpected.
-        timer = setTimeout(() => {
-          restore();
-          resolve(false);
-        }, 2500);
-
-        // Trigger Meesho's onClick → it will create an input and call .click().
-        uploadBtn.click();
-      });
-    };
-
-    await ensureEmptyState();
-    ctx = this.findFrontImageUploadContext();
-    const uploadBtn = ctx.uploadButton || document.querySelector("button.css-1xa0ijo");
-    if (uploadBtn && (await interceptUploadClick(uploadBtn))) {
-      // Meesho's handler is now running; wait for it to finish uploading.
-      if (await waitForPreview(12000)) return true;
-    }
-
-    // ── Strategy 3: React fiber state mutation (preview → replace URL) ───────
-    // Upload to CDN ourselves, then find the React hook that holds the current
-    // preview URL and swap it to our new URL.
-    const uploadedUrl = await this.uploadImage(blob, file.name);
-    if (uploadedUrl) {
-      // When in preview state, the current CDN URL is somewhere in React state.
-      const injected = this._injectUrlViaFiber(uploadedUrl, beforeUrl, ctx);
-      if (injected) {
-        if (await waitForPreview(3000)) return true;
-      }
-
-      // Give the DOM a moment then check if preview updated.
-      await this._sleep(1000);
-      if (this._frontImageShowsUrl(this.findFrontImageUploadContext(), uploadedUrl)) {
-        return true;
-      }
-    }
-
-    return false;
-  },
-
-  // Walk the React fiber tree from a set of anchor elements and find a useState
-  // hook whose current value equals `currentUrl` (precise match for preview state)
-  // or is a likely image-URL slot (null / "" / CDN string) for empty state.
-  // When found, dispatch the setter with `newUrl`.
-  _injectUrlViaFiber: function (newUrl, currentUrl, ctx) {
-    const anchors = [
-      ctx?.previewImg,
-      ctx?.removeButton,
-      ctx?.uploadButton,
-      ctx?.section,
-      document.querySelector("img.css-1xe1608"),
-      document.querySelector('button.css-1xa0ijo'),
-      document.querySelector('[data-testid="removeImage"]'),
-    ].filter(Boolean);
-
-    const fiberKey = (el) =>
-      el && Object.keys(el).find(
-        (k) => k.startsWith("__reactFiber") || k.startsWith("__reactInternalInstance"),
+      await this._sleep(2800);
+      return (
+        this._frontImagePreviewChanged(beforeUrl) ||
+        this._frontImageShowsUrl(null, null)
       );
+    };
 
-    for (const anchor of anchors) {
-      const key = fiberKey(anchor);
-      if (!key) continue;
-      let fiber = anchor[key];
-      while (fiber) {
-        let hook = fiber.memoizedState;
-        while (hook) {
-          const val = hook.memoizedState;
-          const dispatch = hook.queue?.dispatch;
-          if (dispatch) {
-            // Exact match when we know the current URL (preview state).
-            if (currentUrl && typeof val === "string" && val === currentUrl) {
-              try {
-                dispatch(newUrl);
-                return true;
-              } catch (e) {}
-            }
-            // Looser match for empty state or when current URL unknown.
-            if (
-              !currentUrl &&
-              (val === null ||
-                val === "" ||
-                (typeof val === "string" && val.includes("meeshosupplyassets.com")))
-            ) {
-              try {
-                dispatch(newUrl);
-                return true;
-              } catch (e) {}
-            }
-          }
-          hook = hook.next;
+    let input = ctx.fileInput || this.findCatalogFileInput();
+    if (await tryFileInput(input)) return true;
+
+    if (ctx.state === "preview" && ctx.removeButton) {
+      try {
+        ctx.removeButton.click();
+        await this._sleep(900);
+        ctx = this.findFrontImageUploadContext();
+        for (let i = 0; i < 10; i++) {
+          input = this.findCatalogFileInput();
+          if (input) break;
+          await this._sleep(250);
         }
-        fiber = fiber.return;
+        if (await tryFileInput(input)) return true;
+      } catch (e) {
+        console.warn("Remove + file input apply failed:", e);
       }
     }
-    return false;
+
+    const uploadedUrl = await this.uploadImage(blob, file.name);
+    if (!uploadedUrl) return false;
+
+    ctx = this.findFrontImageUploadContext();
+    if (ctx.state === "preview" && this.bindFrontImageUrl(ctx, uploadedUrl)) {
+      return true;
+    }
+
+    if (ctx.removeButton) {
+      try {
+        ctx.removeButton.click();
+        await this._sleep(900);
+        ctx = this.findFrontImageUploadContext();
+      } catch (e) {
+        console.warn("Remove before URL bind failed:", e);
+      }
+    }
+
+    if (this.bindFrontImageUrl(ctx, uploadedUrl)) return true;
+
+    input = this.findCatalogFileInput();
+    if (await tryFileInput(input)) return true;
+
+    return this._frontImageShowsUrl(this.findFrontImageUploadContext(), uploadedUrl);
   },
 
   assignFileToCatalogInput: function (input, file, options) {
