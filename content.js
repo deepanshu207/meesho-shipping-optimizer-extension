@@ -4154,15 +4154,8 @@ Please share payment details and license key.`;
     });
   }
 
-  hasOptimizerSession() {
-    return (
-      !!this.getImageFileForGenerate() ||
-      (this.currentResults || []).length > 0
-    );
-  }
-
   shouldConfirmLeavePage() {
-    return this.isProcessing || this.hasOptimizerSession();
+    return this.isProcessing;
   }
 
   setupNavigationGuards() {
@@ -4174,28 +4167,6 @@ Please share payment details and license key.`;
       e.preventDefault();
       e.returnValue = "";
       return "";
-    });
-
-    try {
-      if (!history.state?.optimizerGuard) {
-        history.pushState({ optimizerGuard: true }, "");
-      }
-    } catch {
-      /* ignore */
-    }
-
-    window.addEventListener("popstate", () => {
-      if (!this.shouldConfirmLeavePage()) return;
-      const ok = confirm(
-        "You have an image or generated variants. Leave this page and lose progress?",
-      );
-      if (!ok) {
-        try {
-          history.pushState({ optimizerGuard: true }, "");
-        } catch {
-          /* ignore */
-        }
-      }
     });
   }
 
