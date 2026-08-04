@@ -10,7 +10,7 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.1.0",
+  VERSION: "1.2.0",
 
   // Firebase (swagstree-web) — ONLY uses shipping_optimizer_* collections
   USE_FIREBASE_LICENSE: true,

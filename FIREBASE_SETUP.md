@@ -93,6 +93,57 @@ Plans live in the `plans` array on `shipping_optimizer_config/app`. The extensio
 
 Legacy object-shaped `pricing` maps are still supported: `{ "yearly": { "price": 3099, ... } }` — prefer the `plans` array for new configs.
 
+### Device limits (multi-device plans)
+
+| Plan field | Default | Description |
+|------------|---------|-------------|
+| `max_devices` | `1` | How many devices can use one license key |
+| `device_tier` | `standard` | Label: `standard` (1), `family` (e.g. 3), `friends` (e.g. 5) — cosmetic; `max_devices` is what counts |
+
+**Standard plan:** 1 device (default). **Family / Friends plans:** set `max_devices` to 3, 5, etc. in Firebase.
+
+On activation the extension stores registered devices in `device_ids[]` (legacy `machineId` still supported for old licenses).
+
+**Device ID on Kiwi mobile:** The extension generates a stable ID per browser profile (e.g. `M1A2B3C4D5E6`) stored in `chrome.storage.local`. Kiwi on Android uses the same check — same Kiwi profile = same ID; different browser or cleared data = new ID.
+
+### Credits (pay-as-you-go)
+
+Add to `shipping_optimizer_config/app`:
+
+```json
+{
+  "credits": {
+    "enabled": true,
+    "price_per_credit": 2,
+    "min_purchase": 10,
+    "cost_per_operation": 1,
+    "packs": [
+      { "id": "pack_10", "credits": 10, "price": 20, "label": "10 Credits", "active": true, "order": 0 },
+      { "id": "pack_20", "credits": 20, "price": 38, "label": "20 Credits", "active": true, "order": 1 },
+      { "id": "pack_50", "credits": 50, "price": 90, "label": "50 Credits", "active": true, "order": 2 },
+      { "id": "pack_100", "credits": 100, "price": 170, "label": "100 Credits", "active": true, "order": 3 }
+    ]
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `price_per_credit` | Default ₹2/credit (for custom amounts, min `min_purchase`) |
+| `min_purchase` | Minimum credits per top-up (default 10) |
+| `cost_per_operation` | Credits deducted per optimize/apply (default 1) |
+| `packs[]` | Top-up bundles — each with `credits`, `price`, `active`, `order` |
+
+**Billing modes** on license (`billing_mode`):
+
+| Mode | Access rule |
+|------|-------------|
+| `subscription` | Valid until `expiresAt` (default for time-based plans) |
+| `credits` | Valid while `credits_balance` > 0 (no expiry required) |
+| `hybrid` | Valid while not expired **and** `credits_balance` > 0 |
+
+When credits run out, user buys a pack via WhatsApp → admin adds to `credits_balance` on their license.
+
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 
 One document per promo code. Document ID = the key (uppercase recommended).
@@ -119,6 +170,11 @@ Create a document when a customer pays. Document ID = license key.
   "planId": "yearly",
   "planType": "yearly",
   "planDays": 365,
+  "billing_mode": "subscription",
+  "max_devices": 1,
+  "device_ids": [],
+  "credits_balance": 0,
+  "credits_used": 0,
   "expiry_starts_on_activation": true,
   "expiresAt": "",
   "machineId": "",
@@ -132,11 +188,43 @@ Create a document when a customer pays. Document ID = license key.
 }
 ```
 
+**Credits-only license example:**
+
+```json
+{
+  "active": true,
+  "planId": "credits_50",
+  "billing_mode": "credits",
+  "max_devices": 1,
+  "credits_balance": 50,
+  "credits_used": 0,
+  "device_ids": [],
+  "expiresAt": "",
+  "machineId": "",
+  "activatedAt": ""
+}
+```
+
+**Family plan example** (`max_devices: 3`):
+
+```json
+{
+  "planId": "family_yearly",
+  "max_devices": 3,
+  "billing_mode": "subscription",
+  "planDays": 365
+}
+```
+
 - **`planDays`** — copied from the plan at creation; expiry = activation time + this many days.
+- **`max_devices`** — copied from plan; default `1`. Family/friends plans use 3, 5, etc.
+- **`device_ids`** — array of registered device IDs; extension appends on activation until limit reached.
+- **`billing_mode`** — `subscription` | `credits` | `hybrid`.
+- **`credits_balance`** / **`credits_used`** — for pay-as-you-go; admin tops up after payment.
 - **`expiry_starts_on_activation`** — default `true`: `expiresAt` is set when the user first activates (not when you create the key).
 - **`expiresAt`** — leave empty until activation (recommended), or set a fixed date to override.
 - **Optional support fields:** `customer_name`, `customer_phone`, `customer_email`, `support_notes` (extension ignores these; for your admin UI only).
-- If `machineId` is already set on another device, activation is rejected.
+- Legacy `machineId` (single string) still works — treated as one device in `device_ids`.
 - Set `active: false` to revoke a license.
 
 ## Firestore security rules
@@ -170,13 +258,17 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isShippingOptimizerSuperAdmin();
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['machineId', 'activatedAt', 'lastVerifiedAt', 'expiresAt']);
+        .hasOnly([
+          'machineId', 'device_ids', 'max_devices', 'billing_mode',
+          'activatedAt', 'lastVerifiedAt', 'expiresAt',
+          'credits_balance', 'credits_used'
+        ]);
     }
   }
 }
 ```
 
-Your admin panel (or Firebase Console) manages config, demo keys, and licenses. The extension only patches `machineId` / `activatedAt` / `lastVerifiedAt` / `expiresAt` on paid licenses during customer activation.
+Your admin panel (or Firebase Console) manages config, demo keys, and licenses. The extension patches device binding, activation timestamps, expiry, and credit usage on paid licenses.
 
 ## Fallback chain
 

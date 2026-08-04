@@ -636,10 +636,11 @@ const OptimizerUI = {
                             <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
                         <div id="license-announcement" class="license-announcement" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,215,0,0.15);border:1px solid rgba(230,126,34,0.35);border-radius:8px;font-size:11px;color:#c45f12;text-align:center;"></div>
-                        <div style="margin-top:10px;padding:8px;background:rgba(167,139,250,0.1);border-radius:6px;border:1px solid rgba(167,139,250,0.2);">
-                            <div style="font-size:10px;color:#c45f12;font-weight:600;margin-bottom:4px;">✨ Yearly Plan Exclusive:</div>
-                            <div style="font-size:9px;color:#9ca3af;line-height:1.4;">Beta Updates • Upcoming Features • Premium Badges • Priority Support • Advanced Analytics</div>
-                        </div>
+                    </div>
+
+                    <div id="license-credits-section" class="license-credits-section opt-section" style="padding:12px;">
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">⚡ Buy Credits (pay as you go)</div>
+                        <div id="license-credits-grid" class="license-credits-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:80px;"></div>
                     </div>
                     
                     <div class="opt-section" style="padding:12px;">
@@ -649,7 +650,7 @@ const OptimizerUI = {
                     </div>
                     
                     <p id="license-demo-hint" style="margin-top:8px;font-size:10px;color:#0f0f10;text-align:center;">
-                        Click on any plan to buy via WhatsApp · Demo: <strong>MEESHO-DEMOFREE</strong>
+                        1 device per license · Family/Friends for more devices · Demo: <strong>MEESHO-DEMOFREE</strong>
                     </p>
                 </div>
             </div>

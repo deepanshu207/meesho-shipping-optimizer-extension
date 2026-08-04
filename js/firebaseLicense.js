@@ -172,6 +172,7 @@ const FirebaseLicense = {
 
   normalizePlanEntry(p, idFallback, index) {
     const id = this.slugifyPlanId(p?.id || idFallback || `plan_${index}`);
+    const maxDevices = Number(p?.max_devices ?? p?.maxDevices ?? 1) || 1;
     return {
       id: id || `plan_${index}`,
       name: p?.name || p?.title || "Plan",
@@ -182,6 +183,14 @@ const FirebaseLicense = {
       best: !!p?.best,
       active: p?.active !== false,
       order: p?.order != null ? Number(p.order) : index,
+      max_devices: maxDevices,
+      device_tier:
+        p?.device_tier ||
+        p?.deviceTier ||
+        (maxDevices <= 1 ? "standard" : maxDevices <= 3 ? "family" : "friends"),
+      billing_mode: p?.billing_mode || p?.billingMode || "subscription",
+      included_credits:
+        Number(p?.included_credits ?? p?.includedCredits ?? 0) || 0,
     };
   },
 
@@ -216,6 +225,193 @@ const FirebaseLicense = {
       found = true;
       return p;
     });
+  },
+
+  defaultCreditsConfig() {
+    return {
+      enabled: true,
+      price_per_credit: 2,
+      min_purchase: 10,
+      cost_per_operation: 1,
+      packs: [
+        {
+          id: "pack_10",
+          credits: 10,
+          price: 20,
+          label: "10 Credits",
+          active: true,
+          order: 0,
+        },
+        {
+          id: "pack_20",
+          credits: 20,
+          price: 38,
+          label: "20 Credits",
+          active: true,
+          order: 1,
+        },
+        {
+          id: "pack_50",
+          credits: 50,
+          price: 90,
+          label: "50 Credits",
+          active: true,
+          order: 2,
+        },
+        {
+          id: "pack_100",
+          credits: 100,
+          price: 170,
+          label: "100 Credits",
+          active: true,
+          order: 3,
+        },
+      ],
+    };
+  },
+
+  normalizeCreditPack(p, idFallback, index) {
+    const id = this.slugifyPlanId(p?.id || idFallback || `pack_${index}`);
+    return {
+      id: id || `pack_${index}`,
+      credits: Number(p?.credits) || 10,
+      price: Number(p?.price) || 0,
+      label: p?.label || p?.name || `${Number(p?.credits) || 10} Credits`,
+      active: p?.active !== false,
+      order: p?.order != null ? Number(p.order) : index,
+    };
+  },
+
+  parseCreditPacks(raw) {
+    if (!raw) return null;
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((p) => p && typeof p === "object")
+        .map((p, i) => this.normalizeCreditPack(p, p.id || `pack_${i}`, i));
+    }
+    return null;
+  },
+
+  async getCreditsConfig(forceFresh = false) {
+    const app = await this.getAppConfig(forceFresh);
+    const raw = app?.credits || app?.credits_config || {};
+    const defaults = this.defaultCreditsConfig();
+    const packs =
+      this.parseCreditPacks(raw.packs) ||
+      this.parseCreditPacks(defaults.packs) ||
+      defaults.packs;
+    return {
+      ...defaults,
+      ...raw,
+      enabled: raw.enabled !== false,
+      price_per_credit: Number(raw.price_per_credit ?? raw.pricePerCredit ?? 2) || 2,
+      min_purchase: Number(raw.min_purchase ?? raw.minPurchase ?? 10) || 10,
+      cost_per_operation:
+        Number(raw.cost_per_operation ?? raw.costPerOperation ?? 1) || 1,
+      packs: this.sortPlans(packs.filter((p) => p.active !== false)),
+    };
+  },
+
+  async getCreditPacks(forceFresh = false) {
+    const cfg = await this.getCreditsConfig(forceFresh);
+    return cfg.packs?.length ? cfg.packs : this.defaultCreditsConfig().packs;
+  },
+
+  getDeviceIds(lic) {
+    const ids = lic?.device_ids || lic?.deviceIds;
+    if (Array.isArray(ids)) return ids.filter(Boolean);
+    const legacy = lic?.machineId || lic?.machine_id;
+    return legacy ? [legacy] : [];
+  },
+
+  resolveMaxDevices(lic, plan) {
+    if (lic?.max_devices != null) return Math.max(1, Number(lic.max_devices) || 1);
+    if (lic?.maxDevices != null) return Math.max(1, Number(lic.maxDevices) || 1);
+    if (plan?.max_devices != null) return Math.max(1, Number(plan.max_devices) || 1);
+    if (plan?.maxDevices != null) return Math.max(1, Number(plan.maxDevices) || 1);
+    return 1;
+  },
+
+  resolveBillingMode(lic, plan) {
+    return (
+      lic?.billing_mode ||
+      lic?.billingMode ||
+      plan?.billing_mode ||
+      plan?.billingMode ||
+      "subscription"
+    );
+  },
+
+  resolveCreditsBalance(lic) {
+    return Number(lic?.credits_balance ?? lic?.creditsBalance ?? 0) || 0;
+  },
+
+  isCreditsBilling(mode) {
+    return mode === "credits" || mode === "hybrid";
+  },
+
+  licenseHasAccess(lic, plan, resolvedExpiresAt) {
+    const mode = this.resolveBillingMode(lic, plan);
+    const credits = this.resolveCreditsBalance(lic);
+    const expired =
+      resolvedExpiresAt && new Date() > new Date(resolvedExpiresAt);
+
+    if (mode === "credits") return credits > 0;
+    if (mode === "hybrid") return !expired && credits > 0;
+    if (expired) return false;
+    return true;
+  },
+
+  resolveDeviceBinding(lic, machineId, plan) {
+    const deviceIds = this.getDeviceIds(lic);
+    const maxDevices = this.resolveMaxDevices(lic, plan);
+    if (deviceIds.includes(machineId)) {
+      return { ok: true, deviceIds, maxDevices, registered: false };
+    }
+    if (deviceIds.length >= maxDevices) {
+      const tier =
+        maxDevices <= 1
+          ? "Standard (1 device)"
+          : maxDevices <= 3
+            ? `Family (${maxDevices} devices)`
+            : `Friends (${maxDevices} devices)`;
+      return {
+        ok: false,
+        reason: `Device limit reached (${deviceIds.length}/${maxDevices}). This license is ${tier}. Upgrade to Family or Friends plan for more devices.`,
+        deviceIds,
+        maxDevices,
+      };
+    }
+    return {
+      ok: true,
+      deviceIds: [...deviceIds, machineId],
+      maxDevices,
+      registered: true,
+    };
+  },
+
+  buildLicensePayload(lic, plan, extras = {}) {
+    const deviceIds = extras.deviceIds || this.getDeviceIds(lic);
+    const maxDevices = extras.maxDevices ?? this.resolveMaxDevices(lic, plan);
+    const mode = this.resolveBillingMode(lic, plan);
+    return {
+      key: extras.key,
+      planType: lic.planType || lic.plan_type || lic.planId || "premium",
+      planId: lic.planId || lic.plan_id || lic.planType,
+      planDays: extras.planDays,
+      billingMode: mode,
+      maxDevices,
+      deviceCount: deviceIds.length,
+      deviceIds,
+      creditsBalance:
+        extras.creditsBalance ?? this.resolveCreditsBalance(lic),
+      creditsUsed: Number(lic.credits_used ?? lic.creditsUsed ?? 0) || 0,
+      expiresAt: extras.expiresAt || lic.expiresAt || lic.expires_at || null,
+      activatedAt:
+        extras.activatedAt || lic.activatedAt || lic.activated_at || null,
+      customerName: lic.customer_name || lic.customerName || "",
+      customerPhone: lic.customer_phone || lic.customerPhone || "",
+    };
   },
 
   normalizeKey(key) {
@@ -406,46 +602,79 @@ const FirebaseLicense = {
       return { valid: false, reason: "License deactivated" };
     }
 
-    const expiresAt = lic.expiresAt || lic.expires_at || null;
-    const bound = lic.machineId || lic.machine_id || "";
-
-    if (bound && expiresAt && new Date() > new Date(expiresAt)) {
-      return { valid: false, reason: "License expired" };
-    }
-
+    const plan = await this.getPlanById(
+      lic.planId || lic.plan_id || lic.planType || lic.plan_type,
+    );
     const planDays = await this.resolvePlanDays(lic);
-    let resolvedExpiresAt = expiresAt;
-    let resolvedActivatedAt = lic.activatedAt || lic.activated_at || null;
+    const billingMode = this.resolveBillingMode(lic, plan);
+    const maxDevices = this.resolveMaxDevices(lic, plan);
 
-    if (!bound) {
-      const activatedAt = new Date().toISOString();
+    let resolvedExpiresAt = lic.expiresAt || lic.expires_at || null;
+    let resolvedActivatedAt = lic.activatedAt || lic.activated_at || null;
+    let deviceIds = this.getDeviceIds(lic);
+    let creditsBalance = this.resolveCreditsBalance(lic);
+
+    const binding = this.resolveDeviceBinding(lic, machineId, plan);
+    if (!binding.ok) {
+      return { valid: false, reason: binding.reason };
+    }
+    deviceIds = binding.deviceIds;
+
+    const isFirstActivation = !resolvedActivatedAt;
+    const needsDevicePatch =
+      binding.registered || isFirstActivation;
+
+    if (isFirstActivation || needsDevicePatch) {
+      const activatedAt = resolvedActivatedAt || new Date().toISOString();
       resolvedActivatedAt = activatedAt;
       const expiryOnActivation =
         lic.expiry_starts_on_activation !== false &&
         lic.expiryStartsOnActivation !== false;
 
-      if (expiryOnActivation || !resolvedExpiresAt) {
+      if (
+        billingMode !== "credits" &&
+        (expiryOnActivation || !resolvedExpiresAt)
+      ) {
         resolvedExpiresAt = this.computeExpiresAt(activatedAt, planDays);
       }
 
-      await this.patchDoc(
-        "licenses",
-        key,
-        {
-          machineId,
-          activatedAt,
-          expiresAt: resolvedExpiresAt,
-          lastVerifiedAt: activatedAt,
-        },
-        ["machineId", "activatedAt", "expiresAt", "lastVerifiedAt"],
-      );
-    } else if (bound !== machineId) {
-      return {
-        valid: false,
-        reason: "License already activated on another device",
+      if (
+        creditsBalance <= 0 &&
+        this.isCreditsBilling(billingMode)
+      ) {
+        const preset =
+          Number(
+            lic.credits_balance ??
+              lic.creditsBalance ??
+              lic.included_credits ??
+              lic.includedCredits ??
+              lic.initial_credits ??
+              lic.initialCredits ??
+              plan?.included_credits ??
+              0,
+          ) || 0;
+        if (preset > 0) creditsBalance = preset;
+      }
+
+      const patch = {
+        device_ids: deviceIds,
+        machineId: deviceIds[0] || machineId,
+        activatedAt: resolvedActivatedAt,
+        lastVerifiedAt: activatedAt,
+        max_devices: maxDevices,
+        billing_mode: billingMode,
       };
+      if (resolvedExpiresAt) patch.expiresAt = resolvedExpiresAt;
+      if (
+        this.isCreditsBilling(billingMode) &&
+        creditsBalance > 0 &&
+        this.resolveCreditsBalance(lic) <= 0
+      ) {
+        patch.credits_balance = creditsBalance;
+      }
+
+      await this.patchDoc("licenses", key, patch, Object.keys(patch));
     } else {
-      resolvedExpiresAt = expiresAt;
       await this.patchDoc(
         "licenses",
         key,
@@ -454,22 +683,106 @@ const FirebaseLicense = {
       );
     }
 
-    if (resolvedExpiresAt && new Date() > new Date(resolvedExpiresAt)) {
+    if (
+      !this.licenseHasAccess(
+        { ...lic, credits_balance: creditsBalance },
+        plan,
+        resolvedExpiresAt,
+      )
+    ) {
+      const mode = billingMode;
+      if (mode === "credits" || (mode === "hybrid" && creditsBalance <= 0)) {
+        return {
+          valid: false,
+          reason: "Credits exhausted — buy more credits to continue",
+          needsTopUp: true,
+          creditsBalance,
+        };
+      }
       return { valid: false, reason: "License expired" };
     }
 
     return {
       valid: true,
-      license: {
+      license: this.buildLicensePayload(lic, plan, {
         key,
-        planType: lic.planType || lic.plan_type || lic.planId || "premium",
         planDays,
+        deviceIds,
+        maxDevices,
+        creditsBalance,
         expiresAt: resolvedExpiresAt,
-        activatedAt: resolvedActivatedAt || new Date().toISOString(),
-        customerName: lic.customer_name || lic.customerName || "",
-        customerPhone: lic.customer_phone || lic.customerPhone || "",
-      },
+        activatedAt: resolvedActivatedAt,
+      }),
     };
+  },
+
+  async refreshLicenseFromFirebase(licenseKey, machineId) {
+    const key = this.normalizeKey(licenseKey);
+    const lic = await this.fetchDoc("licenses", key);
+    if (!lic || lic.active === false) {
+      return { valid: false, reason: "License not found or deactivated" };
+    }
+    const plan = await this.getPlanById(
+      lic.planId || lic.plan_id || lic.planType || lic.plan_type,
+    );
+    const deviceIds = this.getDeviceIds(lic);
+    if (machineId && deviceIds.length && !deviceIds.includes(machineId)) {
+      return { valid: false, reason: "This device is not registered on this license" };
+    }
+    const resolvedExpiresAt = lic.expiresAt || lic.expires_at || null;
+    if (!this.licenseHasAccess(lic, plan, resolvedExpiresAt)) {
+      return {
+        valid: false,
+        reason: "License expired or credits exhausted",
+        needsTopUp: this.isCreditsBilling(this.resolveBillingMode(lic, plan)),
+      };
+    }
+    return {
+      valid: true,
+      license: this.buildLicensePayload(lic, plan, {
+        key,
+        planDays: await this.resolvePlanDays(lic),
+        deviceIds,
+        maxDevices: this.resolveMaxDevices(lic, plan),
+        creditsBalance: this.resolveCreditsBalance(lic),
+        expiresAt: resolvedExpiresAt,
+        activatedAt: lic.activatedAt || lic.activated_at,
+      }),
+    };
+  },
+
+  async deductCredits(licenseKey, amount) {
+    if (!this.isEnabled()) {
+      return { ok: false, reason: "Firebase unavailable" };
+    }
+    const key = this.normalizeKey(licenseKey);
+    const lic = await this.fetchDoc("licenses", key);
+    if (!lic) return { ok: false, reason: "License not found" };
+
+    const cfg = await this.getCreditsConfig();
+    const cost = Math.max(1, Number(amount) || cfg.cost_per_operation || 1);
+    const balance = this.resolveCreditsBalance(lic);
+    if (balance < cost) {
+      return {
+        ok: false,
+        reason: "Insufficient credits",
+        balance,
+        needsTopUp: true,
+      };
+    }
+
+    const newBalance = balance - cost;
+    const used =
+      (Number(lic.credits_used ?? lic.creditsUsed ?? 0) || 0) + cost;
+    const ok = await this.patchDoc(
+      "licenses",
+      key,
+      { credits_balance: newBalance, credits_used: used },
+      ["credits_balance", "credits_used"],
+    );
+    if (!ok) return { ok: false, reason: "Could not update credits" };
+
+    return { ok: true, balance: newBalance, used, deducted: cost };
   },
 
   renderPlanButtons(container, plans, variant = "modal") {
@@ -534,23 +847,76 @@ const FirebaseLicense = {
       .join("");
   },
 
+  renderCreditPacks(container, packs, variant = "popup") {
+    if (!container) return;
+    const list = packs?.length ? packs : this.defaultCreditsConfig().packs;
+    container.style.display = "grid";
+    container.style.gridTemplateColumns = this.planGridColumns(list.length);
+    container.style.gap = container.style.gap || "8px";
+
+    if (!list.length) {
+      container.innerHTML =
+        '<div style="grid-column:1/-1;text-align:center;padding:12px;color:#9ca3af;font-size:11px;">No credit packs available.</div>';
+      return;
+    }
+
+    if (variant === "popup") {
+      container.innerHTML = list
+        .map(
+          (p) =>
+            `<button type="button" class="plan-btn credit-pack-btn" data-pack="${p.id}" data-credits="${p.credits}" data-price="${p.price}" data-label="${p.label}">
+            <div class="plan-name">${p.label || p.credits + " Credits"}</div>
+            <div class="plan-price">₹${p.price}</div>
+            <div class="plan-note" style="color:var(--mso-muted);">${p.credits} credits</div>
+          </button>`,
+        )
+        .join("");
+      return;
+    }
+
+    container.innerHTML = list
+      .map(
+        (p) =>
+          `<button type="button" class="credit-pack-btn" data-pack="${p.id}" data-credits="${p.credits}" data-price="${p.price}" data-label="${p.label}" style="border:1px solid #f0e0c8;background:#fff;border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
+          <div style="font-size:11px;color:#6b7280;">${p.label || p.credits + " Credits"}</div>
+          <div style="font-size:20px;font-weight:700;color:#e67e22;">₹${p.price}</div>
+          <div style="font-size:9px;color:#6b7280;">${p.credits} credits</div>
+        </button>`,
+      )
+      .join("");
+  },
+
   async hydrateLicenseUi(root) {
     if (!root || !this.isEnabled()) return { plans: this.defaultPlans() };
     const plansGrid =
       root.querySelector("#license-plans-grid") ||
       root.querySelector(".license-plans-grid");
+    const creditsGrid =
+      root.querySelector("#license-credits-grid") ||
+      root.querySelector(".license-credits-grid");
+    const creditsSection =
+      root.querySelector("#license-credits-section") ||
+      root.querySelector(".license-credits-section");
     const hint = root.querySelector("#license-demo-hint");
 
-    const [plans, demoKeys, wa] = await Promise.all([
+    const [plans, creditPacks, creditsCfg, demoKeys, wa] = await Promise.all([
       this.getPricingPlans(true),
+      this.getCreditPacks(true),
+      this.getCreditsConfig(true),
       this.getDemoKeysMap(),
       this.getWhatsAppSettings(),
     ]);
 
     if (plansGrid) this.renderPlanButtons(plansGrid, plans);
+    if (creditsSection) {
+      creditsSection.style.display = creditsCfg.enabled ? "block" : "none";
+    }
+    if (creditsGrid && creditsCfg.enabled) {
+      this.renderCreditPacks(creditsGrid, creditPacks, "modal");
+    }
     if (hint) {
       const sample = Object.keys(demoKeys)[0] || "MEESHO-DEMOFREE";
-      hint.innerHTML = `Plans &amp; promo codes managed in Firebase · Demo: <strong>${sample}</strong>`;
+      hint.innerHTML = `1 device per license by default · Family/Friends plans allow more · Demo: <strong>${sample}</strong>`;
     }
 
     const announcementEl =
@@ -567,7 +933,7 @@ const FirebaseLicense = {
       }
     }
 
-    return { plans, demoKeys, whatsapp: wa, announcement };
+    return { plans, creditPacks, creditsConfig: creditsCfg, demoKeys, whatsapp: wa, announcement };
   },
 };
 

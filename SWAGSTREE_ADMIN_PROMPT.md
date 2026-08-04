@@ -44,8 +44,8 @@ match /shipping_optimizer_demo_keys/{key} {
 match /shipping_optimizer_licenses/{key} {
   allow read: if true;
   allow create, update, delete: if isShippingOptimizerSuperAdmin();
-  allow update: if request.resource.data.diff(resource.data).affectedKeys()
-    .hasOnly(['machineId', 'activatedAt', 'lastVerifiedAt', 'expiresAt']);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['machineId', 'device_ids', 'max_devices', 'billing_mode', 'activatedAt', 'lastVerifiedAt', 'expiresAt', 'credits_balance', 'credits_used']);
 }
 ```
 
@@ -282,6 +282,29 @@ Load up to 200 licenses, order by `expiresAt` desc (fallback: unsorted limit 200
 4. Create test license → activate in extension → `machineId` and `expiresAt` populate in Firebase
 5. Reset device → customer can re-activate on new machine
 6. Revoke license → extension rejects on next check
+
+---
+
+## Multi-device & credits (v1.2.0)
+
+### Device limits
+- Plans: add `max_devices` (default 1), `device_tier` (`standard`|`family`|`friends`)
+- Licenses: `device_ids[]` array, `max_devices` copied from plan at creation
+- Admin: show device count (e.g. 2/3), list device IDs, **Reset all devices** or remove single device
+- Kiwi mobile uses same Device ID system — one ID per browser profile
+
+### Credits (pay-as-you-go)
+Config `credits` object on app doc:
+- `price_per_credit` (default 2), `min_purchase` (default 10), `cost_per_operation` (default 1)
+- `packs[]`: id, credits, price, label, active, order — defaults 10/20/50/100 credits
+
+License fields:
+- `billing_mode`: subscription | credits | hybrid
+- `credits_balance`, `credits_used`
+- Admin: **Add credits** field on license row (top-up after payment)
+- Create credits license: set billing_mode=credits, credits_balance=50
+
+Firestore rules — extension may also patch: `device_ids`, `max_devices`, `billing_mode`, `credits_balance`, `credits_used`
 
 ---
 

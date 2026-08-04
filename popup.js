@@ -151,6 +151,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         const info = result.licenseInfo || {};
         let infoHTML = `<div class="license-key">${maskKey(result.licenseKey)}</div>`;
         infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:6px;">Plan: <strong>${info.planType || "premium"}</strong>`;
+        if (info.maxDevices != null) {
+          infoHTML += ` · Devices: <strong>${info.deviceCount || 1}/${info.maxDevices}</strong>`;
+        }
+        if (info.billingMode === "credits" || info.billingMode === "hybrid") {
+          infoHTML += ` · Credits: <strong>${info.creditsBalance ?? 0}</strong>`;
+        }
         if (info.activatedAt) {
           infoHTML += ` · Activated: ${formatWhen(info.activatedAt)}`;
         }
@@ -158,10 +164,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const supportRow = document.getElementById("license-support-row");
         const deviceEl = document.getElementById("device-id-display");
+        const browserEl = document.getElementById("device-browser-label");
         const machineId = await getMachineId();
         if (supportRow && deviceEl) {
           supportRow.classList.remove("hidden");
           deviceEl.textContent = machineId;
+          if (browserEl && typeof MachineId !== "undefined") {
+            browserEl.textContent =
+              "Browser: " + MachineId.detectBrowserLabel() + " · ID is unique per browser profile";
+          }
+        }
+
+        const creditsSection = document.getElementById("popup-credits-section");
+        const showCreditsTopUp =
+          info.billingMode === "credits" ||
+          info.billingMode === "hybrid" ||
+          (info.creditsBalance != null && Number(info.creditsBalance) <= 0);
+        if (creditsSection) {
+          creditsSection.classList.toggle("hidden", !showCreditsTopUp);
         }
 
         if (info.expiresAt) {
@@ -208,11 +228,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         activationSection.classList.remove("hidden");
         const supportRow = document.getElementById("license-support-row");
         const deviceEl = document.getElementById("device-id-display");
+        const browserEl = document.getElementById("device-browser-label");
         const machineId = await getMachineId();
         if (supportRow && deviceEl) {
           supportRow.classList.remove("hidden");
           deviceEl.textContent = machineId;
+          if (browserEl && typeof MachineId !== "undefined") {
+            browserEl.textContent =
+              "Browser: " + MachineId.detectBrowserLabel() + " · ID is unique per browser profile";
+          }
         }
+        const creditsSection = document.getElementById("popup-credits-section");
+        if (creditsSection) creditsSection.classList.remove("hidden");
       }
     } catch (error) {
       console.error("Error loading license:", error);
@@ -249,6 +276,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  function bindCreditPackButtons() {
+    document.querySelectorAll(".credit-pack-btn").forEach((btn) => {
+      PA.bindTap(btn, () => {
+        const credits = btn.dataset.credits;
+        const price = btn.dataset.price;
+        const label = btn.dataset.label || `${credits} Credits`;
+        const message = `Hi! I want to buy credits for ${productName}.
+
+⚡ *Credit Pack:* ${label}
+💰 *Price:* ₹${price}
+
+Please share payment details.`;
+        openWhatsApp(message);
+      });
+    });
+  }
+
   function bindPlanButtons() {
     document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
       PA.bindTap(btn, () => {
@@ -273,13 +317,27 @@ Please share payment details and license key.`;
       typeof FirebaseLicense !== "undefined" &&
       FirebaseLicense.isEnabled()
     ) {
-      const plans = await FirebaseLicense.getPricingPlans(true);
+      const [plans, creditPacks, creditsCfg] = await Promise.all([
+        FirebaseLicense.getPricingPlans(true),
+        FirebaseLicense.getCreditPacks(true),
+        FirebaseLicense.getCreditsConfig(true),
+      ]);
       FirebaseLicense.renderPlanButtons(grid, plans, "popup");
+      const creditsGrid = document.getElementById("license-credits-grid");
+      const creditsSection = document.getElementById("popup-credits-section");
+      if (creditsGrid && creditsCfg.enabled) {
+        FirebaseLicense.renderCreditPacks(creditsGrid, creditPacks, "popup");
+        if (creditsSection) creditsSection.classList.remove("hidden");
+        const priceHint = document.getElementById("credits-price-hint");
+        if (priceHint) {
+          priceHint.textContent = `₹${creditsCfg.price_per_credit} per credit · minimum ${creditsCfg.min_purchase} credits · top up when credits run out`;
+        }
+      }
       const hint = document.getElementById("license-demo-hint");
       if (hint) {
         const demoKeys = await FirebaseLicense.getDemoKeysMap();
         const sample = Object.keys(demoKeys)[0] || "MEESHO-DEMOFREE";
-        hint.innerHTML = `Plans managed in Firebase · Demo: <strong>${sample}</strong>`;
+        hint.innerHTML = `1 device default · Family/Friends for more · Demo: <strong>${sample}</strong>`;
       }
       const ann = await FirebaseLicense.getAnnouncement();
       const annCard = document.getElementById("firebase-announcement");
@@ -298,6 +356,7 @@ Please share payment details and license key.`;
       );
     }
     bindPlanButtons();
+    bindCreditPackButtons();
   }
 
   function openWhatsApp(message) {

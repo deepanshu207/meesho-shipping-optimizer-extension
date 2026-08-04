@@ -1,6 +1,18 @@
 // Shared device ID for license binding (one ID per browser profile)
+// Works on Chrome, Kiwi, Edge, etc. — stored in chrome.storage.local per profile.
+// Kiwi mobile: same profile = same ID; reinstall/clear data = new ID.
 
 const MachineId = {
+  detectBrowserLabel() {
+    const ua = navigator.userAgent || "";
+    if (/Kiwi/i.test(ua)) return "Kiwi";
+    if (/Edg\//i.test(ua)) return "Edge";
+    if (/Firefox/i.test(ua)) return "Firefox";
+    if (/Android/i.test(ua)) return "Chrome Android";
+    if (/Chrome/i.test(ua)) return "Chrome";
+    return "Browser";
+  },
+
   async get() {
     try {
       const stored = await chrome.storage.local.get(["machineId"]);
@@ -59,11 +71,15 @@ const MachineId = {
     const machineId = await this.get();
     const version = typeof CONFIG !== "undefined" ? CONFIG.VERSION : "?";
     const info = licenseInfo || {};
+    const browser = this.detectBrowserLabel();
     const lines = [
       "Shipping Optimizer — Support Info",
       "Key: " + (licenseKey || "—"),
       "Device ID: " + machineId,
+      "Browser: " + browser,
       "Plan: " + (info.planType || "—"),
+      "Devices: " + (info.deviceCount != null ? info.deviceCount + "/" + (info.maxDevices || 1) : "—"),
+      "Credits: " + (info.creditsBalance != null ? info.creditsBalance : "—"),
       "Activated: " + (info.activatedAt || "—"),
       "Expires: " + (info.expiresAt || "—"),
       "Version: " + version,

@@ -21,12 +21,30 @@ const LicenseManager = {
         return false;
       }
 
-      // Check expiry
-      if (result.licenseInfo && result.licenseInfo.expiresAt) {
+      // Check expiry (subscription / hybrid)
+      const billingMode = result.licenseInfo?.billingMode || "subscription";
+      if (
+        billingMode !== "credits" &&
+        result.licenseInfo &&
+        result.licenseInfo.expiresAt
+      ) {
         const expiresAt = new Date(result.licenseInfo.expiresAt);
         if (new Date() > expiresAt) {
           console.log("License expired");
           await this.clearLicense("expired");
+          return false;
+        }
+      }
+
+      // Check credits (credits / hybrid)
+      if (
+        billingMode === "credits" ||
+        billingMode === "hybrid"
+      ) {
+        const balance = Number(result.licenseInfo?.creditsBalance ?? 0);
+        if (balance <= 0) {
+          console.log("Credits exhausted");
+          this.isLicensed = false;
           return false;
         }
       }
@@ -56,6 +74,83 @@ const LicenseManager = {
     if (this.demoKeys) return this.demoKeys;
     this.demoKeys = await CONFIG.getDemoKeys();
     return this.demoKeys;
+  },
+
+  async refreshLicenseInfoFromFirebase() {
+    if (!this.licenseKey) return null;
+    const machineId = await this.getMachineId();
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      const refreshed = await FirebaseLicense.refreshLicenseFromFirebase(
+        this.licenseKey,
+        machineId,
+      );
+      if (refreshed.valid && refreshed.license) {
+        this.licenseInfo = refreshed.license;
+        await chrome.storage.sync.set({
+          licenseInfo: refreshed.license,
+          lastVerified: Date.now(),
+        });
+        return refreshed.license;
+      }
+    }
+    return this.licenseInfo;
+  },
+
+  async consumeCredits(amount) {
+    if (!this.licenseKey || this.licenseInfo?.planType === "demo") {
+      return { ok: true, skipped: true };
+    }
+    const mode = this.licenseInfo?.billingMode || "subscription";
+    if (mode === "subscription") return { ok: true, skipped: true };
+
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      const result = await FirebaseLicense.deductCredits(
+        this.licenseKey,
+        amount,
+      );
+      if (result.ok) {
+        this.licenseInfo = {
+          ...this.licenseInfo,
+          creditsBalance: result.balance,
+          creditsUsed: result.used,
+        };
+        await chrome.storage.sync.set({ licenseInfo: this.licenseInfo });
+      }
+      return result;
+    }
+    return { ok: false, reason: "Credits sync unavailable" };
+  },
+
+  async ensureCanOperate(actionLabel) {
+    await this.checkLicense();
+    if (!this.isLicensed) return { ok: false, reason: "License required" };
+
+    const mode = this.licenseInfo?.billingMode || "subscription";
+    if (mode === "credits" || mode === "hybrid") {
+      const balance = Number(this.licenseInfo?.creditsBalance ?? 0);
+      if (balance <= 0) {
+        return {
+          ok: false,
+          reason: actionLabel
+            ? `${actionLabel} requires credits — buy a credit pack`
+            : "Insufficient credits",
+          needsTopUp: true,
+        };
+      }
+      const consumed = await this.consumeCredits();
+      if (!consumed.ok && !consumed.skipped) {
+        return consumed;
+      }
+    }
+    return { ok: true };
   },
 
   // Verify license key with server

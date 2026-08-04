@@ -670,12 +670,16 @@ class MeeshoShippingOptimizer {
 
   async ensureLicensed(actionLabel) {
     if (!this.requiresLicense()) return true;
-    await this.checkLicense();
-    if (this.isLicensed) return true;
+    const gate = await LicenseManager.ensureCanOperate(actionLabel);
+    if (gate.ok) {
+      this.isLicensed = true;
+      return true;
+    }
     OptimizerUtils.showNotification(
-      actionLabel
-        ? `${actionLabel} requires an active license`
-        : "License required — activate in extension popup",
+      gate.reason ||
+        (actionLabel
+          ? `${actionLabel} requires an active license`
+          : "License required — activate in extension popup"),
       "error",
     );
     this.openModal();
@@ -1131,6 +1135,32 @@ Please share payment details and license key.`;
         btn.onmouseleave = () => {
           btn.style.transform = "scale(1)";
           btn.style.boxShadow = "none";
+        };
+      });
+
+      document.querySelectorAll(".credit-pack-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const credits = btn.dataset.credits;
+          const price = btn.dataset.price;
+          const label = btn.dataset.label || `${credits} Credits`;
+          try {
+            const settings = await LicenseManager.getWhatsAppSettings();
+            const message = `Hi! I want to buy credits for ${CONFIG?.EXTENSION_NAME || "Shipping Optimizer"}.
+
+⚡ *Credit Pack:* ${label}
+💰 *Price:* ₹${price}
+
+Please share payment details.`;
+            window.open(
+              `https://wa.me/${settings.number}?text=${encodeURIComponent(message)}`,
+              "_blank",
+            );
+          } catch (error) {
+            window.open(
+              `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent("Hi! I want to buy credits for Shipping Optimizer.")}`,
+              "_blank",
+            );
+          }
         };
       });
     };
