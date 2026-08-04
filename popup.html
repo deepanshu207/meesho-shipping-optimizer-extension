@@ -465,6 +465,8 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .spinner {
@@ -483,7 +485,7 @@
 </head>
 <body>
   <div class="header">
-    <span class="version-badge" id="version-badge">v1.0.0</span>
+    <span class="version-badge" id="version-badge">v1.1.0</span>
     <div class="brand-row">
       <img class="brand-logo" src="icons/icon48.png" width="48" height="48" alt="">
       <div class="brand">
@@ -510,30 +512,10 @@
         <div style="text-align:center;margin-bottom:10px;">
           <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap to buy via WhatsApp</span>
         </div>
-        <div class="plan-grid">
-          <button type="button" class="plan-btn" data-plan="monthly" data-price="599" data-duration="1 Month">
-            <div class="plan-name">Monthly</div>
-            <div class="plan-price">₹599</div>
-            <div class="plan-note" style="color:var(--mso-muted);">30 days</div>
-          </button>
-          <button type="button" class="plan-btn" data-plan="quarterly" data-price="1399" data-duration="3 Months">
-            <div class="plan-name">3 Months</div>
-            <div class="plan-price">₹1399</div>
-            <div class="plan-note">Save ₹1000</div>
-          </button>
-          <button type="button" class="plan-btn" data-plan="halfyearly" data-price="2299" data-duration="6 Months">
-            <div class="plan-name">6 Months</div>
-            <div class="plan-price">₹2299</div>
-            <div class="plan-note">Save ₹3000</div>
-          </button>
-          <button type="button" class="plan-btn best" data-plan="yearly" data-price="3099" data-duration="1 Year">
-            <span class="plan-best-tag">BEST VALUE</span>
-            <div class="plan-name" style="margin-top:4px;">Yearly</div>
-            <div class="plan-price" style="color:var(--mso-success);">₹3099</div>
-            <div class="plan-note">Save ₹8000</div>
-          </button>
+        <div class="plan-grid" id="license-plans-grid">
+          <div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--mso-muted);font-size:11px;">Loading plans…</div>
         </div>
-        <p class="hint">Demo keys like <strong>MEESHO-DEMOFREE</strong> work offline for trial.</p>
+        <p class="hint" id="license-demo-hint">Demo keys like <strong>MEESHO-DEMOFREE</strong> work for trial.</p>
       </div>
 
       <div id="popup-message" class="message"></div>
@@ -587,6 +569,7 @@
   </div>
 
   <script src="config.js"></script>
+  <script src="js/firebaseLicense.js"></script>
   <script src="js/popupActions.js"></script>
   <script src="popup.js"></script>
 </body>

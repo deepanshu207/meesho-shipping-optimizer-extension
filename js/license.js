@@ -225,11 +225,51 @@ const LicenseManager = {
       }
     }
 
-    console.log("🔍 Not a demo key, checking server...");
+    console.log("🔍 Not a demo key, checking license providers...");
 
     const machineId = await this.getMachineId();
     console.log("Machine ID:", machineId);
 
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        console.log("Trying Firebase license verify...");
+        const fbResult = await FirebaseLicense.verifyPaidLicense(
+          trimmedKey,
+          machineId,
+        );
+        if (fbResult.valid === true) {
+          await chrome.storage.sync.set({
+            licenseKey: trimmedKey,
+            licenseStatus: "active",
+            licenseInfo: fbResult.license || {
+              key: trimmedKey,
+              planType: "premium",
+              activatedAt: new Date().toISOString(),
+            },
+            lastVerified: Date.now(),
+          });
+
+          this.isLicensed = true;
+          this.licenseKey = trimmedKey;
+          this.licenseInfo = fbResult.license;
+          return { success: true };
+        }
+        if (
+          fbResult.reason &&
+          fbResult.reason !== "License key not found"
+        ) {
+          return { success: false, message: fbResult.reason };
+        }
+      } catch (e) {
+        console.warn("Firebase verify failed:", e.message);
+      }
+    }
+
+    console.log("Trying Hostinger API...");
     const urls = [this.serverUrl, this.fallbackUrl];
     let lastError = "Could not connect to license server";
 
@@ -317,8 +357,21 @@ const LicenseManager = {
     });
   },
 
-  // Get WhatsApp settings from server
+  // Get WhatsApp settings — Firebase first, then Hostinger API
   getWhatsAppSettings: async function () {
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        const wa = await FirebaseLicense.getWhatsAppSettings();
+        if (wa?.number) return wa;
+      } catch (e) {
+        console.log("Firebase WhatsApp settings failed:", e.message);
+      }
+    }
+
     const urls = [this.serverUrl, this.fallbackUrl];
 
     for (const url of urls) {

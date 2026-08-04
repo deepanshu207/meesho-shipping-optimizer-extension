@@ -23,6 +23,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       : [];
 
   const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
+  let cachedWhatsApp = null;
 
   function setStatus(text) {
     if (statusLine) statusLine.textContent = text || "";
@@ -107,6 +108,40 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const machineId = await getMachineId();
     let lastError = "Could not connect to license server";
+
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        const fbResult = await FirebaseLicense.verifyPaidLicense(
+          trimmedKey,
+          machineId,
+        );
+        if (fbResult.valid === true) {
+          await chrome.storage.sync.set({
+            licenseKey: trimmedKey,
+            licenseStatus: "active",
+            licenseInfo: fbResult.license || {
+              key: trimmedKey,
+              planType: "premium",
+              activatedAt: new Date().toISOString(),
+            },
+            lastVerified: Date.now(),
+          });
+          return { success: true };
+        }
+        if (
+          fbResult.reason &&
+          fbResult.reason !== "License key not found"
+        ) {
+          return { success: false, message: fbResult.reason };
+        }
+      } catch (e) {
+        console.warn("Firebase verify failed:", e.message);
+      }
+    }
 
     for (const url of serverUrls) {
       try {
@@ -226,11 +261,73 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function getWhatsAppNumber() {
+    if (cachedWhatsApp?.number) {
+      return PA.normalizeWhatsAppNumber(cachedWhatsApp.number);
+    }
     return PA.getWhatsAppNumber();
   }
 
   function getWhatsAppMessage() {
-    return CONFIG.DEFAULT_WHATSAPP_MESSAGE;
+    return (
+      cachedWhatsApp?.message ||
+      CONFIG.DEFAULT_WHATSAPP_MESSAGE
+    );
+  }
+
+  async function loadFirebaseSettings() {
+    if (
+      typeof FirebaseLicense === "undefined" ||
+      !FirebaseLicense.isEnabled()
+    ) {
+      return;
+    }
+    try {
+      cachedWhatsApp = await FirebaseLicense.getWhatsAppSettings();
+    } catch (e) {
+      console.warn("Firebase settings load failed:", e.message);
+    }
+  }
+
+  function bindPlanButtons() {
+    document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
+      PA.bindTap(btn, () => {
+        const duration = btn.dataset.duration;
+        const price = btn.dataset.price;
+        const message = `Hi! I want to purchase ${productName}.
+
+📦 *Plan Selected:* ${duration}
+💰 *Price:* ₹${price}
+
+Please share payment details and license key.`;
+        openWhatsApp(message);
+      });
+    });
+  }
+
+  async function hydratePopupPlans() {
+    const grid = document.getElementById("license-plans-grid");
+    if (!grid) return;
+
+    if (
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      const plans = await FirebaseLicense.getPricingPlans();
+      FirebaseLicense.renderPlanButtons(grid, plans, "popup");
+      const hint = document.getElementById("license-demo-hint");
+      if (hint) {
+        const demoKeys = await FirebaseLicense.getDemoKeysMap();
+        const sample = Object.keys(demoKeys)[0] || "MEESHO-DEMOFREE";
+        hint.innerHTML = `Plans managed in Firebase · Demo: <strong>${sample}</strong>`;
+      }
+    } else {
+      FirebaseLicense?.renderPlanButtons?.(
+        grid,
+        FirebaseLicense?.defaultPlans?.() || [],
+        "popup",
+      );
+    }
+    bindPlanButtons();
   }
 
   function openWhatsApp(message) {
@@ -301,20 +398,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  document.querySelectorAll(".plan-btn").forEach((btn) => {
-    PA.bindTap(btn, () => {
-      const duration = btn.dataset.duration;
-      const price = btn.dataset.price;
-      const message = `Hi! I want to purchase ${productName}.
-
-📦 *Plan Selected:* ${duration}
-💰 *Price:* ₹${price}
-
-Please share payment details and license key.`;
-      openWhatsApp(message);
-    });
-  });
-
   PA.bindTap(document.getElementById("whatsapp-btn"), () => {
     openWhatsApp(getWhatsAppMessage());
   });
@@ -338,6 +421,8 @@ Please share payment details and license key.`;
     });
   });
 
+  await loadFirebaseSettings();
+  await hydratePopupPlans();
   await loadLicenseStatus();
   setStatus(
     PA.isMobile()

@@ -14,7 +14,19 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.0.0",
+  VERSION: "1.1.0",
+
+  // Firebase (swagstree-web) — ONLY uses shipping_optimizer_* collections
+  USE_FIREBASE_LICENSE: true,
+  FIREBASE: {
+    apiKey: "AIzaSyAKXSFKuhQXMGvmtjh0CHnz48vbYz9a_4A",
+    authDomain: "swagstree-web.firebaseapp.com",
+    projectId: "swagstree-web",
+    storageBucket: "swagstree-web.firebasestorage.app",
+    messagingSenderId: "224485840604",
+    appId: "1:224485840604:web:1c69dd064caf7605614619",
+    measurementId: "G-K8WVW9EF3X",
+  },
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 
@@ -50,6 +62,23 @@ const CONFIG = {
   getDemoKeys: async function () {
     if (this._demoKeysCache && Date.now() - this._demoKeysCacheTime < 300000) {
       return this._demoKeysCache;
+    }
+
+    if (
+      this.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        const fb = await FirebaseLicense.getDemoKeysMap();
+        if (fb && Object.keys(fb).length) {
+          this._demoKeysCache = this.mergeDemoKeys(fb);
+          this._demoKeysCacheTime = Date.now();
+          return this._demoKeysCache;
+        }
+      } catch (e) {
+        console.log("Firebase demo keys fetch failed:", e.message);
+      }
     }
 
     const urls = [this.SERVER_URL, this.SERVER_URL_FALLBACK];
@@ -89,5 +118,7 @@ const CONFIG = {
   },
 };
 
-window.CONFIG = CONFIG;
+if (typeof globalThis !== "undefined") {
+  globalThis.CONFIG = CONFIG;
+}
 console.log("Config loaded:", CONFIG.EXTENSION_NAME, "v" + CONFIG.VERSION);

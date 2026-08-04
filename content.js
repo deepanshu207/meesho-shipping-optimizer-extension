@@ -1093,48 +1093,58 @@ class MeeshoShippingOptimizer {
     const activateBtn = document.getElementById("activate-license-btn");
     const keyInput = document.getElementById("license-key-input");
 
-    // Plan buy buttons
-    const planBtns = document.querySelectorAll(".plan-buy-btn");
-    planBtns.forEach((btn) => {
-      btn.onclick = async () => {
-        const plan = btn.dataset.plan;
-        const price = btn.dataset.price;
-        const duration = btn.dataset.duration;
+    const bindPlanButtons = () => {
+      const planBtns = document.querySelectorAll(".plan-buy-btn");
+      planBtns.forEach((btn) => {
+        btn.onclick = async () => {
+          const price = btn.dataset.price;
+          const duration = btn.dataset.duration;
 
-        try {
-          const settings = await LicenseManager.getWhatsAppSettings();
-          const message = `Hi! I want to purchase ${CONFIG?.EXTENSION_NAME || "Shipping Optimizer"}.
+          try {
+            const settings = await LicenseManager.getWhatsAppSettings();
+            const message = `Hi! I want to purchase ${CONFIG?.EXTENSION_NAME || "Shipping Optimizer"}.
 
 📦 *Plan Selected:* ${duration}
 💰 *Price:* ₹${price}
 
 Please share payment details and license key.`;
 
-          window.open(
-            `https://wa.me/${settings.number}?text=${encodeURIComponent(
-              message
-            )}`,
-            "_blank"
-          );
-        } catch (error) {
-          const message = `Hi! I want to purchase Meesho Shipping Cost AI Optimizer - ${duration} plan (₹${price})`;
-          window.open(
-            `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent(message)}`,
-            "_blank"
-          );
-        }
-      };
+            window.open(
+              `https://wa.me/${settings.number}?text=${encodeURIComponent(
+                message,
+              )}`,
+              "_blank",
+            );
+          } catch (error) {
+            const message = `Hi! I want to purchase Meesho Shipping Cost AI Optimizer - ${duration} plan (₹${price})`;
+            window.open(
+              `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent(message)}`,
+              "_blank",
+            );
+          }
+        };
 
-      // Hover effects
-      btn.onmouseenter = () => {
-        btn.style.transform = "scale(1.03)";
-        btn.style.boxShadow = "0 4px 15px rgba(230,126,34,0.35)";
-      };
-      btn.onmouseleave = () => {
-        btn.style.transform = "scale(1)";
-        btn.style.boxShadow = "none";
-      };
-    });
+        btn.onmouseenter = () => {
+          btn.style.transform = "scale(1.03)";
+          btn.style.boxShadow = "0 4px 15px rgba(230,126,34,0.35)";
+        };
+        btn.onmouseleave = () => {
+          btn.style.transform = "scale(1)";
+          btn.style.boxShadow = "none";
+        };
+      });
+    };
+
+    bindPlanButtons();
+
+    if (
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      FirebaseLicense.hydrateLicenseUi(this.modal)
+        .then(() => bindPlanButtons())
+        .catch((e) => console.warn("Firebase license UI hydrate failed:", e));
+    }
 
     // License activation
     if (activateBtn && keyInput) {
