@@ -273,7 +273,7 @@ Please share payment details and license key.`;
       typeof FirebaseLicense !== "undefined" &&
       FirebaseLicense.isEnabled()
     ) {
-      const plans = await FirebaseLicense.getPricingPlans();
+      const plans = await FirebaseLicense.getPricingPlans(true);
       FirebaseLicense.renderPlanButtons(grid, plans, "popup");
       const hint = document.getElementById("license-demo-hint");
       if (hint) {

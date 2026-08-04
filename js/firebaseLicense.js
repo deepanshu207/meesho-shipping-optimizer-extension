@@ -9,6 +9,7 @@ const FirebaseLicense = {
 
   _configCache: null,
   _configCacheTime: 0,
+  _configPlansVersion: null,
   _cacheTtlMs: 5 * 60 * 1000,
 
   get firebase() {
@@ -155,11 +156,73 @@ const FirebaseLicense = {
 
   defaultPlans() {
     return [
-      { id: "monthly", name: "Monthly", price: 599, days: 30, duration: "1 Month", save: "" },
-      { id: "quarterly", name: "3 Months", price: 1399, days: 90, duration: "3 Months", save: "Save ₹1000" },
-      { id: "halfyearly", name: "6 Months", price: 2299, days: 180, duration: "6 Months", save: "Save ₹3000" },
-      { id: "yearly", name: "Yearly", price: 3099, days: 365, duration: "1 Year", save: "Save ₹8000", best: true },
+      { id: "monthly", name: "Monthly", price: 599, days: 30, duration: "1 Month", save: "", best: false, active: true, order: 0 },
+      { id: "quarterly", name: "3 Months", price: 1399, days: 90, duration: "3 Months", save: "Save ₹1000", best: false, active: true, order: 1 },
+      { id: "halfyearly", name: "6 Months", price: 2299, days: 180, duration: "6 Months", save: "Save ₹3000", best: false, active: true, order: 2 },
+      { id: "yearly", name: "Yearly", price: 3099, days: 365, duration: "1 Year", save: "Save ₹8000", best: true, active: true, order: 3 },
     ];
+  },
+
+  slugifyPlanId(id) {
+    return String(id || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_-]/g, "");
+  },
+
+  normalizePlanEntry(p, idFallback, index) {
+    const id = this.slugifyPlanId(p?.id || idFallback || `plan_${index}`);
+    return {
+      id: id || `plan_${index}`,
+      name: p?.name || p?.title || "Plan",
+      price: Number(p?.price) || 0,
+      days: Number(p?.days) || 30,
+      duration: p?.duration || p?.name || "Plan",
+      save: p?.save || p?.saveLabel || "",
+      best: !!p?.best,
+      active: p?.active !== false,
+      order: p?.order != null ? Number(p.order) : index,
+    };
+  },
+
+  parsePlansRaw(raw) {
+    if (!raw) return null;
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((p) => p && typeof p === "object")
+        .map((p, i) => this.normalizePlanEntry(p, p.id || `plan_${i}`, i));
+    }
+    if (typeof raw === "object") {
+      return Object.entries(raw).map(([id, p], i) =>
+        this.normalizePlanEntry({ ...p, id: p?.id || id }, id, i),
+      );
+    }
+    return null;
+  },
+
+  sortPlans(plans) {
+    return [...plans].sort(
+      (a, b) =>
+        (a.order ?? 0) - (b.order ?? 0) ||
+        String(a.name).localeCompare(String(b.name)),
+    );
+  },
+
+  ensureSingleBestPlan(plans) {
+    let found = false;
+    return plans.map((p) => {
+      if (!p.best) return p;
+      if (found) return { ...p, best: false };
+      found = true;
+      return p;
+    });
+  },
+
+  clearConfigCache() {
+    this._configCache = null;
+    this._configCacheTime = 0;
+    this._configPlansVersion = null;
   },
 
   normalizeKey(key) {
@@ -200,8 +263,33 @@ const FirebaseLicense = {
   },
 
   async getPlanById(planId) {
-    const plans = await this.getPricingPlans();
-    return plans.find((p) => p.id === planId) || null;
+    if (!planId) return null;
+    const all = await this.getAllPlans();
+    const key = String(planId).trim().toLowerCase();
+    return (
+      all.find(
+        (p) =>
+          p.id === key ||
+          p.id === planId ||
+          this.slugifyPlanId(planId) === p.id,
+      ) || null
+    );
+  },
+
+  async getAllPlans(forceFresh = false) {
+    const app = await this.getAppConfig(forceFresh);
+    const parsed = this.parsePlansRaw(app?.plans || app?.pricing);
+    const list = parsed?.length
+      ? parsed
+      : this.defaultPlans().map((p, i) => ({ ...p, order: i }));
+    return this.sortPlans(list);
+  },
+
+  async getPricingPlans(forceFresh = false) {
+    const all = await this.getAllPlans(forceFresh);
+    const active = all.filter((p) => p.active !== false);
+    const plans = this.ensureSingleBestPlan(active);
+    return plans.length ? plans : this.defaultPlans();
   },
 
   async resolvePlanDays(lic) {
@@ -222,33 +310,10 @@ const FirebaseLicense = {
     return new Date(start.getTime() + days * 86400000).toISOString();
   },
 
-  normalizePlans(raw) {
-    if (!raw) return this.defaultPlans();
-    if (Array.isArray(raw)) {
-      return raw
-        .filter((p) => p && p.active !== false)
-        .map((p, i) => ({
-          id: p.id || `plan_${i}`,
-          name: p.name || p.title || "Plan",
-          price: Number(p.price) || 0,
-          days: Number(p.days) || 30,
-          duration: p.duration || p.name || "Plan",
-          save: p.save || p.saveLabel || "",
-          best: !!p.best,
-        }));
-    }
-    if (typeof raw === "object") {
-      return Object.entries(raw).map(([id, p]) => ({
-        id,
-        name: p.name || id,
-        price: Number(p.price) || 0,
-        days: Number(p.days) || 30,
-        duration: p.duration || p.name || id,
-        save: p.save || "",
-        best: !!p.best,
-      }));
-    }
-    return this.defaultPlans();
+  planGridColumns(count) {
+    if (count <= 1) return "1fr";
+    if (count === 3) return "1fr 1fr";
+    return "1fr 1fr";
   },
 
   async getAppConfig(force = false) {
@@ -262,6 +327,7 @@ const FirebaseLicense = {
     const doc = await this.fetchDoc("config", "app");
     this._configCache = doc;
     this._configCacheTime = Date.now();
+    this._configPlansVersion = doc?.plans_version ?? doc?.plansVersion ?? null;
     return doc;
   },
 
@@ -295,10 +361,11 @@ const FirebaseLicense = {
     };
   },
 
-  async getPricingPlans() {
-    const app = await this.getAppConfig();
-    const plans = this.normalizePlans(app?.plans || app?.pricing);
-    return plans.length ? plans : this.defaultPlans();
+  /** @deprecated use getPricingPlans */
+  normalizePlans(raw) {
+    const parsed = this.parsePlansRaw(raw);
+    if (!parsed?.length) return this.defaultPlans();
+    return this.sortPlans(parsed.filter((p) => p.active !== false));
   },
 
   async getDemoKeysMap() {
@@ -422,7 +489,19 @@ const FirebaseLicense = {
 
   renderPlanButtons(container, plans, variant = "modal") {
     if (!container) return;
-    const list = plans?.length ? plans : this.defaultPlans();
+    const list = this.ensureSingleBestPlan(
+      plans?.length ? plans : this.defaultPlans(),
+    );
+
+    container.style.display = "grid";
+    container.style.gridTemplateColumns = this.planGridColumns(list.length);
+    container.style.gap = container.style.gap || "8px";
+
+    if (!list.length) {
+      container.innerHTML =
+        '<div style="grid-column:1/-1;text-align:center;padding:12px;color:#9ca3af;font-size:11px;">No plans available — add plans in Firebase config.</div>';
+      return;
+    }
 
     if (variant === "popup") {
       container.innerHTML = list
@@ -438,7 +517,7 @@ const FirebaseLicense = {
           const priceStyle = p.best
             ? ' style="color:var(--mso-success);"'
             : "";
-          return `<button type="button" class="plan-btn plan-buy-btn${bestClass}" data-plan="${p.id}" data-price="${p.price}" data-duration="${p.duration}">
+          return `<button type="button" class="plan-btn plan-buy-btn${bestClass}" data-plan="${p.id}" data-price="${p.price}" data-days="${p.days}" data-duration="${p.duration}">
             ${tag}
             <div class="plan-name"${nameStyle}>${p.name}</div>
             <div class="plan-price"${priceStyle}>₹${p.price}</div>
@@ -460,7 +539,7 @@ const FirebaseLicense = {
         const save = p.save
           ? `<div style="font-size:9px;color:#10b981;">${p.save}</div>`
           : `<div style="font-size:9px;color:#6b7280;">${p.days} days</div>`;
-        return `<button type="button" class="plan-buy-btn" data-plan="${p.id}" data-price="${p.price}" data-duration="${p.duration}" style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
+        return `<button type="button" class="plan-buy-btn" data-plan="${p.id}" data-price="${p.price}" data-days="${p.days}" data-duration="${p.duration}" style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
           ${tag}
           <div style="font-size:11px;color:#6b7280;${p.best ? "margin-top:4px;" : ""}">${p.name}</div>
           <div style="font-size:20px;font-weight:700;color:#e67e22;">₹${p.price}</div>
@@ -478,7 +557,7 @@ const FirebaseLicense = {
     const hint = root.querySelector("#license-demo-hint");
 
     const [plans, demoKeys, wa] = await Promise.all([
-      this.getPricingPlans(),
+      this.getPricingPlans(true),
       this.getDemoKeysMap(),
       this.getWhatsAppSettings(),
     ]);

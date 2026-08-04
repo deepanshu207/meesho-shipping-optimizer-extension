@@ -58,69 +58,6 @@ const LicenseManager = {
     return this.demoKeys;
   },
 
-  // Subscription plans
-  plans: {
-    monthly: {
-      price: 599,
-      days: 30,
-      name: "Monthly",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Advanced Analytics",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-    quarterly: {
-      price: 1399,
-      days: 90,
-      name: "3 Months",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Advanced Analytics",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-    halfYearly: {
-      price: 2299,
-      days: 180,
-      name: "6 Months",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-    yearly: {
-      price: 3099,
-      days: 365,
-      name: "Yearly",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Advanced Analytics",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-  },
-
   // Verify license key with server
   verifyLicenseKey: async function (key) {
     if (!key || key.length < 10) {

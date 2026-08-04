@@ -2639,6 +2639,7 @@
                     <span style="font-size:12px; color:#fff; font-weight:700;">Pricing Plans</span>
                     <button type="button" class="btn-gold" onclick="addShippingOptimizerPlanRow()" style="width:auto; padding:6px 12px; font-size:10px;">+ Add Plan</button>
                 </div>
+                <p style="font-size:10px; color:#666; margin:0 0 8px;">Reorder with ▲▼ · Uncheck <b>Show</b> to hide without deleting · Plan IDs should stay stable after issuing licenses</p>
                 <div id="so-plans-editor" style="margin-bottom:14px;"></div>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -2664,14 +2665,20 @@
             </div>
 
             <div id="so-tab-licenses" style="display:none;">
-                <div style="display:grid; grid-template-columns:2fr 1fr 1fr auto auto; gap:8px; align-items:end; margin-bottom:12px;">
-                    <label style="font-size:10px;color:#888;">License key<input id="so-new-license-key" type="text" placeholder="Auto-generate if empty" style="margin-top:4px;font-size:11px;font-family:monospace;"></label>
-                    <label style="font-size:10px;color:#888;">Plan<input id="so-new-license-plan" type="text" value="yearly" style="margin-top:4px;font-size:11px;"></label>
-                    <label style="font-size:10px;color:#888;">Expires<input id="so-new-license-expires" type="date" style="margin-top:4px;font-size:11px;"></label>
-                    <button type="button" class="btn-gold" onclick="generateShippingOptimizerLicenseKey()" style="width:auto;padding:10px 10px;font-size:10px;" title="Generate key">🎲</button>
+                <div style="display:grid; grid-template-columns:2fr 1fr auto auto; gap:8px; align-items:end; margin-bottom:8px;">
+                    <label style="font-size:10px;color:#888;">License key<input id="so-new-license-key" type="text" placeholder="Auto-generate unique key" style="margin-top:4px;font-size:11px;font-family:monospace;"></label>
+                    <label style="font-size:10px;color:#888;">Plan<select id="so-new-license-plan" style="margin-top:4px;font-size:11px;"></select></label>
+                    <button type="button" class="btn-gold" onclick="generateShippingOptimizerLicenseKey()" style="width:auto;padding:10px 10px;font-size:10px;" title="Generate unique key">🎲</button>
                     <button type="button" class="btn-gold" onclick="createShippingOptimizerLicense()" style="width:auto;padding:10px 12px;font-size:10px;">Create</button>
                 </div>
-                <input type="text" id="so-license-search" placeholder="Search licenses by key, plan, or device ID…" oninput="filterShippingOptimizerLicenses(this.value)" style="margin-bottom:12px; font-size:12px;">
+                <p id="so-license-expiry-hint" style="font-size:10px;color:#888;margin:0 0 12px;">Expiry starts when customer activates.</p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                    <label style="font-size:10px;color:#888;">Customer name<input id="so-new-customer-name" type="text" placeholder="Optional" style="margin-top:4px;font-size:11px;"></label>
+                    <label style="font-size:10px;color:#888;">Phone<input id="so-new-customer-phone" type="text" placeholder="919876543210" style="margin-top:4px;font-size:11px;"></label>
+                    <label style="font-size:10px;color:#888;">Email<input id="so-new-customer-email" type="email" placeholder="optional" style="margin-top:4px;font-size:11px;"></label>
+                    <label style="font-size:10px;color:#888;">Support notes<input id="so-new-support-notes" type="text" placeholder="Paid UPI, ref #…" style="margin-top:4px;font-size:11px;"></label>
+                </div>
+                <input type="text" id="so-license-search" placeholder="Search licenses by key, customer, plan, or device ID…" oninput="filterShippingOptimizerLicenses(this.value)" style="margin-bottom:12px; font-size:12px;">
                 <div id="so-license-list" style="max-height:420px; overflow-y:auto; padding-right:6px;"></div>
             </div>
         </div>

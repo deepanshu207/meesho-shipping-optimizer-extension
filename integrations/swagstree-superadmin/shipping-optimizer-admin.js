@@ -35,11 +35,42 @@
 
     function defaultPlans() {
         return [
-            { id: 'monthly', name: 'Monthly', price: 599, days: 30, duration: '1 Month', save: '', best: false, active: true },
-            { id: 'quarterly', name: '3 Months', price: 1399, days: 90, duration: '3 Months', save: 'Save ₹1000', best: false, active: true },
-            { id: 'halfyearly', name: '6 Months', price: 2299, days: 180, duration: '6 Months', save: 'Save ₹3000', best: false, active: true },
-            { id: 'yearly', name: 'Yearly', price: 3099, days: 365, duration: '1 Year', save: 'Save ₹8000', best: true, active: true },
+            { id: 'monthly', name: 'Monthly', price: 599, days: 30, duration: '1 Month', save: '', best: false, active: true, order: 0 },
+            { id: 'quarterly', name: '3 Months', price: 1399, days: 90, duration: '3 Months', save: 'Save ₹1000', best: false, active: true, order: 1 },
+            { id: 'halfyearly', name: '6 Months', price: 2299, days: 180, duration: '6 Months', save: 'Save ₹3000', best: false, active: true, order: 2 },
+            { id: 'yearly', name: 'Yearly', price: 3099, days: 365, duration: '1 Year', save: 'Save ₹8000', best: true, active: true, order: 3 },
         ];
+    }
+
+    function slugifyPlanId(id) {
+        return String(id || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_-]/g, '');
+    }
+
+    function sortPlans(plans) {
+        return [...plans].sort(
+            (a, b) =>
+                (a.order ?? 0) - (b.order ?? 0) ||
+                String(a.name || '').localeCompare(String(b.name || '')),
+        );
+    }
+
+    function validatePlans(plans) {
+        if (!plans.length) return 'Add at least one pricing plan.';
+        const ids = new Set();
+        for (const p of plans) {
+            const id = slugifyPlanId(p.id);
+            if (!id) return 'Each plan needs a valid ID (letters, numbers, underscore).';
+            if (ids.has(id)) return `Duplicate plan ID "${id}" — IDs must be unique.`;
+            ids.add(id);
+            if (!String(p.name || '').trim()) return `Plan "${id}" needs a display name.`;
+            if (Number(p.price) < 0) return `Plan "${id}" price cannot be negative.`;
+            if (!Number(p.days) || Number(p.days) < 1) return `Plan "${id}" needs at least 1 day.`;
+        }
+        return null;
     }
 
     function defaultConfig() {
@@ -106,8 +137,10 @@
     }
 
     function getPlansForSelect() {
-        const plans = _state.config?.plans;
-        if (Array.isArray(plans) && plans.length) return plans.filter((p) => p.active !== false);
+        const plans = readPlansFromDom().filter((p) => p.active !== false);
+        if (plans.length) return plans;
+        const fromState = _state.config?.plans;
+        if (Array.isArray(fromState)) return fromState.filter((p) => p.active !== false);
         return defaultPlans();
     }
 
@@ -134,7 +167,8 @@
         const rows = document.querySelectorAll('#so-plans-editor .so-plan-row');
         const plans = [];
         rows.forEach((row, i) => {
-            const id = (row.querySelector('[data-field="id"]')?.value || `plan_${i}`).trim();
+            const rawId = (row.querySelector('[data-field="id"]')?.value || `plan_${i}`).trim();
+            const id = slugifyPlanId(rawId) || `plan_${i}`;
             plans.push({
                 id,
                 name: (row.querySelector('[data-field="name"]')?.value || 'Plan').trim(),
@@ -144,6 +178,7 @@
                 save: (row.querySelector('[data-field="save"]')?.value || '').trim(),
                 best: !!row.querySelector('[data-field="best"]')?.checked,
                 active: row.querySelector('[data-field="active"]')?.checked !== false,
+                order: i,
             });
         });
         return plans.filter((p) => p.id);
@@ -165,21 +200,31 @@
     function renderPlansEditor(plans) {
         const host = document.getElementById('so-plans-editor');
         if (!host) return;
-        const list = Array.isArray(plans) && plans.length ? plans : defaultPlans();
+        const list = sortPlans(Array.isArray(plans) && plans.length ? plans : defaultPlans());
         host.innerHTML = list
             .map(
-                (p) => `
-            <div class="so-plan-row" style="display:grid; grid-template-columns:repeat(4,1fr) auto auto; gap:8px; align-items:end; padding:10px; background:#1a1a1a; border:1px solid #333; border-radius:10px; margin-bottom:8px;">
-                <label style="font-size:10px;color:#888;">ID<input data-field="id" type="text" value="${escHtml(p.id)}" style="margin-top:4px;font-size:11px;"></label>
+                (p, i) => {
+                    const inactive = p.active === false;
+                    const rowStyle = inactive
+                        ? 'opacity:0.55;border-color:#442222;background:#141414;'
+                        : 'border-color:#333;background:#1a1a1a;';
+                    return `
+            <div class="so-plan-row" style="display:grid; grid-template-columns:28px repeat(4,1fr) auto auto auto; gap:8px; align-items:end; padding:10px; border:1px solid; border-radius:10px; margin-bottom:8px; ${rowStyle}">
+                <div style="display:flex;flex-direction:column;gap:2px;align-self:center;">
+                    <button type="button" title="Move up" ${i === 0 ? 'disabled' : ''} style="width:24px;height:20px;padding:0;font-size:10px;background:#222;border:1px solid #444;color:#aaa;border-radius:4px;cursor:pointer;" onclick="moveShippingOptimizerPlanRow(this,-1)">▲</button>
+                    <button type="button" title="Move down" ${i === list.length - 1 ? 'disabled' : ''} style="width:24px;height:20px;padding:0;font-size:10px;background:#222;border:1px solid #444;color:#aaa;border-radius:4px;cursor:pointer;" onclick="moveShippingOptimizerPlanRow(this,1)">▼</button>
+                </div>
+                <label style="font-size:10px;color:#888;">ID <span style="color:#555;">(stable)</span><input data-field="id" type="text" value="${escHtml(p.id)}" placeholder="yearly" style="margin-top:4px;font-size:11px;font-family:monospace;"></label>
                 <label style="font-size:10px;color:#888;">Name<input data-field="name" type="text" value="${escHtml(p.name)}" style="margin-top:4px;font-size:11px;"></label>
                 <label style="font-size:10px;color:#888;">Price (₹)<input data-field="price" type="number" min="0" value="${Number(p.price) || 0}" style="margin-top:4px;font-size:11px;"></label>
                 <label style="font-size:10px;color:#888;">Days<input data-field="days" type="number" min="1" value="${Number(p.days) || 30}" style="margin-top:4px;font-size:11px;"></label>
                 <label style="font-size:10px;color:#888;display:flex;align-items:center;gap:4px;white-space:nowrap;"><input data-field="best" type="checkbox" ${p.best ? 'checked' : ''}> Best</label>
-                <label style="font-size:10px;color:#888;display:flex;align-items:center;gap:4px;white-space:nowrap;"><input data-field="active" type="checkbox" ${p.active !== false ? 'checked' : ''}> On</label>
-                <label style="grid-column:1/3;font-size:10px;color:#888;">Duration label<input data-field="duration" type="text" value="${escHtml(p.duration || p.name)}" style="margin-top:4px;font-size:11px;"></label>
-                <label style="grid-column:3/6;font-size:10px;color:#888;">Save badge (optional)<input data-field="save" type="text" value="${escHtml(p.save || '')}" placeholder="Save ₹1000" style="margin-top:4px;font-size:11px;"></label>
-                <button type="button" class="btn-gold" style="grid-column:6;width:auto;padding:8px 10px;font-size:10px;background:#331111;border-color:#552222;color:#ff8888;" onclick="removeShippingOptimizerPlanRow(this)">✕</button>
-            </div>`,
+                <label style="font-size:10px;color:#888;display:flex;align-items:center;gap:4px;white-space:nowrap;" title="Uncheck to hide from extension without deleting"><input data-field="active" type="checkbox" ${p.active !== false ? 'checked' : ''}> Show</label>
+                <label style="grid-column:2/5;font-size:10px;color:#888;">Duration label<input data-field="duration" type="text" value="${escHtml(p.duration || p.name)}" style="margin-top:4px;font-size:11px;"></label>
+                <label style="grid-column:5/8;font-size:10px;color:#888;">Save badge (optional)<input data-field="save" type="text" value="${escHtml(p.save || '')}" placeholder="Save ₹1000" style="margin-top:4px;font-size:11px;"></label>
+                <button type="button" class="btn-gold" style="grid-column:8;width:auto;padding:8px 10px;font-size:10px;background:#331111;border-color:#552222;color:#ff8888;" title="Remove plan from config" onclick="removeShippingOptimizerPlanRow(this)">✕</button>
+            </div>`;
+                },
             )
             .join('');
     }
@@ -287,7 +332,13 @@
         if (en) en.checked = c.extension_enabled !== false;
         if (mv) mv.value = c.min_extension_version || c.minExtensionVersion || '1.0.0';
         if (ann) ann.value = c.announcement || '';
-        renderPlansEditor(c.plans || c.pricing);
+        const rawPlans = c.plans || c.pricing;
+        const parsed = Array.isArray(rawPlans)
+            ? rawPlans
+            : rawPlans && typeof rawPlans === 'object'
+              ? Object.entries(rawPlans).map(([id, p]) => ({ ...p, id: p.id || id }))
+              : defaultPlans();
+        renderPlansEditor(sortPlans(parsed.map((p, i) => ({ ...p, order: p.order ?? i }))));
         renderInlineDemoKeys(c.demo_keys || c.demoKeys || {});
     }
 
@@ -345,13 +396,21 @@
     async function saveShippingOptimizerConfig() {
         if (!assertSuperAdmin('Only superadmin can save Shipping Optimizer config.')) return;
 
+        const plans = readPlansFromDom().map((p) => ({
+            ...p,
+            id: slugifyPlanId(p.id) || p.id,
+        }));
+        const planError = validatePlans(plans);
+        if (planError) return showToast(planError);
+
         const payload = {
             whatsapp_number: (document.getElementById('so-whatsapp-number')?.value || '919654414891').replace(/\D/g, ''),
             whatsapp_message: (document.getElementById('so-whatsapp-message')?.value || '').trim(),
             extension_enabled: !!document.getElementById('so-extension-enabled')?.checked,
             min_extension_version: (document.getElementById('so-min-version')?.value || '1.0.0').trim(),
             announcement: (document.getElementById('so-announcement')?.value || '').trim(),
-            plans: readPlansFromDom(),
+            plans,
+            plans_version: Date.now(),
             demo_keys: readInlineDemoKeysFromDom(),
             updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
             updatedBy: (typeof auth !== 'undefined' && auth.currentUser?.email) || 'superadmin',
@@ -360,13 +419,11 @@
         if (!payload.whatsapp_number || payload.whatsapp_number.length < 10) {
             return showToast('Enter a valid WhatsApp number (with country code).');
         }
-        if (!payload.plans.length) {
-            return showToast('Add at least one pricing plan.');
-        }
 
         try {
             await db.collection(COL_CONFIG).doc(CONFIG_DOC).set(payload, { merge: true });
             _state.config = { ..._state.config, ...payload };
+            renderLicensePlanSelect();
             showToast('✅ Shipping Optimizer config saved — extension will pick up within ~5 min.');
             const status = document.getElementById('so-admin-status');
             if (status) status.textContent = 'Saved just now';
@@ -525,11 +582,37 @@
     window.saveShippingOptimizerConfig = saveShippingOptimizerConfig;
     window.addShippingOptimizerPlanRow = function addShippingOptimizerPlanRow() {
         const plans = readPlansFromDom();
-        plans.push({ id: `plan_${plans.length + 1}`, name: 'New Plan', price: 0, days: 30, duration: '30 Days', save: '', best: false, active: true });
+        const nextOrder = plans.length ? Math.max(...plans.map((p) => p.order ?? 0)) + 1 : 0;
+        plans.push({
+            id: `plan_${nextOrder + 1}`,
+            name: 'New Plan',
+            price: 0,
+            days: 30,
+            duration: '30 Days',
+            save: '',
+            best: false,
+            active: true,
+            order: nextOrder,
+        });
         renderPlansEditor(plans);
     };
     window.removeShippingOptimizerPlanRow = function removeShippingOptimizerPlanRow(btn) {
         btn?.closest('.so-plan-row')?.remove();
+    };
+    window.moveShippingOptimizerPlanRow = function moveShippingOptimizerPlanRow(btn, dir) {
+        const row = btn?.closest('.so-plan-row');
+        const host = document.getElementById('so-plans-editor');
+        if (!row || !host) return;
+        const plans = readPlansFromDom();
+        const idx = [...host.querySelectorAll('.so-plan-row')].indexOf(row);
+        if (idx < 0) return;
+        const swap = idx + dir;
+        if (swap < 0 || swap >= plans.length) return;
+        [plans[idx], plans[swap]] = [plans[swap], plans[idx]];
+        plans.forEach((p, i) => {
+            p.order = i;
+        });
+        renderPlansEditor(plans);
     };
     window.addShippingOptimizerDemoRow = function addShippingOptimizerDemoRow() {
         const keys = readInlineDemoKeysFromDom();

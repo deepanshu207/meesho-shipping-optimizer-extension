@@ -67,9 +67,35 @@ Create document **`app`** with fields:
 }
 ```
 
-You can change prices, add/remove plans, or update WhatsApp here — the extension popup and license modal refresh from Firebase (5‑minute cache).
+You can change prices, add/remove plans, or update WhatsApp here — the extension popup and license modal fetch fresh plans on each open; background checks use a 5‑minute config cache.
 
 **Easiest way to manage:** Swagstree → **Superadmin** tab → **Shipping Optimizer Extension** panel (Config & Pricing / Demo Keys / Paid Licenses).
+
+### Flexible pricing plans
+
+Plans live in the `plans` array on `shipping_optimizer_config/app`. The extension reads **active** plans only; inactive plans stay in Firebase for existing licenses that reference them.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Stable slug (e.g. `yearly`, `lifetime`). Used in license `planId` — do not rename after customers have keys. |
+| `name` | Yes | Display name in popup/modal |
+| `price` | Yes | INR price shown on plan button |
+| `days` | Yes | License duration in days (applied on activation) |
+| `duration` | No | Short label (e.g. `1 Year`) |
+| `save` | No | Badge text (e.g. `Save ₹8000`) |
+| `best` | No | Highlight as "BEST VALUE" (only one shown) |
+| `active` | No | `false` hides from extension; default `true` |
+| `order` | No | Sort order (lower first); admin UI sets from row position |
+
+**Add a plan:** append a new object to `plans` (or use **+ Add Plan** in superadmin) and save. Set `plans_version` to a new timestamp so clients refresh immediately.
+
+**Update a plan:** change `price`, `name`, `days`, etc. Existing licenses keep their stored `planDays` from creation time.
+
+**Remove a plan:** either set `active: false` (recommended — hides from UI, keeps legacy `planId` lookups working) or delete the row from the array (only if no licenses use that `planId`).
+
+Legacy object-shaped `pricing` maps are still supported: `{ "yearly": { "price": 3099, ... } }` — prefer the `plans` array for new configs.
+
+`plans_version` (number/timestamp) is optional but recommended — the extension bypasses its 5‑minute cache when this value changes.
 
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 
