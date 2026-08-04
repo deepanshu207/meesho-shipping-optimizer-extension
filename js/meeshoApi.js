@@ -870,14 +870,7 @@ const MeeshoAPI = {
       return { catalogImageUrl: null, sourceMatchesPage: false, cachedRemoteBlob: null };
     }
 
-    let cachedRemoteBlob = null;
-    try {
-      cachedRemoteBlob = await fetch(catalogImageUrl, {
-        credentials: "include",
-      }).then((r) => r.blob());
-    } catch (e) {
-      console.warn("Could not fetch Meesho page image for reuse check:", e.message);
-    }
+    let cachedRemoteBlob = await this.loadPageImageBlobForCompare(catalogImageUrl);
 
     const sourceMatchesPage = cachedRemoteBlob
       ? await this.blobMatchesRemoteImage(originalBlob, catalogImageUrl, {
@@ -892,7 +885,46 @@ const MeeshoAPI = {
     return { catalogImageUrl, sourceMatchesPage, cachedRemoteBlob };
   },
 
+  /** Load Meesho CDN image for compare — prefer DOM preview, no noisy fetch errors. */
+  loadPageImageBlobForCompare: async function (url) {
+    if (!url) return null;
+    const needle = (url || "").split("/").pop()?.split("?")[0] || "";
+
+    for (const img of document.querySelectorAll(
+      'img[src*="meeshosupplyassets"], img[src*="images.meesho"], img[src*="cdnmeesho"]',
+    )) {
+      if (img.closest("#opt-modal, #optimizer-app, .opt-modal")) continue;
+      const src = img.currentSrc || img.src || "";
+      if (!src || (needle && !src.includes(needle))) continue;
+      try {
+        const resp = await fetch(src, { credentials: "include" });
+        if (resp.ok) {
+          const blob = await resp.blob();
+          if (blob?.size) return blob;
+        }
+      } catch (e) {
+        /* cross-origin CDN — fall through */
+      }
+    }
+
+    try {
+      const resp = await fetch(url, { credentials: "include" });
+      if (resp.ok) {
+        const blob = await resp.blob();
+        if (blob?.size) return blob;
+      }
+    } catch (e) {
+      /* expected on some CDN URLs — reuse disabled silently */
+    }
+    return null;
+  },
+
   uploadImageForPricing: async function (blob, filename, options = {}) {
+    // Always upload variant images fresh — page URL reuse caused wrong image / stale shipping.
+    if (options.allowPageReuse !== true) {
+      return this.uploadImage(blob, filename);
+    }
+
     const pageUrl = options.catalogImageUrl || this.detectCatalogImageUrl();
     if (
       options.preferPageImage &&
@@ -1711,7 +1743,6 @@ const MeeshoAPI = {
       };
     }
 
-    const imageReuse = await this.prepareCatalogImageReuse(originalBlob);
     if (shouldStopFn && shouldStopFn()) {
       return {
         success: false,
@@ -1749,12 +1780,6 @@ const MeeshoAPI = {
         const imageUrl = await this.uploadImageForPricing(
           variation.blob,
           `v${attempt}.jpg`,
-          {
-            catalogImageUrl: imageReuse.catalogImageUrl,
-            preferPageImage: imageReuse.sourceMatchesPage,
-            compareBlob: true,
-            _cachedRemoteBlob: imageReuse.cachedRemoteBlob,
-          },
         );
         if (shouldStopFn && shouldStopFn()) break;
         if (!imageUrl) {
@@ -2026,8 +2051,6 @@ const MeeshoAPI = {
       await this.preloadBadges();
     }
 
-    const imageReuse = await this.prepareCatalogImageReuse(originalBlob);
-
     const highLine = Math.max(targetShipping + 25, 80);
     const EXPLORE_PRICED_MIN = 4;
 
@@ -2135,12 +2158,6 @@ const MeeshoAPI = {
         const imageUrl = await this.uploadImageForPricing(
           variation.blob,
           `tv${attempt}.jpg`,
-          {
-            catalogImageUrl: imageReuse.catalogImageUrl,
-            preferPageImage: imageReuse.sourceMatchesPage,
-            compareBlob: true,
-            _cachedRemoteBlob: imageReuse.cachedRemoteBlob,
-          },
         );
         if (!imageUrl) {
           uploadFailures++;
