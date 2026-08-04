@@ -42,52 +42,10 @@ const LicenseManager = {
 
   // Get or create machine ID
   getMachineId: async function () {
-    try {
-      let stored = await chrome.storage.local.get(["machineId"]);
-
-      if (stored.machineId) {
-        return stored.machineId;
-      }
-
-      // Generate fingerprint
-      const canvas = document.createElement("canvas");
-      canvas.width = 200;
-      canvas.height = 50;
-      const ctx = canvas.getContext("2d");
-      ctx.textBaseline = "top";
-      ctx.font = "14px Arial";
-      ctx.fillStyle = "#f60";
-      ctx.fillRect(125, 1, 62, 20);
-      ctx.fillStyle = "#069";
-      ctx.fillText("MeeshoOpt", 2, 15);
-
-      const fingerprint = [
-        canvas.toDataURL(),
-        navigator.userAgent,
-        navigator.language,
-        screen.width + "x" + screen.height,
-        screen.colorDepth,
-        new Date().getTimezoneOffset(),
-        navigator.hardwareConcurrency || 0,
-      ].join("|");
-
-      let hash = 0;
-      for (let i = 0; i < fingerprint.length; i++) {
-        const char = fingerprint.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash = hash & hash;
-      }
-
-      const machineId =
-        "M" + Math.abs(hash).toString(36).toUpperCase().substring(0, 12);
-      await chrome.storage.local.set({ machineId: machineId });
-      console.log("Generated machine ID:", machineId);
-
-      return machineId;
-    } catch (e) {
-      console.error("Error getting machine ID:", e);
-      return "M" + Date.now().toString(36).toUpperCase();
+    if (typeof MachineId !== "undefined" && MachineId.get) {
+      return MachineId.get();
     }
+    return "M" + Date.now().toString(36).toUpperCase();
   },
 
   // Demo keys fetched from server

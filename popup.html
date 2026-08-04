@@ -508,6 +508,11 @@
       <div id="license-info">
         <p style="font-size:12px;color:var(--mso-muted);">Checking license…</p>
       </div>
+      <div id="license-support-row" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--mso-border);">
+        <div style="font-size:10px;color:var(--mso-muted);margin-bottom:4px;">Device ID (send to support if activation fails)</div>
+        <div id="device-id-display" style="font-family:Consolas,monospace;font-size:11px;color:#c45f12;word-break:break-all;"></div>
+        <button type="button" id="copy-support-btn" class="btn btn-secondary" style="margin-top:8px;padding:8px;font-size:11px;">Copy support info</button>
+      </div>
     </div>
 
     <div id="activation-section" class="hidden">
@@ -573,6 +578,7 @@
 
   <script src="config.js"></script>
   <script src="js/firebaseLicense.js"></script>
+  <script src="js/machineId.js"></script>
   <script src="js/popupActions.js"></script>
   <script src="popup.js"></script>
 </body>

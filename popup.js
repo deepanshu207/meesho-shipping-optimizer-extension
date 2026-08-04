@@ -37,29 +37,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   async function getMachineId() {
-    const stored = await chrome.storage.local.get(["machineId"]);
-    if (stored.machineId) return stored.machineId;
-
-    const fingerprint = [
-      navigator.userAgent,
-      navigator.language,
-      screen.width + "x" + screen.height,
-      screen.colorDepth,
-      new Date().getTimezoneOffset(),
-      navigator.hardwareConcurrency || 0,
-      Date.now(),
-    ].join("|");
-
-    let hash = 0;
-    for (let i = 0; i < fingerprint.length; i++) {
-      hash = (hash << 5) - hash + fingerprint.charCodeAt(i);
-      hash &= hash;
+    if (typeof MachineId !== "undefined" && MachineId.get) {
+      return MachineId.get();
     }
-
-    const machineId =
-      "M" + Math.abs(hash).toString(36).toUpperCase().substring(0, 12);
-    await chrome.storage.local.set({ machineId });
-    return machineId;
+    const stored = await chrome.storage.local.get(["machineId"]);
+    return stored.machineId || "unknown";
   }
 
   let demoKeys = null;
@@ -145,6 +127,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     };
   }
 
+  function formatWhen(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString();
+    } catch (_) {
+      return iso;
+    }
+  }
+
   async function loadLicenseStatus() {
     try {
       const result = await chrome.storage.sync.get([
@@ -159,6 +150,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const info = result.licenseInfo || {};
         let infoHTML = `<div class="license-key">${maskKey(result.licenseKey)}</div>`;
+        infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:6px;">Plan: <strong>${info.planType || "premium"}</strong>`;
+        if (info.activatedAt) {
+          infoHTML += ` · Activated: ${formatWhen(info.activatedAt)}`;
+        }
+        infoHTML += `</p>`;
+
+        const supportRow = document.getElementById("license-support-row");
+        const deviceEl = document.getElementById("device-id-display");
+        const machineId = await getMachineId();
+        if (supportRow && deviceEl) {
+          supportRow.classList.remove("hidden");
+          deviceEl.textContent = machineId;
+        }
 
         if (info.expiresAt) {
           const expiresAt = new Date(info.expiresAt);
@@ -202,6 +206,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         licenseInfo.innerHTML =
           '<p style="font-size:12px;color:var(--mso-muted);">Activate a license to use generate &amp; apply.</p>';
         activationSection.classList.remove("hidden");
+        const supportRow = document.getElementById("license-support-row");
+        const deviceEl = document.getElementById("device-id-display");
+        const machineId = await getMachineId();
+        if (supportRow && deviceEl) {
+          supportRow.classList.remove("hidden");
+          deviceEl.textContent = machineId;
+        }
       }
     } catch (error) {
       console.error("Error loading license:", error);
@@ -356,6 +367,18 @@ Please share payment details and license key.`;
       if (e.key === "Enter") activateBtn?.click();
     });
   }
+
+  PA.bindTap(document.getElementById("copy-support-btn"), async () => {
+    const result = await chrome.storage.sync.get(["licenseKey", "licenseInfo"]);
+    const copied = await MachineId.copySupportBundle(
+      result.licenseKey,
+      result.licenseInfo,
+    );
+    showMessage(
+      copied ? "Support info copied — paste in WhatsApp" : "Could not copy",
+      copied ? "success" : "error",
+    );
+  });
 
   PA.bindTap(document.getElementById("whatsapp-btn"), () => {
     openWhatsApp(getWhatsAppMessage());

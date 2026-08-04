@@ -45,6 +45,7 @@
       "js": [
         "config.js",
         "js/firebaseLicense.js",
+        "js/machineId.js",
         "js/utils.js",
         "js/license.js",
         "js/meeshoCategories.js",

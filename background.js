@@ -1,6 +1,6 @@
 // Background service worker for Meesho Shipping Optimizer
 
-importScripts("config.js", "js/firebaseLicense.js");
+importScripts("config.js", "js/firebaseLicense.js", "js/machineId.js");
 
 class BackgroundService {
   constructor() {
@@ -147,6 +147,7 @@ class BackgroundService {
     }
 
     const machineId = await this.getMachineId();
+    if (!machineId) return false;
 
     if (
       CONFIG?.USE_FIREBASE_LICENSE &&
@@ -173,13 +174,11 @@ class BackgroundService {
   }
 
   async getMachineId() {
-    const r = await chrome.storage.local.get(["machineId"]);
-    if (!r.machineId) {
-      const machineId = "machine-" + Math.random().toString(36).slice(2);
-      await chrome.storage.local.set({ machineId });
-      return machineId;
+    if (typeof MachineId !== "undefined" && MachineId.get) {
+      return MachineId.get();
     }
-    return r.machineId;
+    const r = await chrome.storage.local.get(["machineId"]);
+    return r.machineId || null;
   }
 
   async getLicenseStatus() {
