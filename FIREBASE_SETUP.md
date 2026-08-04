@@ -155,7 +155,7 @@ service cloud.firestore {
 
     // ... your existing Swagstree rules ...
 
-    // Shipping Optimizer — extension reads; superadmin manages via Swagstree panel
+    // Shipping Optimizer — extension reads; admin panel writes config/licenses
     match /shipping_optimizer_config/{doc} {
       allow read: if true;
       allow write: if isShippingOptimizerSuperAdmin();
