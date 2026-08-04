@@ -119,22 +119,10 @@ class BackgroundService {
       try {
         demoKeys = await FirebaseLicense.getDemoKeysMap();
       } catch (e) {}
-    } else {
-      const serverUrls = CONFIG.getServerUrls ? CONFIG.getServerUrls() : [];
-      for (const serverUrl of serverUrls) {
-        try {
-          const res = await fetch(`${serverUrl}/demo-keys`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.demoKeys) {
-              demoKeys = CONFIG.mergeDemoKeys
-                ? CONFIG.mergeDemoKeys(data.demoKeys)
-                : { ...demoKeys, ...data.demoKeys };
-              break;
-            }
-          }
-        } catch (e) {}
-      }
+    } else if (CONFIG.getDemoKeys) {
+      try {
+        demoKeys = await CONFIG.getDemoKeys();
+      } catch (e) {}
     }
 
     const demoKeyMatch = Object.keys(demoKeys).find(
@@ -179,38 +167,6 @@ class BackgroundService {
           });
           return true;
         }
-        if (
-          fbResult.reason &&
-          fbResult.reason !== "License key not found"
-        ) {
-          return false;
-        }
-      } catch (e) {}
-    }
-
-    const serverUrls = CONFIG.getServerUrls ? CONFIG.getServerUrls() : [];
-    for (const serverUrl of serverUrls) {
-      try {
-        const response = await fetch(`${serverUrl}/verify-license`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ licenseKey: trimmedKey, machineId }),
-        });
-
-        if (!response.ok) continue;
-
-        const result = await response.json();
-
-        if (result.valid) {
-          await chrome.storage.sync.set({
-            licenseKey: trimmedKey,
-            licenseStatus: "active",
-            licenseInfo: result.license,
-            lastVerified: Date.now(),
-          });
-          return true;
-        }
-        return false;
       } catch (e) {}
     }
     return false;

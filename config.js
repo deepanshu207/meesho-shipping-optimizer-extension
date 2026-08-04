@@ -4,10 +4,6 @@
 // ============================================
 
 const CONFIG = {
-  SERVER_URL: "https://darkviolet-ostrich-615182.hostingersite.com/api",
-  SERVER_URL_FALLBACK:
-    "https://darkviolet-ostrich-615182.hostingersite.com/api",
-
   DEFAULT_WHATSAPP: "919654414891",
   DEFAULT_WHATSAPP_MESSAGE:
     "Hi! I want to purchase Shipping Optimizer license.",
@@ -81,40 +77,9 @@ const CONFIG = {
       }
     }
 
-    const urls = [this.SERVER_URL, this.SERVER_URL_FALLBACK];
-    for (const url of urls) {
-      try {
-        const res = await fetch(`${url}/demo-keys`, {
-          method: "GET",
-          headers: { "Cache-Control": "no-cache" },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            this._demoKeysCache = this.mergeDemoKeys(data.demoKeys);
-            this._demoKeysCacheTime = Date.now();
-            return this._demoKeysCache;
-          }
-        }
-      } catch (e) {
-        console.log("Demo keys fetch failed:", url);
-      }
-    }
-
     this._demoKeysCache = { ...this.BUILTIN_DEMO_KEYS };
     this._demoKeysCacheTime = Date.now();
     return this._demoKeysCache;
-  },
-
-  getServerUrls: function () {
-    return [this.SERVER_URL, this.SERVER_URL_FALLBACK];
-  },
-
-  getEndpoint: function (path) {
-    return {
-      primary: this.SERVER_URL + path,
-      fallback: this.SERVER_URL_FALLBACK + path,
-    };
   },
 };
 

@@ -5,14 +5,6 @@ const LicenseManager = {
   licenseKey: null,
   licenseInfo: null,
 
-  // Use CONFIG for server URLs
-  get serverUrl() {
-    return CONFIG.SERVER_URL;
-  },
-  get fallbackUrl() {
-    return CONFIG.SERVER_URL_FALLBACK;
-  },
-
   // Check license status from storage
   checkLicense: async function () {
     try {
@@ -225,7 +217,7 @@ const LicenseManager = {
       }
     }
 
-    console.log("🔍 Not a demo key, checking license providers...");
+    console.log("🔍 Not a demo key, checking Firebase...");
 
     const machineId = await this.getMachineId();
     console.log("Machine ID:", machineId);
@@ -236,7 +228,6 @@ const LicenseManager = {
       FirebaseLicense.isEnabled()
     ) {
       try {
-        console.log("Trying Firebase license verify...");
         const fbResult = await FirebaseLicense.verifyPaidLicense(
           trimmedKey,
           machineId,
@@ -258,90 +249,23 @@ const LicenseManager = {
           this.licenseInfo = fbResult.license;
           return { success: true };
         }
-        if (
-          fbResult.reason &&
-          fbResult.reason !== "License key not found"
-        ) {
-          return { success: false, message: fbResult.reason };
-        }
+        return {
+          success: false,
+          message: fbResult.reason || "License key not found or invalid",
+        };
       } catch (e) {
         console.warn("Firebase verify failed:", e.message);
+        return {
+          success: false,
+          message: "Could not verify license. Check your connection and try again.",
+        };
       }
     }
 
-    console.log("Trying Hostinger API...");
-    const urls = [this.serverUrl, this.fallbackUrl];
-    let lastError = "Could not connect to license server";
-
-    for (const url of urls) {
-      try {
-        console.log("Trying server:", url);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-        const response = await fetch(url + "/verify-license", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            licenseKey: trimmedKey,
-            machineId: machineId,
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        console.log("Response status:", response.status);
-
-        if (!response.ok) {
-          lastError = "Server error: " + response.status;
-          continue;
-        }
-
-        const result = await response.json();
-        console.log("Server response:", result);
-
-        if (result.valid === true) {
-          // Success
-          await chrome.storage.sync.set({
-            licenseKey: trimmedKey,
-            licenseStatus: "active",
-            licenseInfo: result.license || {
-              key: trimmedKey,
-              planType: "premium",
-              activatedAt: new Date().toISOString(),
-            },
-            lastVerified: Date.now(),
-          });
-
-          this.isLicensed = true;
-          this.licenseKey = trimmedKey;
-          this.licenseInfo = result.license;
-
-          return { success: true };
-        } else {
-          // Server returned valid: false with reason
-          lastError =
-            result.reason || result.message || "License verification failed";
-          console.log("Server rejected:", lastError);
-          return { success: false, message: lastError };
-        }
-      } catch (e) {
-        console.error("Server error:", url, e);
-        if (e.name === "AbortError") {
-          lastError = "Connection timeout - please try again";
-        } else {
-          lastError = "Network error: " + e.message;
-        }
-        continue;
-      }
-    }
-
-    return { success: false, message: lastError };
+    return {
+      success: false,
+      message: "License service unavailable. Enable Firebase in config.",
+    };
   },
 
   // Clear license
@@ -357,7 +281,7 @@ const LicenseManager = {
     });
   },
 
-  // Get WhatsApp settings — Firebase first, then Hostinger API
+  // Get WhatsApp settings from Firebase (or local defaults)
   getWhatsAppSettings: async function () {
     if (
       CONFIG?.USE_FIREBASE_LICENSE &&
@@ -372,36 +296,11 @@ const LicenseManager = {
       }
     }
 
-    const urls = [this.serverUrl, this.fallbackUrl];
-
-    for (const url of urls) {
-      try {
-        const response = await fetch(`${url}/settings?t=${Date.now()}`, {
-          method: "GET",
-          headers: { "Cache-Control": "no-cache" },
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.settings) {
-            return {
-              number: result.settings.whatsapp_number || CONFIG.DEFAULT_WHATSAPP || "919654414891",
-              message:
-                result.settings.whatsapp_message ||
-                "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license.",
-            };
-          }
-        }
-      } catch (e) {
-        console.log("WhatsApp settings fetch failed:", url, e.message);
-        continue;
-      }
-    }
-
     return {
       number: CONFIG.DEFAULT_WHATSAPP || "919654414891",
       message:
-        "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license.",
+        CONFIG.DEFAULT_WHATSAPP_MESSAGE ||
+        "Hi! I want to purchase Shipping Optimizer license.",
     };
   },
 

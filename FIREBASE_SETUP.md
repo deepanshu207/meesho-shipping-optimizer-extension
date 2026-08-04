@@ -139,7 +139,7 @@ Manage config, demo keys, and new licenses from **Firebase Console** or **Admin 
 If Firebase is unreachable or documents are missing:
 
 1. **Demo keys** → built-in keys in `config.js` (`MEESHO-DEMOFREE`, etc.)
-2. **Paid licenses** → Hostinger API (`/verify-license`)
+2. **Paid licenses** → verification fails until Firebase is reachable
 3. **Pricing** → default plans in `js/firebaseLicense.js`
 4. **WhatsApp** → `CONFIG.DEFAULT_WHATSAPP` (`919654414891`)
 
@@ -151,7 +151,7 @@ In `config.js` set:
 USE_FIREBASE_LICENSE: false
 ```
 
-The extension will use Hostinger API and built-in defaults only.
+Only built-in demo keys and local defaults will work. Paid license verification requires Firebase.
 
 ## Testing
 

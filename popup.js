@@ -17,11 +17,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     versionBadge.textContent = "v" + (CONFIG.VERSION || "1.0.0");
   }
 
-  const serverUrls =
-    typeof CONFIG !== "undefined" && CONFIG.getServerUrls
-      ? CONFIG.getServerUrls()
-      : [];
-
   const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
   let cachedWhatsApp = null;
 
@@ -107,7 +102,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const machineId = await getMachineId();
-    let lastError = "Could not connect to license server";
 
     if (
       CONFIG?.USE_FIREBASE_LICENSE &&
@@ -132,67 +126,23 @@ document.addEventListener("DOMContentLoaded", async () => {
           });
           return { success: true };
         }
-        if (
-          fbResult.reason &&
-          fbResult.reason !== "License key not found"
-        ) {
-          return { success: false, message: fbResult.reason };
-        }
-      } catch (e) {
-        console.warn("Firebase verify failed:", e.message);
-      }
-    }
-
-    for (const url of serverUrls) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-        const response = await fetch(url + "/verify-license", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({ licenseKey: trimmedKey, machineId }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          lastError = "Server error: " + response.status;
-          continue;
-        }
-
-        const result = await response.json();
-
-        if (result.valid === true) {
-          await chrome.storage.sync.set({
-            licenseKey: trimmedKey,
-            licenseStatus: "active",
-            licenseInfo: result.license || {
-              key: trimmedKey,
-              planType: "premium",
-              activatedAt: new Date().toISOString(),
-            },
-            lastVerified: Date.now(),
-          });
-          return { success: true };
-        }
-
         return {
           success: false,
-          message:
-            result.reason || result.message || "License verification failed",
+          message: fbResult.reason || "License key not found or invalid",
         };
       } catch (e) {
-        lastError =
-          e.name === "AbortError" ? "Connection timeout" : e.message;
+        console.warn("Firebase verify failed:", e.message);
+        return {
+          success: false,
+          message: "Could not verify license. Check your connection and try again.",
+        };
       }
     }
 
-    return { success: false, message: lastError };
+    return {
+      success: false,
+      message: "License service unavailable. Enable Firebase in config.",
+    };
   }
 
   async function loadLicenseStatus() {
