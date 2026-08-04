@@ -1,17 +1,9 @@
-// License management for Meesho Shipping Optimizer v6.0.0
+// License management for Shipping Optimizer v1.0.0
 
 const LicenseManager = {
   isLicensed: false,
   licenseKey: null,
   licenseInfo: null,
-
-  // Use CONFIG for server URLs
-  get serverUrl() {
-    return CONFIG.SERVER_URL;
-  },
-  get fallbackUrl() {
-    return CONFIG.SERVER_URL_FALLBACK;
-  },
 
   // Check license status from storage
   checkLicense: async function () {
@@ -50,52 +42,10 @@ const LicenseManager = {
 
   // Get or create machine ID
   getMachineId: async function () {
-    try {
-      let stored = await chrome.storage.local.get(["machineId"]);
-
-      if (stored.machineId) {
-        return stored.machineId;
-      }
-
-      // Generate fingerprint
-      const canvas = document.createElement("canvas");
-      canvas.width = 200;
-      canvas.height = 50;
-      const ctx = canvas.getContext("2d");
-      ctx.textBaseline = "top";
-      ctx.font = "14px Arial";
-      ctx.fillStyle = "#f60";
-      ctx.fillRect(125, 1, 62, 20);
-      ctx.fillStyle = "#069";
-      ctx.fillText("MeeshoOpt", 2, 15);
-
-      const fingerprint = [
-        canvas.toDataURL(),
-        navigator.userAgent,
-        navigator.language,
-        screen.width + "x" + screen.height,
-        screen.colorDepth,
-        new Date().getTimezoneOffset(),
-        navigator.hardwareConcurrency || 0,
-      ].join("|");
-
-      let hash = 0;
-      for (let i = 0; i < fingerprint.length; i++) {
-        const char = fingerprint.charCodeAt(i);
-        hash = (hash << 5) - hash + char;
-        hash = hash & hash;
-      }
-
-      const machineId =
-        "M" + Math.abs(hash).toString(36).toUpperCase().substring(0, 12);
-      await chrome.storage.local.set({ machineId: machineId });
-      console.log("Generated machine ID:", machineId);
-
-      return machineId;
-    } catch (e) {
-      console.error("Error getting machine ID:", e);
-      return "M" + Date.now().toString(36).toUpperCase();
+    if (typeof MachineId !== "undefined" && MachineId.get) {
+      return MachineId.get();
     }
+    return "M" + Date.now().toString(36).toUpperCase();
   },
 
   // Demo keys fetched from server
@@ -106,69 +56,6 @@ const LicenseManager = {
     if (this.demoKeys) return this.demoKeys;
     this.demoKeys = await CONFIG.getDemoKeys();
     return this.demoKeys;
-  },
-
-  // Subscription plans
-  plans: {
-    monthly: {
-      price: 599,
-      days: 30,
-      name: "Monthly",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Advanced Analytics",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-    quarterly: {
-      price: 1399,
-      days: 90,
-      name: "3 Months",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Advanced Analytics",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-    halfYearly: {
-      price: 2299,
-      days: 180,
-      name: "6 Months",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
-    yearly: {
-      price: 3099,
-      days: 365,
-      name: "Yearly",
-      features: [
-        "All Features",
-        "Image Optimization",
-        "Shipping Detection",
-        "Priority Support",
-        "Advanced Analytics",
-        "Beta Updates",
-        "Upcoming Features",
-        "Premium Badge Designs",
-      ],
-    },
   },
 
   // Verify license key with server
@@ -225,52 +112,26 @@ const LicenseManager = {
       }
     }
 
-    console.log("🔍 Not a demo key, checking server...");
+    console.log("🔍 Not a demo key, checking Firebase...");
 
     const machineId = await this.getMachineId();
     console.log("Machine ID:", machineId);
 
-    const urls = [this.serverUrl, this.fallbackUrl];
-    let lastError = "Could not connect to license server";
-
-    for (const url of urls) {
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
       try {
-        console.log("Trying server:", url);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-        const response = await fetch(url + "/verify-license", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            licenseKey: trimmedKey,
-            machineId: machineId,
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        console.log("Response status:", response.status);
-
-        if (!response.ok) {
-          lastError = "Server error: " + response.status;
-          continue;
-        }
-
-        const result = await response.json();
-        console.log("Server response:", result);
-
-        if (result.valid === true) {
-          // Success
+        const fbResult = await FirebaseLicense.verifyPaidLicense(
+          trimmedKey,
+          machineId,
+        );
+        if (fbResult.valid === true) {
           await chrome.storage.sync.set({
             licenseKey: trimmedKey,
             licenseStatus: "active",
-            licenseInfo: result.license || {
+            licenseInfo: fbResult.license || {
               key: trimmedKey,
               planType: "premium",
               activatedAt: new Date().toISOString(),
@@ -280,28 +141,26 @@ const LicenseManager = {
 
           this.isLicensed = true;
           this.licenseKey = trimmedKey;
-          this.licenseInfo = result.license;
-
+          this.licenseInfo = fbResult.license;
           return { success: true };
-        } else {
-          // Server returned valid: false with reason
-          lastError =
-            result.reason || result.message || "License verification failed";
-          console.log("Server rejected:", lastError);
-          return { success: false, message: lastError };
         }
+        return {
+          success: false,
+          message: fbResult.reason || "License key not found or invalid",
+        };
       } catch (e) {
-        console.error("Server error:", url, e);
-        if (e.name === "AbortError") {
-          lastError = "Connection timeout - please try again";
-        } else {
-          lastError = "Network error: " + e.message;
-        }
-        continue;
+        console.warn("Firebase verify failed:", e.message);
+        return {
+          success: false,
+          message: "Could not verify license. Check your connection and try again.",
+        };
       }
     }
 
-    return { success: false, message: lastError };
+    return {
+      success: false,
+      message: "License service unavailable. Enable Firebase in config.",
+    };
   },
 
   // Clear license
@@ -317,38 +176,26 @@ const LicenseManager = {
     });
   },
 
-  // Get WhatsApp settings from server
+  // Get WhatsApp settings from Firebase (or local defaults)
   getWhatsAppSettings: async function () {
-    const urls = [this.serverUrl, this.fallbackUrl];
-
-    for (const url of urls) {
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
       try {
-        const response = await fetch(`${url}/settings?t=${Date.now()}`, {
-          method: "GET",
-          headers: { "Cache-Control": "no-cache" },
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.settings) {
-            return {
-              number: result.settings.whatsapp_number || "918905811996",
-              message:
-                result.settings.whatsapp_message ||
-                "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license.",
-            };
-          }
-        }
+        const wa = await FirebaseLicense.getWhatsAppSettings();
+        if (wa?.number) return wa;
       } catch (e) {
-        console.log("WhatsApp settings fetch failed:", url, e.message);
-        continue;
+        console.log("Firebase WhatsApp settings failed:", e.message);
       }
     }
 
     return {
-      number: "918905811996",
+      number: CONFIG.DEFAULT_WHATSAPP || "919654414891",
       message:
-        "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license.",
+        CONFIG.DEFAULT_WHATSAPP_MESSAGE ||
+        "Hi! I want to purchase Shipping Optimizer license.",
     };
   },
 
@@ -373,17 +220,27 @@ const LicenseManager = {
         buttonElement.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span>✅</span><span>Opening WhatsApp...</span></div>`;
       }
 
-      window.open(
-        `https://wa.me/${settings.number}?text=${encodeURIComponent(
-          settings.message
-        )}`,
-        "_blank"
-      );
+      const phone = String(settings.number || CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
+      const text = encodeURIComponent(settings.message || "");
+      const isAndroid = /Android/i.test(navigator.userAgent || "");
+      if (isAndroid) {
+        window.location.href = `whatsapp://send?phone=${phone}&text=${text}`;
+        setTimeout(() => {
+          window.open(
+            `https://api.whatsapp.com/send?phone=${phone}&text=${text}`,
+            "_blank",
+          );
+        }, 600);
+      } else {
+        window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
+      }
     } catch (error) {
       console.error("WhatsApp error:", error);
+      const phone = String(CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
       window.open(
-        `https://wa.me/918905811996?text=${encodeURIComponent(
-          "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license."
+        `https://wa.me/${phone}?text=${encodeURIComponent(
+          CONFIG.DEFAULT_WHATSAPP_MESSAGE ||
+            "Hi! I want to purchase Shipping Optimizer license.",
         )}`,
         "_blank"
       );

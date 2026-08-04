@@ -24,4 +24,12 @@ See `START_HERE_KIWI.txt`.
 
 ## Version
 
-1.8.2
+1.0.0
+
+## License & payments
+
+- **Demo trial:** activate `MEESHO-DEMOFREE` in the extension popup (30 days, validates locally — no server setup).
+- **Paid plans:** user taps a plan → WhatsApp → you send a license key → they activate in popup.
+- **License & pricing:** Firebase Firestore (`swagstree-web`) — see `FIREBASE_SETUP.md`
+
+See **[LICENSE_SETUP.md](LICENSE_SETUP.md)** for the full validation flow and what you need to configure on the server.

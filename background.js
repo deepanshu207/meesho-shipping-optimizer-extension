@@ -1,5 +1,7 @@
 // Background service worker for Meesho Shipping Optimizer
 
+importScripts("config.js", "js/firebaseLicense.js", "js/machineId.js");
+
 class BackgroundService {
   constructor() {
     self.backgroundInstance = this;
@@ -101,37 +103,25 @@ class BackgroundService {
   }
 
   async verifyLicenseKey(licenseKey) {
-    const trimmedKey = String(licenseKey || "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, "-");
-    const serverUrls = [
-      "https://darkviolet-ostrich-615182.hostingersite.com/api",
-    ];
+    const trimmedKey = CONFIG.normalizeLicenseKey
+      ? CONFIG.normalizeLicenseKey(licenseKey)
+      : String(licenseKey || "")
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, "-");
 
-    const builtinDemoKeys = {
-      "MEESHO-DEMOFREE": { days: 30 },
-      "MEESHO-DEMOFREE-PROMO": { days: 30 },
-      "MEESHO-DEMO-PROMO": { days: 30 },
-      "MEESHO-DEMO999": { days: 7 },
-    };
-    let demoKeys = { ...builtinDemoKeys };
-
-    for (const serverUrl of serverUrls) {
+    let demoKeys = { ...(CONFIG.BUILTIN_DEMO_KEYS || {}) };
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
       try {
-        const res = await fetch(`${serverUrl}/demo-keys`);
-        if (res.ok) {
-          const data = await res.json();
-          if (
-            data.success &&
-            data.demoKeys &&
-            typeof data.demoKeys === "object" &&
-            !Array.isArray(data.demoKeys)
-          ) {
-            demoKeys = { ...builtinDemoKeys, ...data.demoKeys };
-            break;
-          }
-        }
+        demoKeys = await FirebaseLicense.getDemoKeysMap();
+      } catch (e) {}
+    } else if (CONFIG.getDemoKeys) {
+      try {
+        demoKeys = await CONFIG.getDemoKeys();
       } catch (e) {}
     }
 
@@ -148,7 +138,7 @@ class BackgroundService {
           key: trimmedKey,
           planType: "demo",
           expiresAt: new Date(
-            Date.now() + demoInfo.days * 86400000,
+            Date.now() + (demoInfo.days || 30) * 86400000,
           ).toISOString(),
         },
         lastVerified: Date.now(),
@@ -156,47 +146,39 @@ class BackgroundService {
       return true;
     }
 
-    try {
-      const machineId = await this.getMachineId();
+    const machineId = await this.getMachineId();
+    if (!machineId) return false;
 
-      for (const serverUrl of serverUrls) {
-        try {
-          const response = await fetch(`${serverUrl}/verify-license`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ licenseKey: trimmedKey, machineId }),
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        const fbResult = await FirebaseLicense.verifyPaidLicense(
+          trimmedKey,
+          machineId,
+        );
+        if (fbResult.valid === true) {
+          await chrome.storage.sync.set({
+            licenseKey: trimmedKey,
+            licenseStatus: "active",
+            licenseInfo: fbResult.license,
+            lastVerified: Date.now(),
           });
-
-          if (!response.ok) continue;
-
-          const result = await response.json();
-
-          if (result.valid) {
-            await chrome.storage.sync.set({
-              licenseKey: trimmedKey,
-              licenseStatus: "active",
-              licenseInfo: result.license,
-              lastVerified: Date.now(),
-            });
-            return true;
-          }
-          return false;
-        } catch (e) {}
-      }
-      return false;
-    } catch {
-      return false;
+          return true;
+        }
+      } catch (e) {}
     }
+    return false;
   }
 
   async getMachineId() {
-    const r = await chrome.storage.local.get(["machineId"]);
-    if (!r.machineId) {
-      const machineId = "machine-" + Math.random().toString(36).slice(2);
-      await chrome.storage.local.set({ machineId });
-      return machineId;
+    if (typeof MachineId !== "undefined" && MachineId.get) {
+      return MachineId.get();
     }
-    return r.machineId;
+    const r = await chrome.storage.local.get(["machineId"]);
+    return r.machineId || null;
   }
 
   async getLicenseStatus() {

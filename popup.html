@@ -195,6 +195,8 @@
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       font-family: inherit;
       color: var(--mso-text);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .plan-btn:hover {
@@ -264,6 +266,9 @@
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       margin-bottom: 8px;
       min-height: 46px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
     }
 
     .btn-primary {
@@ -344,6 +349,66 @@
 
     .features { margin-bottom: 14px; }
 
+    .quick-actions {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .quick-action {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--mso-surface);
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      font-family: inherit;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .quick-action:active {
+      transform: scale(0.98);
+      background: #fff3df;
+    }
+
+    .quick-action-icon {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      background: var(--mso-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .quick-action-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--mso-ink);
+      margin-bottom: 2px;
+    }
+
+    .quick-action-desc {
+      font-size: 11px;
+      color: var(--mso-muted);
+      line-height: 1.35;
+    }
+
+    .status-line {
+      font-size: 11px;
+      color: var(--mso-muted);
+      text-align: center;
+      min-height: 16px;
+      margin-bottom: 8px;
+    }
+
     .feature-item {
       display: flex;
       align-items: center;
@@ -400,6 +465,8 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .spinner {
@@ -418,7 +485,7 @@
 </head>
 <body>
   <div class="header">
-    <span class="version-badge" id="version-badge">v1.0.0</span>
+    <span class="version-badge" id="version-badge">v1.1.0</span>
     <div class="brand-row">
       <img class="brand-logo" src="icons/icon48.png" width="48" height="48" alt="">
       <div class="brand">
@@ -430,6 +497,9 @@
   </div>
 
   <div class="content">
+    <div id="firebase-announcement" class="status-card" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(255,215,0,0.12);border-color:#f0e0c8;">
+      <p id="firebase-announcement-text" style="font-size:12px;color:#c45f12;margin:0;text-align:center;"></p>
+    </div>
     <div class="status-card">
       <div class="status-header">
         <span class="status-title">License Status</span>
@@ -438,6 +508,11 @@
       <div id="license-info">
         <p style="font-size:12px;color:var(--mso-muted);">Checking license…</p>
       </div>
+      <div id="license-support-row" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--mso-border);">
+        <div style="font-size:10px;color:var(--mso-muted);margin-bottom:4px;">Device ID (send to support if activation fails)</div>
+        <div id="device-id-display" style="font-family:Consolas,monospace;font-size:11px;color:#c45f12;word-break:break-all;"></div>
+        <button type="button" id="copy-support-btn" class="btn btn-secondary" style="margin-top:8px;padding:8px;font-size:11px;">Copy support info</button>
+      </div>
     </div>
 
     <div id="activation-section" class="hidden">
@@ -445,30 +520,10 @@
         <div style="text-align:center;margin-bottom:10px;">
           <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap to buy via WhatsApp</span>
         </div>
-        <div class="plan-grid">
-          <button type="button" class="plan-btn" data-plan="monthly" data-price="599" data-duration="1 Month">
-            <div class="plan-name">Monthly</div>
-            <div class="plan-price">₹599</div>
-            <div class="plan-note" style="color:var(--mso-muted);">30 days</div>
-          </button>
-          <button type="button" class="plan-btn" data-plan="quarterly" data-price="1399" data-duration="3 Months">
-            <div class="plan-name">3 Months</div>
-            <div class="plan-price">₹1399</div>
-            <div class="plan-note">Save ₹1000</div>
-          </button>
-          <button type="button" class="plan-btn" data-plan="halfyearly" data-price="2299" data-duration="6 Months">
-            <div class="plan-name">6 Months</div>
-            <div class="plan-price">₹2299</div>
-            <div class="plan-note">Save ₹3000</div>
-          </button>
-          <button type="button" class="plan-btn best" data-plan="yearly" data-price="3099" data-duration="1 Year">
-            <span class="plan-best-tag">BEST VALUE</span>
-            <div class="plan-name" style="margin-top:4px;">Yearly</div>
-            <div class="plan-price" style="color:var(--mso-success);">₹3099</div>
-            <div class="plan-note">Save ₹8000</div>
-          </button>
+        <div class="plan-grid" id="license-plans-grid">
+          <div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--mso-muted);font-size:11px;">Loading plans…</div>
         </div>
-        <p class="hint">Demo keys like <strong>MEESHO-DEMOFREE</strong> work offline for trial.</p>
+        <p class="hint" id="license-demo-hint">Demo keys like <strong>MEESHO-DEMOFREE</strong> work for trial.</p>
       </div>
 
       <div id="popup-message" class="message"></div>
@@ -487,28 +542,30 @@
       <p class="hint">Payment &amp; license key via WhatsApp · instant activation after payment</p>
     </div>
 
-    <div class="features">
-      <div class="feature-item">
-        <div class="feature-icon">1</div>
-        <div>
-          <div class="feature-title">Generate variants</div>
-          <div class="feature-desc">Smart borders &amp; badges for lower shipping</div>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">2</div>
-        <div>
-          <div class="feature-title">Live shipping check</div>
-          <div class="feature-desc">Real Meesho shipping on each variant</div>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">3</div>
-        <div>
-          <div class="feature-title">One-click apply</div>
-          <div class="feature-desc">Publish the best image to your catalog</div>
-        </div>
-      </div>
+    <p id="popup-status-line" class="status-line"></p>
+
+    <div class="quick-actions">
+      <button type="button" class="quick-action" data-action="optimizer">
+        <span class="quick-action-icon">🚀</span>
+        <span>
+          <div class="quick-action-title">Open Image Optimizer</div>
+          <div class="quick-action-desc">On Meesho catalog — generate variants &amp; apply best</div>
+        </span>
+      </button>
+      <button type="button" class="quick-action" data-action="meesho">
+        <span class="quick-action-icon">📦</span>
+        <span>
+          <div class="quick-action-title">Meesho Catalog Upload</div>
+          <div class="quick-action-desc">Open Add Product page if not already there</div>
+        </span>
+      </button>
+      <button type="button" class="quick-action" data-action="whatsapp">
+        <span class="quick-action-icon">💬</span>
+        <span>
+          <div class="quick-action-title">Upgrade / WhatsApp</div>
+          <div class="quick-action-desc">Buy license or get help · +91 9654414891</div>
+        </span>
+      </button>
     </div>
 
     <button type="button" class="btn btn-primary" id="open-catalog">Open Image Optimizer</button>
@@ -516,10 +573,13 @@
   </div>
 
   <div class="footer">
-    <button type="button" id="support-whatsapp">WhatsApp Support</button>
+    <button type="button" id="support-whatsapp">WhatsApp Support · 9654414891</button>
   </div>
 
   <script src="config.js"></script>
+  <script src="js/firebaseLicense.js"></script>
+  <script src="js/machineId.js"></script>
+  <script src="js/popupActions.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -629,36 +629,13 @@ const OptimizerUI = {
                         <p style="color:#6b7280;font-size:12px;margin-bottom:10px;">Reduce shipping with smart image variants</p>
                     </div>
                     
-                    <!-- Pricing Plans -->
+                    <!-- Pricing Plans (loaded from Firebase) -->
                     <div class="opt-section" style="padding:12px;">
                         <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Click Plan to Buy</div>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <!-- Monthly -->
-                            <button class="plan-buy-btn" data-plan="monthly" data-price="599" data-duration="1 Month" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s;color:black;">
-                                <div style="font-size:11px;color:#9ca3af;">Monthly</div>
-                                <div style="font-size:20px;font-weight:700;color:#e67e22;">₹599</div>
-                                <div style="font-size:9px;color:#0f0f10;">30 days</div>
-                            </button>
-                            <!-- 3 Months -->
-                            <button class="plan-buy-btn" data-plan="quarterly" data-price="1399" data-duration="3 Months" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s;color:black;">
-                                <div style="font-size:11px;color:#9ca3af;">3 Months</div>
-                                <div style="font-size:20px;font-weight:700;color:#e67e22;">₹1399</div>
-                                <div style="font-size:9px;color:#10b981;">Save ₹1000</div>
-                            </button>
-                            <!-- 6 Months -->
-                            <button class="plan-buy-btn" data-plan="halfyearly" data-price="2299" data-duration="6 Months" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:10px;text-align:center;cursor:pointer;transition:all 0.2s;color:black;">
-                                <div style="font-size:11px;color:#9ca3af;">6 Months</div>
-                                <div style="font-size:20px;font-weight:700;color:#e67e22;">₹2299</div>
-                                <div style="font-size:9px;color:#10b981;">Save ₹3000</div>
-                            </button>
-                            <!-- Yearly - Best Value -->
-                            <button class="plan-buy-btn" data-plan="yearly" data-price="3099" data-duration="1 Year" style="background:linear-gradient(180deg, #fff8ee, #ffffff);border:2px solid #e67e22;border-radius:8px;padding:10px;text-align:center;position:relative;cursor:pointer;transition:all 0.2s;color:black;">
-                                <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg, #ffd700 0%, #f5a623 55%, #e67e22 100%);color:white;padding:2px 8px;border-radius:10px;font-size:8px;font-weight:700;">BEST VALUE</div>
-                                <div style="font-size:11px;color:#c45f12;margin-top:4px;">Yearly</div>
-                                <div style="font-size:20px;font-weight:700;color:#10b981;">₹3099</div>
-                                <div style="font-size:9px;color:#10b981;">Save ₹8000</div>
-                            </button>
+                        <div id="license-plans-grid" class="license-plans-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px;">
+                            <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
+                        <div id="license-announcement" class="license-announcement" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,215,0,0.15);border:1px solid rgba(230,126,34,0.35);border-radius:8px;font-size:11px;color:#c45f12;text-align:center;"></div>
                         <div style="margin-top:10px;padding:8px;background:rgba(167,139,250,0.1);border-radius:6px;border:1px solid rgba(167,139,250,0.2);">
                             <div style="font-size:10px;color:#c45f12;font-weight:600;margin-bottom:4px;">✨ Yearly Plan Exclusive:</div>
                             <div style="font-size:9px;color:#9ca3af;line-height:1.4;">Beta Updates • Upcoming Features • Premium Badges • Priority Support • Advanced Analytics</div>
@@ -671,7 +648,7 @@ const OptimizerUI = {
                         <button id="activate-license-btn" class="opt-btn opt-btn-success" style="width:100%;padding:10px;">Activate License</button>
                     </div>
                     
-                    <p style="margin-top:8px;font-size:10px;color:#0f0f10;text-align:center;">
+                    <p id="license-demo-hint" style="margin-top:8px;font-size:10px;color:#0f0f10;text-align:center;">
                         Click on any plan to buy via WhatsApp · Demo: <strong>MEESHO-DEMOFREE</strong>
                     </p>
                 </div>

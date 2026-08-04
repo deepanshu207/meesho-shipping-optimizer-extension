@@ -4,17 +4,25 @@
 // ============================================
 
 const CONFIG = {
-  SERVER_URL: "https://darkviolet-ostrich-615182.hostingersite.com/api",
-  SERVER_URL_FALLBACK:
-    "https://darkviolet-ostrich-615182.hostingersite.com/api",
-
-  DEFAULT_WHATSAPP: "918905811996",
+  DEFAULT_WHATSAPP: "919654414891",
   DEFAULT_WHATSAPP_MESSAGE:
-    "Hi! I want to purchase Meesho Shipping Optimizer license.",
+    "Hi! I want to purchase Shipping Optimizer license.",
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.0.0",
+  VERSION: "1.1.0",
+
+  // Firebase (swagstree-web) — ONLY uses shipping_optimizer_* collections
+  USE_FIREBASE_LICENSE: true,
+  FIREBASE: {
+    apiKey: "AIzaSyAKXSFKuhQXMGvmtjh0CHnz48vbYz9a_4A",
+    authDomain: "swagstree-web.firebaseapp.com",
+    projectId: "swagstree-web",
+    storageBucket: "swagstree-web.firebasestorage.app",
+    messagingSenderId: "224485840604",
+    appId: "1:224485840604:web:1c69dd064caf7605614619",
+    measurementId: "G-K8WVW9EF3X",
+  },
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 
@@ -52,23 +60,20 @@ const CONFIG = {
       return this._demoKeysCache;
     }
 
-    const urls = [this.SERVER_URL, this.SERVER_URL_FALLBACK];
-    for (const url of urls) {
+    if (
+      this.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
       try {
-        const res = await fetch(`${url}/demo-keys`, {
-          method: "GET",
-          headers: { "Cache-Control": "no-cache" },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            this._demoKeysCache = this.mergeDemoKeys(data.demoKeys);
-            this._demoKeysCacheTime = Date.now();
-            return this._demoKeysCache;
-          }
+        const fb = await FirebaseLicense.getDemoKeysMap();
+        if (fb && Object.keys(fb).length) {
+          this._demoKeysCache = this.mergeDemoKeys(fb);
+          this._demoKeysCacheTime = Date.now();
+          return this._demoKeysCache;
         }
       } catch (e) {
-        console.log("Demo keys fetch failed:", url);
+        console.log("Firebase demo keys fetch failed:", e.message);
       }
     }
 
@@ -76,18 +81,9 @@ const CONFIG = {
     this._demoKeysCacheTime = Date.now();
     return this._demoKeysCache;
   },
-
-  getServerUrls: function () {
-    return [this.SERVER_URL, this.SERVER_URL_FALLBACK];
-  },
-
-  getEndpoint: function (path) {
-    return {
-      primary: this.SERVER_URL + path,
-      fallback: this.SERVER_URL_FALLBACK + path,
-    };
-  },
 };
 
-window.CONFIG = CONFIG;
+if (typeof globalThis !== "undefined") {
+  globalThis.CONFIG = CONFIG;
+}
 console.log("Config loaded:", CONFIG.EXTENSION_NAME, "v" + CONFIG.VERSION);
