@@ -635,6 +635,7 @@ const OptimizerUI = {
                         <div id="license-plans-grid" class="license-plans-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px;">
                             <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
+                        <div id="license-announcement" class="license-announcement" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,215,0,0.15);border:1px solid rgba(230,126,34,0.35);border-radius:8px;font-size:11px;color:#c45f12;text-align:center;"></div>
                         <div style="margin-top:10px;padding:8px;background:rgba(167,139,250,0.1);border-radius:6px;border:1px solid rgba(167,139,250,0.2);">
                             <div style="font-size:10px;color:#c45f12;font-weight:600;margin-bottom:4px;">✨ Yearly Plan Exclusive:</div>
                             <div style="font-size:9px;color:#9ca3af;line-height:1.4;">Beta Updates • Upcoming Features • Premium Badges • Priority Support • Advanced Analytics</div>

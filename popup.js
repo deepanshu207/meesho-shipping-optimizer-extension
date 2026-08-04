@@ -270,6 +270,15 @@ Please share payment details and license key.`;
         const sample = Object.keys(demoKeys)[0] || "MEESHO-DEMOFREE";
         hint.innerHTML = `Plans managed in Firebase · Demo: <strong>${sample}</strong>`;
       }
+      const ann = await FirebaseLicense.getAnnouncement();
+      const annCard = document.getElementById("firebase-announcement");
+      const annText = document.getElementById("firebase-announcement-text");
+      if (ann && annCard && annText) {
+        annCard.style.display = "block";
+        annText.textContent = ann;
+      } else if (annCard) {
+        annCard.style.display = "none";
+      }
     } else {
       FirebaseLicense?.renderPlanButtons?.(
         grid,

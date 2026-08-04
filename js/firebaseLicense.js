@@ -205,6 +205,22 @@ const FirebaseLicense = {
     return doc;
   },
 
+  isExtensionEnabled() {
+    const app = this._configCache;
+    if (!app) return true;
+    return app.extension_enabled !== false && app.extensionEnabled !== false;
+  },
+
+  async getAnnouncement() {
+    const app = await this.getAppConfig();
+    return (app?.announcement || "").trim();
+  },
+
+  async isExtensionEnabledRemote() {
+    const app = await this.getAppConfig();
+    return app?.extension_enabled !== false && app?.extensionEnabled !== false;
+  },
+
   async getWhatsAppSettings() {
     const app = await this.getAppConfig();
     return {
@@ -262,6 +278,18 @@ const FirebaseLicense = {
     if (!lic) {
       return { valid: false, reason: "License key not found" };
     }
+
+    const appCfg = await this.getAppConfig();
+    if (
+      appCfg?.extension_enabled === false ||
+      appCfg?.extensionEnabled === false
+    ) {
+      return {
+        valid: false,
+        reason: "Extension licensing is temporarily disabled",
+      };
+    }
+
     if (lic.active === false) {
       return { valid: false, reason: "License deactivated" };
     }
@@ -380,7 +408,21 @@ const FirebaseLicense = {
       hint.innerHTML = `Plans &amp; promo codes managed in Firebase · Demo: <strong>${sample}</strong>`;
     }
 
-    return { plans, demoKeys, whatsapp: wa };
+    const announcementEl =
+      root.querySelector("#license-announcement") ||
+      root.querySelector(".license-announcement");
+    const announcement = await this.getAnnouncement();
+    if (announcementEl) {
+      if (announcement) {
+        announcementEl.style.display = "block";
+        announcementEl.innerHTML = announcement;
+      } else {
+        announcementEl.style.display = "none";
+        announcementEl.innerHTML = "";
+      }
+    }
+
+    return { plans, demoKeys, whatsapp: wa, announcement };
   },
 };
 

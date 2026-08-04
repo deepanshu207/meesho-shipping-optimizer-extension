@@ -20,6 +20,9 @@ Create document **`app`** with fields:
 {
   "whatsapp_number": "919654414891",
   "whatsapp_message": "Hi! I want to purchase Shipping Optimizer license.",
+  "extension_enabled": true,
+  "min_extension_version": "1.0.0",
+  "announcement": "",
   "plans": [
     {
       "id": "monthly",
