@@ -746,7 +746,8 @@ class MeeshoShippingOptimizer {
     return "";
   }
 
-  prepareMeeshoFrontImageInputSync(section) {
+  prepareMeeshoFrontImageInputSync(section, options = {}) {
+    const programmatic = options.programmatic === true;
     section = section || this.findMeeshoFrontImageSection();
     const prevSrc = this.getMeeshoFrontPreviewSrc(section);
     const hadImage = this.hasMeeshoFrontImageUploaded(section);
@@ -762,7 +763,7 @@ class MeeshoShippingOptimizer {
     }
 
     const uploadBtn = this.findMeeshoFrontUploadButton(section);
-    if (uploadBtn) {
+    if (uploadBtn && !programmatic) {
       try {
         uploadBtn.click();
       } catch (e) {}
@@ -914,13 +915,15 @@ class MeeshoShippingOptimizer {
     return null;
   }
 
-  async waitForCatalogImageInput(maxMs = 6000) {
+  async waitForCatalogImageInput(maxMs = 6000, options = {}) {
     let input = this.findCatalogImageInput();
     if (input) return input;
 
-    await this.revealCatalogImageInput();
-    input = this.findCatalogImageInput();
-    if (input) return input;
+    if (!options.programmatic) {
+      await this.revealCatalogImageInput();
+      input = this.findCatalogImageInput();
+      if (input) return input;
+    }
 
     const start = Date.now();
     while (Date.now() - start < maxMs) {
@@ -1290,9 +1293,10 @@ class MeeshoShippingOptimizer {
     }
   }
 
-  async prepareMeeshoFrontImageInput() {
+  async prepareMeeshoFrontImageInput(options = {}) {
+    const programmatic = options.programmatic === true;
     this.restoreMeeshoPageInert();
-    const prep = this.prepareMeeshoFrontImageInputSync();
+    const prep = this.prepareMeeshoFrontImageInputSync(undefined, { programmatic });
     if (prep.hadImage) {
       await new Promise((r) => setTimeout(r, 500));
     } else {
@@ -1301,19 +1305,23 @@ class MeeshoShippingOptimizer {
 
     let input = prep.input;
     if (!input || !document.contains(input)) {
-      const uploadBtn = this.findMeeshoFrontUploadButton(prep.section);
-      if (uploadBtn) {
-        try {
-          uploadBtn.click();
-        } catch (e) {}
-        await new Promise((r) => setTimeout(r, 400));
-        input =
-          this.findFileInputNearUploadButton(uploadBtn) ||
-          this.findCatalogImageInput();
+      if (!programmatic) {
+        const uploadBtn = this.findMeeshoFrontUploadButton(prep.section);
+        if (uploadBtn) {
+          try {
+            uploadBtn.click();
+          } catch (e) {}
+          await new Promise((r) => setTimeout(r, 400));
+          input =
+            this.findFileInputNearUploadButton(uploadBtn) ||
+            this.findCatalogImageInput();
+        }
+      } else {
+        input = this.findCatalogImageInput();
       }
     }
     if (!input) {
-      input = await this.waitForCatalogImageInput(5000);
+      input = await this.waitForCatalogImageInput(5000, { programmatic });
     }
     prep.input = input;
     if (input) this._catalogImageInput = input;
@@ -8327,7 +8335,7 @@ Please share payment details and license key.`;
         return;
       }
 
-      const prep = await this.prepareMeeshoFrontImageInput();
+      const prep = await this.prepareMeeshoFrontImageInput({ programmatic: true });
       const prevSrc = prep.prevSrc || prevPreviewSrc;
 
       let input = prep.input;
@@ -8337,7 +8345,7 @@ Please share payment details and license key.`;
       }
 
       if (!fileAssigned) {
-        input = (await this.waitForCatalogImageInput(4000)) || input;
+        input = (await this.waitForCatalogImageInput(4000, { programmatic: true })) || input;
         if (input) {
           fileAssigned = this.assignFileToCatalogInput(input, file);
         }

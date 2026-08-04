@@ -707,12 +707,6 @@ const MeeshoAPI = {
     }
     input.dispatchEvent(new Event("change", { bubbles: true }));
 
-    const inputId = input.id;
-    if (inputId) {
-      document.querySelectorAll("label[for]").forEach((label) => {
-        if (label.htmlFor === inputId) label.click();
-      });
-    }
     return true;
   },
 
@@ -847,7 +841,7 @@ const MeeshoAPI = {
     try {
       const remoteBlob =
         options._cachedRemoteBlob ||
-        (await fetch(remoteUrl, { credentials: "include" }).then((r) => r.blob()));
+        (await this.loadPageImageBlobForCompare(remoteUrl));
       if (!remoteBlob?.size || !blob.size) return false;
 
       const sizeRatio = blob.size / remoteBlob.size;
@@ -864,28 +858,29 @@ const MeeshoAPI = {
     }
   },
 
-  prepareCatalogImageReuse: async function (originalBlob) {
-    const catalogImageUrl = this.detectCatalogImageUrl();
-    if (!catalogImageUrl || !originalBlob) {
-      return { catalogImageUrl: null, sourceMatchesPage: false, cachedRemoteBlob: null };
+  imageElementToBlob: async function (img) {
+    if (!img) return null;
+    try {
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (!w || !h) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      return await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.92);
+      });
+    } catch (e) {
+      return null;
     }
-
-    let cachedRemoteBlob = await this.loadPageImageBlobForCompare(catalogImageUrl);
-
-    const sourceMatchesPage = cachedRemoteBlob
-      ? await this.blobMatchesRemoteImage(originalBlob, catalogImageUrl, {
-          _cachedRemoteBlob: cachedRemoteBlob,
-        })
-      : false;
-
-    if (sourceMatchesPage) {
-      console.log("♻️ Source image matches Meesho page — will reuse page URL when unchanged");
-    }
-
-    return { catalogImageUrl, sourceMatchesPage, cachedRemoteBlob };
   },
 
-  /** Load Meesho CDN image for compare — prefer DOM preview, no noisy fetch errors. */
+  prepareCatalogImageReuse: async function () {
+    return { catalogImageUrl: null, sourceMatchesPage: false, cachedRemoteBlob: null };
+  },
+
+  /** Load Meesho CDN image for compare from DOM preview only — no network fetch. */
   loadPageImageBlobForCompare: async function (url) {
     if (!url) return null;
     const needle = (url || "").split("/").pop()?.split("?")[0] || "";
@@ -896,25 +891,8 @@ const MeeshoAPI = {
       if (img.closest("#opt-modal, #optimizer-app, .opt-modal")) continue;
       const src = img.currentSrc || img.src || "";
       if (!src || (needle && !src.includes(needle))) continue;
-      try {
-        const resp = await fetch(src, { credentials: "include" });
-        if (resp.ok) {
-          const blob = await resp.blob();
-          if (blob?.size) return blob;
-        }
-      } catch (e) {
-        /* cross-origin CDN — fall through */
-      }
-    }
-
-    try {
-      const resp = await fetch(url, { credentials: "include" });
-      if (resp.ok) {
-        const blob = await resp.blob();
-        if (blob?.size) return blob;
-      }
-    } catch (e) {
-      /* expected on some CDN URLs — reuse disabled silently */
+      const blob = await this.imageElementToBlob(img);
+      if (blob?.size) return blob;
     }
     return null;
   },
