@@ -9,7 +9,6 @@ const FirebaseLicense = {
 
   _configCache: null,
   _configCacheTime: 0,
-  _configPlansVersion: null,
   _cacheTtlMs: 5 * 60 * 1000,
 
   get firebase() {
@@ -219,12 +218,6 @@ const FirebaseLicense = {
     });
   },
 
-  clearConfigCache() {
-    this._configCache = null;
-    this._configCacheTime = 0;
-    this._configPlansVersion = null;
-  },
-
   normalizeKey(key) {
     return CONFIG.normalizeLicenseKey
       ? CONFIG.normalizeLicenseKey(key)
@@ -327,7 +320,6 @@ const FirebaseLicense = {
     const doc = await this.fetchDoc("config", "app");
     this._configCache = doc;
     this._configCacheTime = Date.now();
-    this._configPlansVersion = doc?.plans_version ?? doc?.plansVersion ?? null;
     return doc;
   },
 
@@ -359,13 +351,6 @@ const FirebaseLicense = {
         app?.whatsappMessage ||
         CONFIG.DEFAULT_WHATSAPP_MESSAGE,
     };
-  },
-
-  /** @deprecated use getPricingPlans */
-  normalizePlans(raw) {
-    const parsed = this.parsePlansRaw(raw);
-    if (!parsed?.length) return this.defaultPlans();
-    return this.sortPlans(parsed.filter((p) => p.active !== false));
   },
 
   async getDemoKeysMap() {

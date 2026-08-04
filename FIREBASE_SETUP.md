@@ -67,9 +67,7 @@ Create document **`app`** with fields:
 }
 ```
 
-You can change prices, add/remove plans, or update WhatsApp here — the extension popup and license modal fetch fresh plans on each open; background checks use a 5‑minute config cache.
-
-**Easiest way to manage:** Swagstree → **Superadmin** tab → **Shipping Optimizer Extension** panel (Config & Pricing / Demo Keys / Paid Licenses).
+You can change prices, add/remove plans, or update WhatsApp in Firebase Console or your admin panel — the extension popup and license modal fetch fresh plans on each open; background checks use a 5‑minute config cache.
 
 ### Flexible pricing plans
 
@@ -85,17 +83,15 @@ Plans live in the `plans` array on `shipping_optimizer_config/app`. The extensio
 | `save` | No | Badge text (e.g. `Save ₹8000`) |
 | `best` | No | Highlight as "BEST VALUE" (only one shown) |
 | `active` | No | `false` hides from extension; default `true` |
-| `order` | No | Sort order (lower first); admin UI sets from row position |
+| `order` | No | Sort order (lower first) |
 
-**Add a plan:** append a new object to `plans` (or use **+ Add Plan** in superadmin) and save. Set `plans_version` to a new timestamp so clients refresh immediately.
+**Add a plan:** append a new object to `plans` and save.
 
 **Update a plan:** change `price`, `name`, `days`, etc. Existing licenses keep their stored `planDays` from creation time.
 
 **Remove a plan:** either set `active: false` (recommended — hides from UI, keeps legacy `planId` lookups working) or delete the row from the array (only if no licenses use that `planId`).
 
 Legacy object-shaped `pricing` maps are still supported: `{ "yearly": { "price": 3099, ... } }` — prefer the `plans` array for new configs.
-
-`plans_version` (number/timestamp) is optional but recommended — the extension bypasses its 5‑minute cache when this value changes.
 
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 
@@ -180,7 +176,7 @@ service cloud.firestore {
 }
 ```
 
-Superadmin manages config, demo keys, and licenses from **Swagstree → Superadmin → Shipping Optimizer Extension**. The extension only patches `machineId` / `activatedAt` / `lastVerifiedAt` on paid licenses during customer activation.
+Your admin panel (or Firebase Console) manages config, demo keys, and licenses. The extension only patches `machineId` / `activatedAt` / `lastVerifiedAt` / `expiresAt` on paid licenses during customer activation.
 
 ## Fallback chain
 
