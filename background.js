@@ -2,6 +2,7 @@
 
 class BackgroundService {
   constructor() {
+    self.backgroundInstance = this;
     this.initializeListeners();
   }
 
@@ -39,39 +40,39 @@ class BackgroundService {
   async handleMessage(message, sender, sendResponse) {
     try {
       switch (message.type) {
-        case "VERIFY_LICENSE":
-        case "GET_LICENSE_STATUS":
-        case "FORCE_LICENSE_CHECK":
-          sendResponse({
-            success: true,
-            valid: true,
-            status: { key: "FREE", status: "active" },
-          });
+        case "VERIFY_LICENSE": {
+          const isValid = await this.verifyLicenseKey(message.licenseKey);
+          sendResponse({ success: true, valid: isValid });
           break;
-
+        }
+        case "GET_LICENSE_STATUS": {
+          const licenseStatus = await this.getLicenseStatus();
+          sendResponse({ success: true, status: licenseStatus });
+          break;
+        }
+        case "FORCE_LICENSE_CHECK":
+          await autoLicenseCheck();
+          sendResponse({ success: true });
+          break;
         case "PROCESS_IMAGE":
           sendResponse({
             success: true,
             data: await this.processImageVariations(message.imageData),
           });
           break;
-
         case "CHECK_SHIPPING":
           sendResponse({
             success: true,
             cost: await this.checkShippingCost(message.imageData),
           });
           break;
-
         case "SAVE_SETTINGS":
           await this.saveSettings(message.settings);
           sendResponse({ success: true });
           break;
-
         case "GET_SETTINGS":
           sendResponse({ success: true, settings: await this.getSettings() });
           break;
-
         default:
           sendResponse({ success: false, error: "Unknown message type" });
       }
@@ -81,9 +82,7 @@ class BackgroundService {
   }
 
   async processImageVariations(imageData) {
-    return [
-      { name: "Original", data: imageData, modifications: [] },
-    ];
+    return [{ name: "Original", data: imageData, modifications: [] }];
   }
 
   async checkShippingCost(imageData) {
@@ -100,6 +99,150 @@ class BackgroundService {
     const r = await chrome.storage.sync.get(["settings"]);
     return r.settings || {};
   }
+
+  async verifyLicenseKey(licenseKey) {
+    const trimmedKey = String(licenseKey || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "-");
+    const serverUrls = [
+      "https://darkviolet-ostrich-615182.hostingersite.com/api",
+    ];
+
+    const builtinDemoKeys = {
+      "MEESHO-DEMOFREE": { days: 30 },
+      "MEESHO-DEMOFREE-PROMO": { days: 30 },
+      "MEESHO-DEMO-PROMO": { days: 30 },
+      "MEESHO-DEMO999": { days: 7 },
+    };
+    let demoKeys = { ...builtinDemoKeys };
+
+    for (const serverUrl of serverUrls) {
+      try {
+        const res = await fetch(`${serverUrl}/demo-keys`);
+        if (res.ok) {
+          const data = await res.json();
+          if (
+            data.success &&
+            data.demoKeys &&
+            typeof data.demoKeys === "object" &&
+            !Array.isArray(data.demoKeys)
+          ) {
+            demoKeys = { ...builtinDemoKeys, ...data.demoKeys };
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    const demoKeyMatch = Object.keys(demoKeys).find(
+      (k) => k.toUpperCase() === trimmedKey,
+    );
+
+    if (demoKeyMatch) {
+      const demoInfo = demoKeys[demoKeyMatch];
+      await chrome.storage.sync.set({
+        licenseKey: trimmedKey,
+        licenseStatus: "active",
+        licenseInfo: {
+          key: trimmedKey,
+          planType: "demo",
+          expiresAt: new Date(
+            Date.now() + demoInfo.days * 86400000,
+          ).toISOString(),
+        },
+        lastVerified: Date.now(),
+      });
+      return true;
+    }
+
+    try {
+      const machineId = await this.getMachineId();
+
+      for (const serverUrl of serverUrls) {
+        try {
+          const response = await fetch(`${serverUrl}/verify-license`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ licenseKey: trimmedKey, machineId }),
+          });
+
+          if (!response.ok) continue;
+
+          const result = await response.json();
+
+          if (result.valid) {
+            await chrome.storage.sync.set({
+              licenseKey: trimmedKey,
+              licenseStatus: "active",
+              licenseInfo: result.license,
+              lastVerified: Date.now(),
+            });
+            return true;
+          }
+          return false;
+        } catch (e) {}
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
+  async getMachineId() {
+    const r = await chrome.storage.local.get(["machineId"]);
+    if (!r.machineId) {
+      const machineId = "machine-" + Math.random().toString(36).slice(2);
+      await chrome.storage.local.set({ machineId });
+      return machineId;
+    }
+    return r.machineId;
+  }
+
+  async getLicenseStatus() {
+    const r = await chrome.storage.sync.get(["licenseKey", "licenseStatus"]);
+    return {
+      key: r.licenseKey,
+      status: r.licenseStatus || "inactive",
+    };
+  }
 }
+
+function safeNotify(msg) {
+  try {
+    chrome.runtime.sendMessage(msg, () => {
+      if (chrome.runtime.lastError) {
+        /* no listener */
+      }
+    });
+  } catch (e) {}
+}
+
+async function autoLicenseCheck() {
+  try {
+    const data = await chrome.storage.sync.get(["licenseKey"]);
+    if (!data.licenseKey) return;
+
+    const bg = self.backgroundInstance;
+    if (!bg) return;
+
+    const valid = await bg.verifyLicenseKey(data.licenseKey);
+
+    if (!valid) {
+      await chrome.storage.sync.set({
+        licenseStatus: "inactive",
+        licenseInfo: null,
+      });
+      console.log("License invalid. Extension locked.");
+    }
+
+    safeNotify({ type: "LICENSE_UPDATED", valid });
+  } catch (e) {
+    console.error("License auto-check failed:", e);
+  }
+}
+
+setTimeout(autoLicenseCheck, 3000);
+setInterval(autoLicenseCheck, 5 * 60 * 1000);
 
 new BackgroundService();

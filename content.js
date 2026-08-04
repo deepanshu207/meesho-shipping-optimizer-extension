@@ -404,15 +404,12 @@ class MeeshoShippingOptimizer {
     if (!this.isMeeshoPage() || !this.isCatalogPage()) return;
 
     console.log("Meesho catalog page detected");
-    this.isLicensed = true;
     if (typeof MeeshoAPI !== "undefined" && MeeshoAPI && typeof MeeshoAPI.init === "function") {
       MeeshoAPI.init();
     }
 
-    // Always provide an entry point on catalog pages, even if image input isn't present yet.
     this.addFloatingOptimizerButton();
 
-    // Preload full category tree so picker is ready before modal opens
     void this.ensureFullCategories().then((list) => {
       if (list?.length) {
         this.allCategories = list;
@@ -421,14 +418,15 @@ class MeeshoShippingOptimizer {
       }
     });
 
-    // Wait for Meesho catalog file input (id varies by panel step / version)
-    this.waitForMeeshoImageInput(() => {
-      console.log("Meesho image input found, adding button");
-      this.addOptimizerButton();
-      this.detectShipping();
-      if (!document.getElementById("opt-modal")) {
-        this.scheduleMeeshoPageSync();
-      }
+    void this.checkLicense().then(() => {
+      this.waitForMeeshoImageInput(() => {
+        console.log("Meesho image input found, adding button");
+        this.addOptimizerButton();
+        this.detectShipping();
+        if (!document.getElementById("opt-modal")) {
+          this.scheduleMeeshoPageSync();
+        }
+      });
     });
   }
 
@@ -613,8 +611,115 @@ class MeeshoShippingOptimizer {
   }
 
   async checkLicense() {
-    this.isLicensed = true;
-    return true;
+    if (window.WEB_OPTIMIZER_MODE) {
+      this.isLicensed = true;
+      return true;
+    }
+
+    try {
+      const result = await chrome.storage.sync.get([
+        "licenseKey",
+        "licenseStatus",
+        "licenseInfo",
+      ]);
+
+      if (result.licenseStatus === "active" && result.licenseKey) {
+        if (result.licenseInfo?.expiresAt) {
+          const expiresAt = new Date(result.licenseInfo.expiresAt);
+          if (new Date() > expiresAt) {
+            this.isLicensed = false;
+            if (typeof LicenseManager !== "undefined") {
+              await LicenseManager.clearLicense("expired");
+            }
+            return false;
+          }
+        }
+        this.isLicensed = true;
+        return true;
+      }
+
+      if (typeof LicenseManager !== "undefined") {
+        this.isLicensed = await LicenseManager.checkLicense();
+        return this.isLicensed;
+      }
+
+      this.isLicensed = false;
+      return false;
+    } catch (error) {
+      console.error("License check error:", error);
+      this.isLicensed = false;
+      return false;
+    }
+  }
+
+  requiresLicense() {
+    return !window.WEB_OPTIMIZER_MODE;
+  }
+
+  async ensureLicensed(actionLabel) {
+    if (!this.requiresLicense()) return true;
+    await this.checkLicense();
+    if (this.isLicensed) return true;
+    OptimizerUtils.showNotification(
+      actionLabel
+        ? `${actionLabel} requires an active license`
+        : "License required — activate in extension popup",
+      "error",
+    );
+    this.openModal();
+    return false;
+  }
+
+  isClickOnVisibleImage(img, event) {
+    if (!img || !event) return false;
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if (!nw || !nh) return true;
+
+    const boxRatio = rect.width / rect.height;
+    const imgRatio = nw / nh;
+    let paintedW;
+    let paintedH;
+    let offsetX;
+    let offsetY;
+
+    if (imgRatio > boxRatio) {
+      paintedW = rect.width;
+      paintedH = rect.width / imgRatio;
+      offsetX = 0;
+      offsetY = (rect.height - paintedH) / 2;
+    } else {
+      paintedH = rect.height;
+      paintedW = rect.height * imgRatio;
+      offsetY = 0;
+      offsetX = (rect.width - paintedW) / 2;
+    }
+
+    const left = rect.left + offsetX;
+    const top = rect.top + offsetY;
+    const right = left + paintedW;
+    const bottom = top + paintedH;
+    const x = event.clientX;
+    const y = event.clientY;
+    return x >= left && x <= right && y >= top && y <= bottom;
+  }
+
+  handleResultImagePreviewClick(img, event) {
+    if (!this.isClickOnVisibleImage(img, event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const variantId = img.dataset.variantId;
+    if (!variantId) return;
+    this.selectResultVariant(variantId);
+    const row = this.findResultRow(variantId);
+    if (this.canEditResultRow(row)) {
+      void this.openVariantEditor(variantId);
+    } else if (row) {
+      this.openVariantFullPreview(row);
+    }
   }
 
   addOptimizerButton() {
@@ -652,7 +757,11 @@ class MeeshoShippingOptimizer {
                 }
                 <div>
                     <div style="font-weight:800;font-size:15px;color:#3d2914;">Shipping Optimizer</div>
-                    <div style="font-size:11px;color:#3d2914;opacity:0.85;">Generate · Preview · Apply</div>
+                    <div style="font-size:11px;color:#3d2914;opacity:0.85;">${
+                      this.isLicensed
+                        ? "Generate · Preview · Apply"
+                        : "Activate license to start"
+                    }</div>
                 </div>
             </div>
         `;
@@ -824,7 +933,14 @@ class MeeshoShippingOptimizer {
       }
     }
 
-    this.isLicensed = true;
+    if (!window.WEB_OPTIMIZER_MODE) {
+      try {
+        await chrome.runtime.sendMessage({ type: "FORCE_LICENSE_CHECK" });
+      } catch (e) {
+        console.warn("License check message failed:", e);
+      }
+    }
+    await this.checkLicense();
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.init();
@@ -858,7 +974,7 @@ class MeeshoShippingOptimizer {
     content.style.cssText = isNarrow
       ? "width:100%;height:100%;max-width:100%;max-height:100%;overflow-y:auto;"
       : "max-width:480px;width:95%;max-height:90vh;overflow-y:auto;";
-    content.innerHTML = OptimizerUI.createModalHTML();
+    content.innerHTML = OptimizerUI.createModalHTML(this.isLicensed);
 
     this.modal.appendChild(content);
     document.documentElement.appendChild(this.modal);
@@ -868,8 +984,12 @@ class MeeshoShippingOptimizer {
     this._categoryAcPinned = false;
     this.inertMeeshoPageBehindModal();
 
-    this.setupMainEvents();
-    this.attachCategoryAutocompleteModalHandlers();
+    if (this.isLicensed) {
+      this.setupMainEvents();
+      this.attachCategoryAutocompleteModalHandlers();
+    } else {
+      this.setupLicenseEvents();
+    }
 
     this.modal.onclick = (e) => {
       if (e.target === this.modal) this.closeModal();
@@ -971,7 +1091,7 @@ class MeeshoShippingOptimizer {
 
         try {
           const settings = await LicenseManager.getWhatsAppSettings();
-          const message = `Hi! I want to purchase Meesho Shipping Cost AI Optimizer.
+          const message = `Hi! I want to purchase ${CONFIG?.EXTENSION_NAME || "Shipping Optimizer"}.
 
 📦 *Plan Selected:* ${duration}
 💰 *Price:* ₹${price}
@@ -2842,6 +2962,8 @@ Please share payment details and license key.`;
       OptimizerUtils.showNotification("Choose an image first", "error");
       return;
     }
+
+    if (!(await this.ensureLicensed("Generate"))) return;
 
     if (this.isProcessing) {
       this.requestStopGeneration();
@@ -6971,12 +7093,13 @@ Please share payment details and license key.`;
         }
         #variant-edit-panel #variant-edit-preview-wrap {
           position:sticky;top:0;z-index:2;margin:0 0 10px;padding:4px 0 10px;
-          background:#fff;cursor:pointer;
+          background:#fff;
         }
         #variant-edit-panel #variant-edit-preview {
-          width:100%;max-height:180px;height:auto;object-fit:contain;
+          width:auto;max-width:100%;max-height:180px;height:auto;margin:0 auto;
+          object-fit:contain;
           border-radius:8px;background:#f9fafb;display:block;
-          box-shadow:0 2px 8px rgba(0,0,0,0.08);
+          box-shadow:0 2px 8px rgba(0,0,0,0.08);cursor:pointer;
         }
         #variant-edit-panel #variant-edit-preview-hint {
           font-size:10px;color:#6b7280;text-align:center;margin:4px 0 0;pointer-events:none;
@@ -7074,13 +7197,20 @@ Please share payment details and license key.`;
     };
 
     const previewWrap = panel.querySelector("#variant-edit-preview-wrap");
-    if (previewWrap) {
-      previewWrap.onclick = (e) => {
+    const previewImg = panel.querySelector("#variant-edit-preview");
+    if (previewImg) {
+      previewImg.onclick = (e) => {
         e.stopPropagation();
+        if (!this.isClickOnVisibleImage(previewImg, e)) return;
         const id = this._editingVariantId;
         if (!id) return;
         const row = this.findResultRow(id);
         if (row) this.openVariantFullPreview(row);
+      };
+    }
+    if (previewWrap) {
+      previewWrap.onclick = (e) => {
+        if (e.target === previewWrap) e.stopPropagation();
       };
     }
 
@@ -7367,19 +7497,7 @@ Please share payment details and license key.`;
 
     document.querySelectorAll(".result-img").forEach((img) => {
       img.style.cursor = "pointer";
-      img.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const variantId = img.dataset.variantId;
-        if (!variantId) return;
-        this.selectResultVariant(variantId);
-        const row = this.findResultRow(variantId);
-        if (this.canEditResultRow(row)) {
-          void this.openVariantEditor(variantId);
-        } else if (row) {
-          this.openVariantFullPreview(row);
-        }
-      };
+      img.onclick = (e) => this.handleResultImagePreviewClick(img, e);
     });
 
     const resultsArea = document.getElementById("results-area");
@@ -7388,17 +7506,7 @@ Please share payment details and license key.`;
       resultsArea.addEventListener("click", (e) => {
         const img = e.target.closest?.(".result-img[data-variant-id]");
         if (!img || !resultsArea.contains(img)) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const variantId = img.dataset.variantId;
-        if (!variantId) return;
-        this.selectResultVariant(variantId);
-        const row = this.findResultRow(variantId);
-        if (this.canEditResultRow(row)) {
-          void this.openVariantEditor(variantId);
-        } else if (row) {
-          this.openVariantFullPreview(row);
-        }
+        this.handleResultImagePreviewClick(img, e);
       });
     }
 
@@ -7610,6 +7718,8 @@ Please share payment details and license key.`;
       OptimizerUtils.showNotification("No variant selected to apply", "error");
       return;
     }
+
+    if (!(await this.ensureLicensed("Apply"))) return;
 
     try {
       const ctx =

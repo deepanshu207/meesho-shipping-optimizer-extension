@@ -49,7 +49,7 @@ const OptimizerUI = {
   },
 
   // Create modal HTML
-  createModalHTML: function () {
+  createModalHTML: function (isLicensed) {
     const styles = `
             <style>
                 .opt-modal, .opt-modal * {
@@ -308,8 +308,10 @@ const OptimizerUI = {
                     box-sizing: border-box;
                 }
                 .result-card-img-wrap .result-img {
-                    width: 100%;
-                    height: 100%;
+                    max-width: 100%;
+                    max-height: 100%;
+                    width: auto;
+                    height: auto;
                     object-fit: contain;
                     display: block;
                     cursor: pointer;
@@ -566,6 +568,10 @@ const OptimizerUI = {
       return styles + this.getWebHTML();
     }
 
+    if (!isLicensed) {
+      return styles + this.getLicenseHTML();
+    }
+
     return styles + this.getMainHTML();
   },
 
@@ -666,7 +672,7 @@ const OptimizerUI = {
                     </div>
                     
                     <p style="margin-top:8px;font-size:10px;color:#0f0f10;text-align:center;">
-                        Click on any plan to buy via WhatsApp • Instant activation
+                        Click on any plan to buy via WhatsApp · Demo: <strong>MEESHO-DEMOFREE</strong>
                     </p>
                 </div>
             </div>
