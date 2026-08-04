@@ -649,6 +649,7 @@ class MeeshoShippingOptimizer {
   }
 
   async waitForMeeshoFrontImageReady(prevSrc, url, maxMs = 20000) {
+    const urlNeedle = (url || "").split("/").pop()?.split("?")[0] || "";
     const start = Date.now();
     while (Date.now() - start < maxMs) {
       const section = this.findMeeshoFrontImageSection();
@@ -657,9 +658,15 @@ class MeeshoShippingOptimizer {
         continue;
       }
       const currentSrc = this.getMeeshoFrontPreviewSrc(section);
-      if (url && this.verifyMeeshoFrontImageApplied(url)) return true;
-      if (currentSrc && currentSrc !== prevSrc) return true;
-      if (!prevSrc && currentSrc.includes("meeshosupplyassets")) return true;
+
+      if (urlNeedle) {
+        if (this.verifyMeeshoFrontImageApplied(url)) return true;
+      } else if (currentSrc && prevSrc && currentSrc !== prevSrc) {
+        return true;
+      } else if (!prevSrc && currentSrc.includes("meeshosupplyassets")) {
+        return true;
+      }
+
       await new Promise((r) => setTimeout(r, 400));
     }
     return false;
@@ -675,12 +682,15 @@ class MeeshoShippingOptimizer {
     for (const img of section.querySelectorAll("img[src]")) {
       if (this.isExtensionUiNode(img)) continue;
       const src = img.src || "";
-      if (needle && src.includes(needle)) return true;
+      if (needle) {
+        if (src.includes(needle)) return true;
+        continue;
+      }
       if (
         src.includes("meeshosupplyassets.com") ||
         src.includes("images.meesho")
       ) {
-        if (!needle) return true;
+        return true;
       }
     }
     return false;
@@ -1120,7 +1130,71 @@ class MeeshoShippingOptimizer {
     }
   }
 
-  detectShipping() {
+  async prepareMeeshoFrontImageInput() {
+    this.restoreMeeshoPageInert();
+    const prep = this.prepareMeeshoFrontImageInputSync();
+    if (prep.hadImage) {
+      await new Promise((r) => setTimeout(r, 500));
+    } else {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    let input = prep.input;
+    if (!input || !document.contains(input)) {
+      const uploadBtn = this.findMeeshoFrontUploadButton(prep.section);
+      if (uploadBtn) {
+        try {
+          uploadBtn.click();
+        } catch (e) {}
+        await new Promise((r) => setTimeout(r, 400));
+        input =
+          this.findFileInputNearUploadButton(uploadBtn) ||
+          this.findCatalogImageInput();
+      }
+    }
+    if (!input) {
+      input = await this.waitForCatalogImageInput(5000);
+    }
+    prep.input = input;
+    if (input) this._catalogImageInput = input;
+    return prep;
+  }
+
+  dismissModalForApply() {
+    this.restoreMeeshoPageInert();
+    this.detachCategoryAutocompleteModalHandlers();
+    this.hideCategoryAutocomplete({ force: true });
+    if (this.modal) {
+      this.modal.remove();
+      this.modal = null;
+    }
+    this.setOptimizerFabVisible(true);
+  }
+
+  scrollToFrontImageSection() {
+    const section = this.findMeeshoFrontImageSection();
+    const target =
+      section ||
+      document.querySelector('[data-testid="removeImage"]')?.closest(".MuiBox-root") ||
+      this.findMeeshoFrontUploadButton();
+    try {
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    } catch (e) {}
+  }
+
+  invalidateShippingCache() {
+    this.currentShippingCost = null;
+    this.lastDetectedCost = null;
+    if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.cache) {
+      MeeshoAPI.cache.panelShipping = null;
+    }
+  }
+
+  detectShipping(options = {}) {
+    if (options.fresh) {
+      this.invalidateShippingCache();
+    }
+
     if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.syncCatalogPricing) {
       MeeshoAPI.syncCatalogPricing();
       const catalog = MeeshoAPI.detectCatalogPricing?.();
@@ -3872,6 +3946,7 @@ Please share payment details and license key.`;
 
     const buttons = document.querySelectorAll('button, [role="button"]');
     for (const btn of buttons) {
+      if (this.isExtensionUiNode?.(btn)) continue;
       const text = (btn.textContent || "").toLowerCase().trim();
       if (
         text.includes("calculate") ||
@@ -8028,6 +8103,58 @@ Please share payment details and license key.`;
     return null;
   }
 
+  async buildApplyFile(result) {
+    const blob = await this.resolveResultBlob(result);
+    if (!blob?.size) return null;
+    return new File([blob], "optimized-" + Date.now() + ".jpg", {
+      type: blob.type || "image/jpeg",
+    });
+  }
+
+  async uploadApplyImageFresh(file) {
+    if (!file?.size) return "";
+    if (typeof MeeshoAPI === "undefined" || !MeeshoAPI.uploadImage) {
+      return "";
+    }
+    MeeshoAPI.detectAllValues?.();
+    if (MeeshoAPI.cache) {
+      MeeshoAPI.cache.catalogImageUrl = null;
+    }
+    const url = await MeeshoAPI.uploadImage(file, file.name);
+    return this.normalizeMeeshoImageUrl(url);
+  }
+
+  async waitForShippingUpdate(baselineShipping, maxAttempts = 20) {
+    this.invalidateShippingCache();
+    let lastSeen = null;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 600));
+      await this.triggerPriceRefresh();
+      this.invalidateShippingCache();
+      const current = this.detectShipping({ fresh: true });
+
+      if (current && current > 0) {
+        lastSeen = current;
+        if (!baselineShipping || current !== baselineShipping) {
+          return current;
+        }
+      }
+    }
+
+    return lastSeen;
+  }
+
+  async refreshShippingAfterApply(baselineShipping) {
+    this.invalidateShippingCache();
+    await new Promise((r) => setTimeout(r, 800));
+    await this.triggerPriceRefresh();
+    await new Promise((r) => setTimeout(r, 1200));
+    await this.triggerPriceRefresh();
+    await new Promise((r) => setTimeout(r, 1500));
+    return this.waitForShippingUpdate(baselineShipping, 18);
+  }
+
   async applyImage(result) {
     if (!result) {
       OptimizerUtils.showNotification("No variant selected to apply", "error");
@@ -8041,128 +8168,128 @@ Please share payment details and license key.`;
       }
 
       OptimizerUtils.showNotification("Applying image...", "info");
-      if (typeof MeeshoAPI !== "undefined") {
-        MeeshoAPI.detectAllValues?.();
-      }
 
-      // Modal sets Meesho page inert — restore so Upload/remove clicks work
-      this.restoreMeeshoPageInert();
+      const baselineShipping = this.detectShipping({ fresh: true });
+      const prevPreviewSrc = this.getMeeshoFrontPreviewSrc();
 
-      // Meesho MUI Front Image: Upload button + file input (sync, before await)
-      const prep = this.prepareMeeshoFrontImageInputSync();
-      let file = null;
-      if (result.blob instanceof Blob && result.blob.size > 0) {
-        file = new File([result.blob], "optimized-" + Date.now() + ".jpg", {
-          type: result.blob.type || "image/jpeg",
-        });
-      }
+      this.dismissModalForApply();
 
-      let fileAssigned = false;
-      if (prep.input && file) {
-        fileAssigned = this.assignFileToCatalogInput(prep.input, file);
-      }
-
-      const blob = file ? null : await this.resolveApplyBlob(result);
-      if (!file && blob) {
-        file = new File([blob], "optimized-" + Date.now() + ".jpg", {
-          type: blob.type || "image/jpeg",
-        });
-      }
+      const file = await this.buildApplyFile(result);
       if (!file) {
         OptimizerUtils.showNotification("Could not load variant image", "error");
         return;
       }
 
-      if (!fileAssigned && prep.input) {
+      const prep = await this.prepareMeeshoFrontImageInput();
+      const prevSrc = prep.prevSrc || prevPreviewSrc;
+
+      let fileAssigned = false;
+      if (prep.input) {
         fileAssigned = this.assignFileToCatalogInput(prep.input, file);
       }
 
-      let meeshoUrl = this.normalizeMeeshoImageUrl(result.uploadedUrl);
-      if (!meeshoUrl && typeof MeeshoAPI !== "undefined") {
-        meeshoUrl = this.normalizeMeeshoImageUrl(
-          await MeeshoAPI.uploadImage(file, file.name),
-        );
-      }
-
-      this.closeModal();
-      await new Promise((r) => setTimeout(r, 200));
-
-      const input =
-        prep.input || (await this.waitForCatalogImageInput(4000));
-
-      let applied = false;
-      if (fileAssigned) {
-        applied = await this.waitForMeeshoFrontImageReady(
-          prep.prevSrc,
-          meeshoUrl,
-        );
-      }
-
-      if (!applied && meeshoUrl) {
-        applied = await this.syncUploadedImageToCatalogForm(
-          meeshoUrl,
-          file,
-          input,
-        );
-      }
-
-      if (!applied && input && !fileAssigned) {
-        applied = this.assignFileToCatalogInput(input, file);
-        if (applied) {
-          applied = await this.waitForMeeshoFrontImageReady(
-            prep.prevSrc,
-            meeshoUrl,
-          );
+      if (!fileAssigned) {
+        const retryPrep = await this.prepareMeeshoFrontImageInput();
+        if (retryPrep.input) {
+          fileAssigned = this.assignFileToCatalogInput(retryPrep.input, file);
+          prep.input = retryPrep.input;
         }
       }
 
-      if (meeshoUrl) {
-        applied =
-          this.verifyMeeshoFrontImageApplied(meeshoUrl) ||
-          this.verifyCatalogImageApplied(meeshoUrl) ||
-          applied;
-      }
-
-      if (!applied) {
+      const meeshoUrl = await this.uploadApplyImageFresh(file);
+      if (!meeshoUrl) {
         OptimizerUtils.showNotification(
-          "Could not update Meesho image — use Save on the card, then upload manually on Meesho",
+          "Image upload failed — check Meesho login and try again",
           "error",
         );
         return;
       }
 
-      await new Promise((r) => setTimeout(r, 2500));
+      result.uploadedUrl = meeshoUrl;
+      if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.cache) {
+        MeeshoAPI.cache.catalogImageUrl = meeshoUrl;
+      }
 
-      await this.triggerPriceRefresh();
-      await new Promise((r) => setTimeout(r, 1500));
-      await this.triggerPriceRefresh();
-      await new Promise((r) => setTimeout(r, 2000));
+      const input =
+        prep.input || (await this.waitForCatalogImageInput(5000));
 
-      const finalShipping = await this.waitForFinalShipping();
-      const savings = result.savings > 0 ? result.savings : 0;
+      let applied = false;
+
+      if (fileAssigned) {
+        applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl);
+      }
+
+      if (!applied) {
+        applied = await this.syncUploadedImageToCatalogForm(
+          meeshoUrl,
+          file,
+          input,
+        );
+        if (applied) {
+          applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl);
+        }
+      }
+
+      if (!applied && input) {
+        fileAssigned = this.assignFileToCatalogInput(input, file);
+        if (fileAssigned) {
+          applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl);
+        }
+      }
+
+      applied =
+        this.verifyMeeshoFrontImageApplied(meeshoUrl) ||
+        this.verifyCatalogImageApplied(meeshoUrl) ||
+        applied;
+
+      if (!applied) {
+        OptimizerUtils.showNotification(
+          "Could not update Meesho image — use Save on the card, then upload manually",
+          "error",
+        );
+        return;
+      }
+
+      this.scrollToFrontImageSection();
+      OptimizerUtils.showNotification("Image applied — refreshing shipping…", "info");
+
+      const finalShipping = await this.refreshShippingAfterApply(baselineShipping);
+      const savings =
+        baselineShipping && finalShipping
+          ? Math.max(0, baselineShipping - finalShipping)
+          : result.savings > 0
+          ? result.savings
+          : 0;
       await this.updateStats(savings);
 
       const testedPrice = result.shippingCost;
       if (finalShipping) {
-        if (finalShipping === testedPrice) {
+        if (testedPrice && finalShipping === testedPrice) {
           OptimizerUtils.showNotification(
-            `✅ Shipping: ₹${finalShipping}`,
+            `✅ Applied · Shipping: ₹${finalShipping}`,
             "success",
           );
-        } else if (finalShipping < testedPrice) {
+        } else if (testedPrice && finalShipping < testedPrice) {
           OptimizerUtils.showNotification(
-            `🎉 Shipping: ₹${finalShipping} (Better than expected!)`,
+            `🎉 Applied · Shipping: ₹${finalShipping} (better than ₹${testedPrice})`,
+            "success",
+          );
+        } else if (baselineShipping && finalShipping !== baselineShipping) {
+          OptimizerUtils.showNotification(
+            `✅ Applied · Shipping updated: ₹${baselineShipping} → ₹${finalShipping}`,
             "success",
           );
         } else {
           OptimizerUtils.showNotification(
-            `✅ Shipping: ₹${finalShipping} (API showed ₹${testedPrice})`,
-            "info",
+            `✅ Applied · Shipping: ₹${finalShipping}`,
+            "success",
           );
         }
       } else {
         OptimizerUtils.showNotification(
-          `✅ Applied! (API: ₹${testedPrice})`,
+          testedPrice
+            ? `✅ Image applied (variant was ₹${testedPrice} in optimizer)`
+            : "✅ Image applied to Meesho",
           "success",
         );
       }
@@ -8173,18 +8300,8 @@ Please share payment details and license key.`;
   }
 
   // Wait and get final shipping from page
-  async waitForFinalShipping() {
-    for (let attempt = 0; attempt < 5; attempt++) {
-      await new Promise((r) => setTimeout(r, 500));
-
-      // Try to find shipping on page
-      const shipping = this.detectShipping();
-      if (shipping && shipping > 0) {
-        console.log("📦 Final shipping from page:", shipping);
-        return shipping;
-      }
-    }
-    return null;
+  async waitForFinalShipping(baselineShipping) {
+    return this.waitForShippingUpdate(baselineShipping, 10);
   }
 
   // Update stats in storage
