@@ -1119,7 +1119,7 @@ Please share payment details and license key.`;
         } catch (error) {
           const message = `Hi! I want to purchase Meesho Shipping Cost AI Optimizer - ${duration} plan (₹${price})`;
           window.open(
-            `https://wa.me/918905811996?text=${encodeURIComponent(message)}`,
+            `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent(message)}`,
             "_blank"
           );
         }

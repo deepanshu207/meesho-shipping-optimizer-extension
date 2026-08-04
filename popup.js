@@ -1,6 +1,7 @@
-// Popup — license, WhatsApp plans, open optimizer on Meesho
+// Popup — license, WhatsApp, Kiwi/mobile-safe actions
 
 document.addEventListener("DOMContentLoaded", async () => {
+  const PA = window.PopupActions;
   const statusBadge = document.getElementById("status-badge");
   const licenseInfo = document.getElementById("license-info");
   const activationSection = document.getElementById("activation-section");
@@ -10,6 +11,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const openMeeshoBtn = document.getElementById("open-meesho");
   const messageEl = document.getElementById("popup-message");
   const versionBadge = document.getElementById("version-badge");
+  const statusLine = document.getElementById("popup-status-line");
 
   if (versionBadge && typeof CONFIG !== "undefined") {
     versionBadge.textContent = "v" + (CONFIG.VERSION || "1.0.0");
@@ -20,14 +22,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       ? CONFIG.getServerUrls()
       : [];
 
-  const productName = "Meesho Shipping Optimizer";
+  const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
+
+  function setStatus(text) {
+    if (statusLine) statusLine.textContent = text || "";
+  }
 
   function showMessage(text, type) {
     if (!messageEl) return;
     messageEl.textContent = text;
     messageEl.className = "message " + (type || "");
-    if (!text) messageEl.style.display = "none";
-    else messageEl.style.display = "block";
+    messageEl.style.display = text ? "block" : "none";
   }
 
   function maskKey(key) {
@@ -220,180 +225,123 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  async function fetchWhatsAppSettings() {
-    for (const url of serverUrls) {
-      try {
-        const response = await fetch(`${url}/settings?t=${Date.now()}`, {
-          method: "GET",
-          headers: { "Cache-Control": "no-cache" },
-        });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.settings) {
-            return {
-              number:
-                result.settings.whatsapp_number || CONFIG.DEFAULT_WHATSAPP,
-              message:
-                result.settings.whatsapp_message ||
-                CONFIG.DEFAULT_WHATSAPP_MESSAGE,
-            };
-          }
-        }
-      } catch (e) {}
-    }
-
-    return {
-      number: CONFIG.DEFAULT_WHATSAPP,
-      message: CONFIG.DEFAULT_WHATSAPP_MESSAGE,
-    };
+  function getWhatsAppNumber() {
+    return PA.getWhatsAppNumber();
   }
 
-  function openWhatsApp(number, message) {
-    chrome.tabs.create({
-      url: `https://wa.me/${number}?text=${encodeURIComponent(message)}`,
-    });
+  function getWhatsAppMessage() {
+    return CONFIG.DEFAULT_WHATSAPP_MESSAGE;
   }
 
-  async function openOptimizerOnTab(tabId) {
+  function openWhatsApp(message) {
+    PA.openWhatsApp(getWhatsAppNumber(), message);
+  }
+
+  function scrollToActivation() {
+    activationSection?.classList.remove("hidden");
+    activationSection?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    licenseInput?.focus();
+  }
+
+  async function handleOpenOptimizer() {
+    setStatus("Working…");
+    showMessage("", "");
     try {
-      await chrome.tabs.sendMessage(tabId, { action: "openOptimizer" });
-    } catch {
-      await chrome.scripting.insertCSS({
-        target: { tabId },
-        files: ["styles.css"],
-      });
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: [
-          "config.js",
-          "js/utils.js",
-          "js/license.js",
-          "js/meeshoCategories.js",
-          "js/meeshoApi.js",
-          "js/imageGenerator.js",
-          "js/ui.js",
-          "content.js",
-        ],
-      });
-      await chrome.tabs.sendMessage(tabId, { action: "openOptimizer" });
+      await PA.openOptimizerOnMeesho(setStatus);
+    } catch (e) {
+      console.error(e);
+      showMessage("Could not open optimizer. Open Meesho catalog first.", "error");
+      setStatus("");
     }
   }
 
-  if (activateBtn && licenseInput) {
-    activateBtn.addEventListener("click", async () => {
-      const key = licenseInput.value.trim();
-      if (!key) {
-        showMessage("Please enter a license key", "error");
-        return;
-      }
-      if (key.length < 10) {
-        showMessage("License key is too short", "error");
-        return;
-      }
+  async function handleOpenMeesho() {
+    setStatus("Opening Meesho…");
+    await PA.openUrl(PA.MEESHO_CATALOG_URL);
+    setStatus("");
+    try {
+      window.close();
+    } catch (e) {}
+  }
 
-      activateBtn.textContent = "Verifying…";
-      activateBtn.disabled = true;
-      showMessage("", "");
+  PA.bindTap(activateBtn, async () => {
+    const key = licenseInput?.value?.trim();
+    if (!key) {
+      showMessage("Please enter a license key", "error");
+      return;
+    }
+    if (key.length < 10) {
+      showMessage("License key is too short", "error");
+      return;
+    }
 
-      try {
-        const result = await verifyLicenseWithServer(key);
-        if (result.success) {
-          showMessage("License activated successfully!", "success");
-          await loadLicenseStatus();
-        } else {
-          showMessage(result.message || "License verification failed", "error");
-        }
-      } catch (error) {
-        showMessage("Error: " + error.message, "error");
-      } finally {
-        activateBtn.textContent = "Activate License";
-        activateBtn.disabled = false;
+    activateBtn.textContent = "Verifying…";
+    activateBtn.disabled = true;
+    showMessage("", "");
+
+    try {
+      const result = await verifyLicenseWithServer(key);
+      if (result.success) {
+        showMessage("License activated successfully!", "success");
+        await loadLicenseStatus();
+      } else {
+        showMessage(result.message || "License verification failed", "error");
       }
-    });
+    } catch (error) {
+      showMessage("Error: " + error.message, "error");
+    } finally {
+      activateBtn.textContent = "Activate License";
+      activateBtn.disabled = false;
+    }
+  });
 
+  if (licenseInput) {
     licenseInput.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") activateBtn.click();
+      if (e.key === "Enter") activateBtn?.click();
     });
   }
 
   document.querySelectorAll(".plan-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    PA.bindTap(btn, () => {
       const duration = btn.dataset.duration;
       const price = btn.dataset.price;
-      const settings = await fetchWhatsAppSettings();
       const message = `Hi! I want to purchase ${productName}.
 
 📦 *Plan Selected:* ${duration}
 💰 *Price:* ₹${price}
 
 Please share payment details and license key.`;
-      openWhatsApp(settings.number, message);
+      openWhatsApp(message);
     });
   });
 
-  const whatsappBtn = document.getElementById("whatsapp-btn");
-  if (whatsappBtn) {
-    whatsappBtn.addEventListener("click", async () => {
-      const settings = await fetchWhatsAppSettings();
-      openWhatsApp(settings.number, settings.message);
-    });
-  }
+  PA.bindTap(document.getElementById("whatsapp-btn"), () => {
+    openWhatsApp(getWhatsAppMessage());
+  });
 
-  const supportWhatsappBtn = document.getElementById("support-whatsapp");
-  if (supportWhatsappBtn) {
-    supportWhatsappBtn.addEventListener("click", async () => {
-      const settings = await fetchWhatsAppSettings();
-      openWhatsApp(
-        settings.number,
-        `Hi! I need support for ${productName}.`,
-      );
-    });
-  }
+  PA.bindTap(document.getElementById("support-whatsapp"), () => {
+    openWhatsApp(`Hi! I need support for ${productName}.`);
+  });
 
-  if (openCatalogBtn) {
-    openCatalogBtn.addEventListener("click", async () => {
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
+  PA.bindTap(openCatalogBtn, handleOpenOptimizer);
+  PA.bindTap(openMeeshoBtn, handleOpenMeesho);
 
-      if (tab?.id && (tab.url || "").includes("supplier.meesho.com")) {
-        await openOptimizerOnTab(tab.id);
-        window.close();
-        return;
+  document.querySelectorAll("[data-action]").forEach((el) => {
+    PA.bindTap(el, () => {
+      const action = el.dataset.action;
+      if (action === "optimizer") handleOpenOptimizer();
+      else if (action === "meesho") handleOpenMeesho();
+      else if (action === "license") scrollToActivation();
+      else if (action === "whatsapp") {
+        openWhatsApp(`Hi! I want to upgrade my ${productName} license.`);
       }
-
-      chrome.tabs.query({ url: "*://supplier.meesho.com/*" }, async (tabs) => {
-        if (tabs?.length) {
-          const catalogTab =
-            tabs.find(
-              (t) =>
-                t.url &&
-                (t.url.includes("/catalogs/single") ||
-                  t.url.includes("/cataloging/")),
-            ) || tabs[0];
-
-          chrome.tabs.update(catalogTab.id, { active: true });
-          chrome.windows.update(catalogTab.windowId, { focused: true });
-          await openOptimizerOnTab(catalogTab.id);
-          window.close();
-        } else {
-          chrome.tabs.create({
-            url: "https://supplier.meesho.com/panel/v3/new/cataloging/single/add",
-          });
-          window.close();
-        }
-      });
     });
-  }
-
-  if (openMeeshoBtn) {
-    openMeeshoBtn.addEventListener("click", () => {
-      chrome.tabs.create({
-        url: "https://supplier.meesho.com/panel/v3/new/cataloging/single/add",
-      });
-    });
-  }
+  });
 
   await loadLicenseStatus();
+  setStatus(
+    PA.isMobile()
+      ? "Tip: open Meesho catalog, then tap Open Image Optimizer."
+      : "",
+  );
 });

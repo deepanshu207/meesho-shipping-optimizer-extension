@@ -332,7 +332,7 @@ const LicenseManager = {
           const result = await response.json();
           if (result.success && result.settings) {
             return {
-              number: result.settings.whatsapp_number || "918905811996",
+              number: result.settings.whatsapp_number || CONFIG.DEFAULT_WHATSAPP || "919654414891",
               message:
                 result.settings.whatsapp_message ||
                 "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license.",
@@ -346,7 +346,7 @@ const LicenseManager = {
     }
 
     return {
-      number: "918905811996",
+      number: CONFIG.DEFAULT_WHATSAPP || "919654414891",
       message:
         "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license.",
     };
@@ -373,17 +373,27 @@ const LicenseManager = {
         buttonElement.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:8px;"><span>✅</span><span>Opening WhatsApp...</span></div>`;
       }
 
-      window.open(
-        `https://wa.me/${settings.number}?text=${encodeURIComponent(
-          settings.message
-        )}`,
-        "_blank"
-      );
+      const phone = String(settings.number || CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
+      const text = encodeURIComponent(settings.message || "");
+      const isAndroid = /Android/i.test(navigator.userAgent || "");
+      if (isAndroid) {
+        window.location.href = `whatsapp://send?phone=${phone}&text=${text}`;
+        setTimeout(() => {
+          window.open(
+            `https://api.whatsapp.com/send?phone=${phone}&text=${text}`,
+            "_blank",
+          );
+        }, 600);
+      } else {
+        window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
+      }
     } catch (error) {
       console.error("WhatsApp error:", error);
+      const phone = String(CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
       window.open(
-        `https://wa.me/918905811996?text=${encodeURIComponent(
-          "Hi! I want to purchase Meesho Shipping Cost AI Optimizer license."
+        `https://wa.me/${phone}?text=${encodeURIComponent(
+          CONFIG.DEFAULT_WHATSAPP_MESSAGE ||
+            "Hi! I want to purchase Shipping Optimizer license.",
         )}`,
         "_blank"
       );

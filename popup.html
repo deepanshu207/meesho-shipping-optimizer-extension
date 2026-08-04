@@ -195,6 +195,8 @@
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       font-family: inherit;
       color: var(--mso-text);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .plan-btn:hover {
@@ -264,6 +266,9 @@
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       margin-bottom: 8px;
       min-height: 46px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
     }
 
     .btn-primary {
@@ -343,6 +348,66 @@
     }
 
     .features { margin-bottom: 14px; }
+
+    .quick-actions {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .quick-action {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: var(--mso-surface);
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      font-family: inherit;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .quick-action:active {
+      transform: scale(0.98);
+      background: #fff3df;
+    }
+
+    .quick-action-icon {
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      background: var(--mso-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .quick-action-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--mso-ink);
+      margin-bottom: 2px;
+    }
+
+    .quick-action-desc {
+      font-size: 11px;
+      color: var(--mso-muted);
+      line-height: 1.35;
+    }
+
+    .status-line {
+      font-size: 11px;
+      color: var(--mso-muted);
+      text-align: center;
+      min-height: 16px;
+      margin-bottom: 8px;
+    }
 
     .feature-item {
       display: flex;
@@ -487,28 +552,30 @@
       <p class="hint">Payment &amp; license key via WhatsApp · instant activation after payment</p>
     </div>
 
-    <div class="features">
-      <div class="feature-item">
-        <div class="feature-icon">1</div>
-        <div>
-          <div class="feature-title">Generate variants</div>
-          <div class="feature-desc">Smart borders &amp; badges for lower shipping</div>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">2</div>
-        <div>
-          <div class="feature-title">Live shipping check</div>
-          <div class="feature-desc">Real Meesho shipping on each variant</div>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">3</div>
-        <div>
-          <div class="feature-title">One-click apply</div>
-          <div class="feature-desc">Publish the best image to your catalog</div>
-        </div>
-      </div>
+    <p id="popup-status-line" class="status-line"></p>
+
+    <div class="quick-actions">
+      <button type="button" class="quick-action" data-action="optimizer">
+        <span class="quick-action-icon">🚀</span>
+        <span>
+          <div class="quick-action-title">Open Image Optimizer</div>
+          <div class="quick-action-desc">On Meesho catalog — generate variants &amp; apply best</div>
+        </span>
+      </button>
+      <button type="button" class="quick-action" data-action="meesho">
+        <span class="quick-action-icon">📦</span>
+        <span>
+          <div class="quick-action-title">Meesho Catalog Upload</div>
+          <div class="quick-action-desc">Open Add Product page if not already there</div>
+        </span>
+      </button>
+      <button type="button" class="quick-action" data-action="whatsapp">
+        <span class="quick-action-icon">💬</span>
+        <span>
+          <div class="quick-action-title">Upgrade / WhatsApp</div>
+          <div class="quick-action-desc">Buy license or get help · +91 9654414891</div>
+        </span>
+      </button>
     </div>
 
     <button type="button" class="btn btn-primary" id="open-catalog">Open Image Optimizer</button>
@@ -516,10 +583,11 @@
   </div>
 
   <div class="footer">
-    <button type="button" id="support-whatsapp">WhatsApp Support</button>
+    <button type="button" id="support-whatsapp">WhatsApp Support · 9654414891</button>
   </div>
 
   <script src="config.js"></script>
+  <script src="js/popupActions.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

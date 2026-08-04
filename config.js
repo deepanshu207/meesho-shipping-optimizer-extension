@@ -8,9 +8,9 @@ const CONFIG = {
   SERVER_URL_FALLBACK:
     "https://darkviolet-ostrich-615182.hostingersite.com/api",
 
-  DEFAULT_WHATSAPP: "918905811996",
+  DEFAULT_WHATSAPP: "919654414891",
   DEFAULT_WHATSAPP_MESSAGE:
-    "Hi! I want to purchase Meesho Shipping Optimizer license.",
+    "Hi! I want to purchase Shipping Optimizer license.",
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
