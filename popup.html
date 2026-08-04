@@ -24,7 +24,7 @@
 
     body {
       width: 360px;
-      min-height: 460px;
+      min-height: 480px;
       font-family: var(--mso-font);
       background:
         radial-gradient(ellipse at top right, rgba(255, 215, 0, 0.28), transparent 55%),
@@ -80,8 +80,6 @@
     }
 
     .brand {
-      position: relative;
-      z-index: 1;
       font-size: 22px;
       font-weight: 800;
       color: var(--mso-ink);
@@ -140,14 +138,208 @@
       border-radius: 8px;
       font-size: 11px;
       font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .status-badge.active {
       background: var(--mso-grad);
       color: var(--mso-ink);
     }
 
-    .status-card p {
-      font-size: 13px;
+    .status-badge.inactive {
+      background: rgba(239, 68, 68, 0.12);
+      color: #dc2626;
+      border: 1px solid rgba(239, 68, 68, 0.25);
+    }
+
+    .license-key {
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      color: #c45f12;
+      background: rgba(230, 126, 34, 0.08);
+      padding: 8px 10px;
+      border-radius: 8px;
+      word-break: break-all;
+      margin-top: 8px;
+    }
+
+    .expiry-warning {
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.28);
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: #b45309;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hidden { display: none !important; }
+
+    .plan-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .plan-btn {
+      background: #fff;
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+      padding: 10px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      font-family: inherit;
       color: var(--mso-text);
-      line-height: 1.5;
+    }
+
+    .plan-btn:hover {
+      transform: scale(1.02);
+      box-shadow: 0 4px 14px rgba(230, 126, 34, 0.2);
+    }
+
+    .plan-btn.best {
+      border: 2px solid var(--mso-orange);
+      background: linear-gradient(180deg, #fff8ee, #ffffff);
+      position: relative;
+    }
+
+    .plan-best-tag {
+      position: absolute;
+      top: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--mso-grad);
+      color: var(--mso-ink);
+      padding: 2px 8px;
+      border-radius: 8px;
+      font-size: 8px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .plan-name { font-size: 10px; color: var(--mso-muted); }
+    .plan-price { font-size: 18px; font-weight: 800; color: var(--mso-orange); margin: 2px 0; }
+    .plan-note { font-size: 9px; color: var(--mso-success); }
+
+    .input-group { margin-bottom: 10px; }
+
+    .input-label {
+      display: block;
+      font-size: 11px;
+      color: var(--mso-muted);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: inherit;
+      background: #fff;
+    }
+
+    .input-field:focus {
+      outline: none;
+      border-color: var(--mso-orange);
+      box-shadow: 0 0 0 3px rgba(230, 126, 34, 0.15);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 13px 14px;
+      border: none;
+      border-radius: 11px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      margin-bottom: 8px;
+      min-height: 46px;
+    }
+
+    .btn-primary {
+      background: var(--mso-grad);
+      color: var(--mso-ink);
+      box-shadow: 0 6px 18px rgba(230, 126, 34, 0.28);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(230, 126, 34, 0.35);
+    }
+
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: var(--mso-surface);
+      color: var(--mso-ink);
+      border: 1px solid var(--mso-border);
+    }
+
+    .btn-whatsapp {
+      background: var(--mso-grad);
+      color: var(--mso-ink);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      margin: 12px 0;
+      color: var(--mso-muted);
+      font-size: 12px;
+    }
+
+    .divider::before,
+    .divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--mso-border);
+    }
+
+    .divider span { padding: 0 10px; }
+
+    .hint {
+      font-size: 10px;
+      color: var(--mso-muted);
+      text-align: center;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+
+    .message {
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      display: none;
+    }
+
+    .message.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.1);
+      color: #dc2626;
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    .message.success {
+      display: block;
+      background: rgba(5, 150, 105, 0.1);
+      color: var(--mso-success);
+      border: 1px solid rgba(5, 150, 105, 0.2);
     }
 
     .features { margin-bottom: 14px; }
@@ -190,58 +382,43 @@
       line-height: 1.35;
     }
 
-    .btn {
-      width: 100%;
-      padding: 13px 14px;
-      border: none;
-      border-radius: 11px;
-      font-size: 14px;
-      font-weight: 700;
-      font-family: inherit;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      margin-bottom: 8px;
-      min-height: 46px;
-    }
-
-    .btn-primary {
-      background: var(--mso-grad);
-      color: var(--mso-ink);
-      box-shadow: 0 6px 18px rgba(230, 126, 34, 0.28);
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 10px 24px rgba(230, 126, 34, 0.35);
-    }
-
-    .btn-secondary {
-      background: var(--mso-surface);
-      color: var(--mso-ink);
-      border: 1px solid var(--mso-border);
-    }
-
-    .btn-secondary:hover {
-      background: #fff3df;
-    }
-
     .footer {
       text-align: center;
       padding: 12px 16px 16px;
-      font-size: 11px;
-      color: var(--mso-muted);
-      line-height: 1.45;
     }
 
-    .footer strong {
+    .footer button {
+      background: var(--mso-grad);
       color: var(--mso-ink);
+      border: none;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 12px;
       font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(61, 41, 20, 0.2);
+      border-top-color: var(--mso-ink);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <span class="version-badge">v1.8.2</span>
+    <span class="version-badge" id="version-badge">v1.0.0</span>
     <div class="brand-row">
       <img class="brand-logo" src="icons/icon48.png" width="48" height="48" alt="">
       <div class="brand">
@@ -249,19 +426,65 @@
         <span>Lower Meesho shipping costs</span>
       </div>
     </div>
-    <p class="subtitle">Smart image variants · live shipping checks · one-click apply</p>
+    <p class="subtitle">Smart variants · live shipping · one-click apply</p>
   </div>
 
   <div class="content">
     <div class="status-card">
       <div class="status-header">
-        <span class="status-title">Status</span>
-        <span class="status-badge" id="status-badge">Ready</span>
+        <span class="status-title">License Status</span>
+        <span class="status-badge inactive" id="status-badge">Checking…</span>
       </div>
-      <p>
-        Open a Meesho supplier catalog page, then tap
-        <strong>Open Image Optimizer</strong> to generate, preview, and apply.
-      </p>
+      <div id="license-info">
+        <p style="font-size:12px;color:var(--mso-muted);">Checking license…</p>
+      </div>
+    </div>
+
+    <div id="activation-section" class="hidden">
+      <div class="status-card" style="padding:12px;">
+        <div style="text-align:center;margin-bottom:10px;">
+          <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap to buy via WhatsApp</span>
+        </div>
+        <div class="plan-grid">
+          <button type="button" class="plan-btn" data-plan="monthly" data-price="599" data-duration="1 Month">
+            <div class="plan-name">Monthly</div>
+            <div class="plan-price">₹599</div>
+            <div class="plan-note" style="color:var(--mso-muted);">30 days</div>
+          </button>
+          <button type="button" class="plan-btn" data-plan="quarterly" data-price="1399" data-duration="3 Months">
+            <div class="plan-name">3 Months</div>
+            <div class="plan-price">₹1399</div>
+            <div class="plan-note">Save ₹1000</div>
+          </button>
+          <button type="button" class="plan-btn" data-plan="halfyearly" data-price="2299" data-duration="6 Months">
+            <div class="plan-name">6 Months</div>
+            <div class="plan-price">₹2299</div>
+            <div class="plan-note">Save ₹3000</div>
+          </button>
+          <button type="button" class="plan-btn best" data-plan="yearly" data-price="3099" data-duration="1 Year">
+            <span class="plan-best-tag">BEST VALUE</span>
+            <div class="plan-name" style="margin-top:4px;">Yearly</div>
+            <div class="plan-price" style="color:var(--mso-success);">₹3099</div>
+            <div class="plan-note">Save ₹8000</div>
+          </button>
+        </div>
+        <p class="hint">Demo keys like <strong>MEESHO-DEMOFREE</strong> work offline for trial.</p>
+      </div>
+
+      <div id="popup-message" class="message"></div>
+
+      <div class="input-group">
+        <label class="input-label" for="license-input">Enter License Key</label>
+        <input type="text" class="input-field" id="license-input" placeholder="e.g. MEESHO-DEMOFREE" autocomplete="off">
+      </div>
+      <button type="button" class="btn btn-primary" id="activate-btn">Activate License</button>
+
+      <div class="divider"><span>OR</span></div>
+
+      <button type="button" class="btn btn-whatsapp" id="whatsapp-btn">
+        Contact for Custom Plan
+      </button>
+      <p class="hint">Payment &amp; license key via WhatsApp · instant activation after payment</p>
     </div>
 
     <div class="features">
@@ -269,14 +492,14 @@
         <div class="feature-icon">1</div>
         <div>
           <div class="feature-title">Generate variants</div>
-          <div class="feature-desc">Smart borders &amp; badges tuned for lower shipping</div>
+          <div class="feature-desc">Smart borders &amp; badges for lower shipping</div>
         </div>
       </div>
       <div class="feature-item">
         <div class="feature-icon">2</div>
         <div>
           <div class="feature-title">Live shipping check</div>
-          <div class="feature-desc">See real Meesho shipping on each variant</div>
+          <div class="feature-desc">Real Meesho shipping on each variant</div>
         </div>
       </div>
       <div class="feature-item">
@@ -288,12 +511,12 @@
       </div>
     </div>
 
-    <button class="btn btn-primary" id="open-catalog">Open Image Optimizer</button>
-    <button class="btn btn-secondary" id="open-meesho">Open Meesho Supplier Panel</button>
+    <button type="button" class="btn btn-primary" id="open-catalog">Open Image Optimizer</button>
+    <button type="button" class="btn btn-secondary" id="open-meesho">Open Meesho Supplier Panel</button>
   </div>
 
   <div class="footer">
-    For Meesho sellers · Desktop &amp; mobile
+    <button type="button" id="support-whatsapp">WhatsApp Support</button>
   </div>
 
   <script src="config.js"></script>
