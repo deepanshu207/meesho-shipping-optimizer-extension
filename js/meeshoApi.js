@@ -604,28 +604,6 @@ const MeeshoAPI = {
       ctx.fileInput = best;
     }
 
-    if (!ctx.uploadButton) {
-      for (const btn of document.querySelectorAll("button")) {
-        const label = (btn.textContent || "").trim().replace(/\s+/g, " ");
-        if (label !== "Upload") continue;
-        let node = btn.parentElement;
-        for (let i = 0; i < 8 && node; i++) {
-          if (node.querySelector('[data-testid="removeImage"]')) break;
-          const block = node.parentElement || node;
-          const text = block.textContent || "";
-          if (/Product\s*Image/i.test(text) || /Front\s*Image/i.test(text)) {
-            ctx.uploadButton = btn;
-            ctx.section = block;
-            break;
-          }
-          node = node.parentElement;
-        }
-        if (ctx.uploadButton) break;
-      }
-    }
-
-    ctx.state = ctx.removeButton ? "preview" : ctx.uploadButton ? "empty" : "unknown";
-
     return ctx;
   },
 
@@ -711,184 +689,8 @@ const MeeshoAPI = {
     return !!this.findCatalogFileInput();
   },
 
-  _sleep: function (ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  },
-
-  _getReactFiber: function (el) {
-    if (!el) return null;
-    const key = Object.keys(el).find(
-      (k) => k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$"),
-    );
-    return key ? el[key] : null;
-  },
-
-  _triggerReactHandlers: function (el, payloads) {
-    if (!el) return false;
-    const list = Array.isArray(payloads) ? payloads : [payloads];
-    let fiber = this._getReactFiber(el);
-    while (fiber) {
-      const props = fiber.memoizedProps || fiber.pendingProps || {};
-      for (const name of ["onChange", "onInput", "onSuccess", "onUpload", "onComplete"]) {
-        const fn = props[name];
-        if (typeof fn !== "function") continue;
-        for (const payload of list) {
-          try {
-            if (payload?.files) {
-              fn({ target: { files: payload.files }, currentTarget: el });
-              return true;
-            }
-            if (payload?.target) {
-              fn(payload);
-              return true;
-            }
-            fn(payload);
-            return true;
-          } catch (e) {
-            /* try next */
-          }
-        }
-      }
-      fiber = fiber.return;
-    }
-    return false;
-  },
-
-  _frontImageUrlTail: function (url) {
-    if (!url) return "";
-    try {
-      return String(url).split("/").pop().split("?")[0];
-    } catch (e) {
-      return "";
-    }
-  },
-
-  _frontImageShowsUrl: function (ctx, url) {
-    const fresh = this.findFrontImageUploadContext();
-    const src = fresh.previewImg?.currentSrc || fresh.previewImg?.src || "";
-    if (!src) return false;
-    if (!url) return !!src;
-    const tail = this._frontImageUrlTail(url);
-    return src === url || (tail && src.includes(tail));
-  },
-
-  _frontImagePreviewChanged: function (beforeUrl) {
-    const fresh = this.findFrontImageUploadContext();
-    const src = fresh.previewImg?.currentSrc || fresh.previewImg?.src || "";
-    return !!src && src !== beforeUrl;
-  },
-
-  bindFrontImageUrl: function (ctx, url) {
-    if (!url) return false;
-    ctx = ctx || this.findFrontImageUploadContext();
-    const payloads = [
-      url,
-      { image: url },
-      { imageUrl: url },
-      { url },
-      { data: { image: url } },
-      { target: { value: url } },
-    ];
-
-    if (ctx.previewImg) {
-      try {
-        const setter = Object.getOwnPropertyDescriptor(
-          HTMLImageElement.prototype,
-          "src",
-        )?.set;
-        if (setter) setter.call(ctx.previewImg, url);
-        else ctx.previewImg.src = url;
-        ctx.previewImg.dispatchEvent(new Event("load", { bubbles: true }));
-      } catch (e) {
-        console.warn("Preview src update failed:", e);
-      }
-    }
-
-    const targets = [
-      ctx.previewImg,
-      ctx.previewImg?.parentElement,
-      ctx.removeButton,
-      ctx.uploadButton,
-      ctx.section,
-      document.querySelector("#addProduct"),
-    ].filter(Boolean);
-
-    for (const el of targets) {
-      this._triggerReactHandlers(el, payloads);
-    }
-
-    return this._frontImageShowsUrl(ctx, url);
-  },
-
-  applyFrontImageBlob: async function (blob, ctx) {
-    if (!(blob instanceof Blob) || !blob.size) return false;
-    ctx = ctx || this.findFrontImageUploadContext();
-    const file = new File([blob], "meesho-front-" + Date.now() + ".jpg", {
-      type: blob.type || "image/jpeg",
-    });
-    const beforeUrl = ctx.previewImg?.currentSrc || ctx.previewImg?.src || "";
-
-    const tryFileInput = async (input) => {
-      if (!input) return false;
-      if (!this.assignFileToCatalogInput(input, file, { skipLabelClick: true })) {
-        return false;
-      }
-      await this._sleep(2800);
-      return (
-        this._frontImagePreviewChanged(beforeUrl) ||
-        this._frontImageShowsUrl(null, null)
-      );
-    };
-
-    let input = ctx.fileInput || this.findCatalogFileInput();
-    if (await tryFileInput(input)) return true;
-
-    if (ctx.state === "preview" && ctx.removeButton) {
-      try {
-        ctx.removeButton.click();
-        await this._sleep(900);
-        ctx = this.findFrontImageUploadContext();
-        for (let i = 0; i < 10; i++) {
-          input = this.findCatalogFileInput();
-          if (input) break;
-          await this._sleep(250);
-        }
-        if (await tryFileInput(input)) return true;
-      } catch (e) {
-        console.warn("Remove + file input apply failed:", e);
-      }
-    }
-
-    const uploadedUrl = await this.uploadImage(blob, file.name);
-    if (!uploadedUrl) return false;
-
-    ctx = this.findFrontImageUploadContext();
-    if (ctx.state === "preview" && this.bindFrontImageUrl(ctx, uploadedUrl)) {
-      return true;
-    }
-
-    if (ctx.removeButton) {
-      try {
-        ctx.removeButton.click();
-        await this._sleep(900);
-        ctx = this.findFrontImageUploadContext();
-      } catch (e) {
-        console.warn("Remove before URL bind failed:", e);
-      }
-    }
-
-    if (this.bindFrontImageUrl(ctx, uploadedUrl)) return true;
-
-    input = this.findCatalogFileInput();
-    if (await tryFileInput(input)) return true;
-
-    return this._frontImageShowsUrl(this.findFrontImageUploadContext(), uploadedUrl);
-  },
-
-  assignFileToCatalogInput: function (input, file, options) {
-    options = options || {};
+  assignFileToCatalogInput: function (input, file) {
     if (!input || !file) return false;
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
     try {
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -899,23 +701,14 @@ const MeeshoAPI = {
     }
 
     try {
-      const tracker = input._valueTracker;
-      if (tracker && typeof tracker.setValue === "function") {
-        tracker.setValue("");
-      }
-    } catch (e) {}
-
-    try {
-      input.dispatchEvent(
-        new InputEvent("input", { bubbles: true, cancelable: true, composed: true }),
-      );
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: true }));
     } catch (e) {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     }
-    input.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
     const inputId = input.id;
-    if (inputId && !options.skipLabelClick && !isMobile) {
+    if (inputId) {
       document.querySelectorAll("label[for]").forEach((label) => {
         if (label.htmlFor === inputId) label.click();
       });
