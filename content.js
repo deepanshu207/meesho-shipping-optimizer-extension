@@ -197,6 +197,7 @@ class MeeshoShippingOptimizer {
     this._uploadUserPicked = false;
     this._uploadUserCleared = false;
     this._catalogImageInput = null;
+    this._applyInProgress = false;
     this.init();
   }
 
@@ -412,6 +413,7 @@ class MeeshoShippingOptimizer {
 
     // Always provide an entry point on catalog pages, even if image input isn't present yet.
     this.addFloatingOptimizerButton();
+    this.dismissMeeshoBlockingModals({ preferDiscard: true });
 
     // Preload full category tree so picker is ready before modal opens
     void this.ensureFullCategories().then((list) => {
@@ -530,15 +532,148 @@ class MeeshoShippingOptimizer {
     );
   }
 
+  isMeeshoDialogNode(node) {
+    if (!node?.closest) return false;
+    return !!node.closest(
+      '[role="dialog"], .MuiDialog-root, .MuiModal-root, [class*="MuiDialog"], [class*="MuiModal"]',
+    );
+  }
+
+  findVisibleMeeshoDialogs() {
+    const roots = document.querySelectorAll(
+      '[role="dialog"], .MuiDialog-root, .MuiModal-root, [class*="MuiDialog"], [class*="MuiModal"]',
+    );
+    const visible = [];
+    for (const root of roots) {
+      if (this.isExtensionUiNode(root)) continue;
+      let style;
+      try {
+        style = window.getComputedStyle(root);
+      } catch (e) {
+        continue;
+      }
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const rect = root.getBoundingClientRect();
+      if (rect.width < 50 || rect.height < 50) continue;
+      visible.push(root);
+    }
+    return visible;
+  }
+
+  isMeeshoResumeUploadDialog(dialog) {
+    const text = (dialog?.textContent || "").replace(/\s+/g, " ").trim();
+    return (
+      /resume upload/i.test(text) ||
+      /previous session shut down/i.test(text) ||
+      /continue uploading/i.test(text)
+    );
+  }
+
+  findDialogButton(dialog, pattern) {
+    if (!dialog) return null;
+    for (const btn of dialog.querySelectorAll("button, [role='button']")) {
+      if (this.isExtensionUiNode(btn)) continue;
+      const text = (btn.textContent || "").replace(/\s+/g, " ").trim();
+      if (pattern.test(text)) return btn;
+    }
+    return null;
+  }
+
+  /**
+   * Dismiss Meesho dialogs that block catalog upload (e.g. RESUME UPLOAD).
+   * Prefer Discard so stale session state cannot duplicate images or pricing.
+   */
+  dismissMeeshoBlockingModals(options = {}) {
+    const preferDiscard = options.preferDiscard !== false;
+    let dismissed = 0;
+
+    for (const dialog of this.findVisibleMeeshoDialogs()) {
+      const bodyText = (dialog.textContent || "").replace(/\s+/g, " ").trim();
+      const isResume = this.isMeeshoResumeUploadDialog(dialog);
+      const isGenericBlocker =
+        options.dismissAll ||
+        isResume ||
+        /unexpected/i.test(bodyText);
+
+      if (!isGenericBlocker) continue;
+
+      this.setOptimizerFabVisible(false);
+
+      if (preferDiscard && isResume) {
+        const discard = this.findDialogButton(dialog, /^\s*discard\s*$/i);
+        if (discard) {
+          try {
+            discard.click();
+          } catch (e) {}
+          dismissed++;
+          continue;
+        }
+      }
+
+      const close =
+        dialog.querySelector(
+          "button[aria-label*='close' i], button[aria-label*='Close' i], [data-testid*='close' i]",
+        ) || this.findDialogButton(dialog, /^[×x✕]$/i);
+      if (close) {
+        try {
+          close.click();
+        } catch (e) {}
+        dismissed++;
+        continue;
+      }
+
+      if (!preferDiscard && isResume) {
+        const resume = this.findDialogButton(dialog, /^\s*resume\s*$/i);
+        if (resume) {
+          try {
+            resume.click();
+          } catch (e) {}
+          dismissed++;
+        }
+      }
+    }
+
+    if (dismissed > 0) {
+      setTimeout(() => {
+        if (!this.findVisibleMeeshoDialogs().some((d) => this.isMeeshoResumeUploadDialog(d))) {
+          this.setOptimizerFabVisible(true);
+        }
+      }, 700);
+    }
+
+    return dismissed;
+  }
+
+  findMeeshoImageSectionContainer(labelEl) {
+    if (!labelEl) return null;
+    let node = labelEl;
+    for (let depth = 0; depth < 10 && node; depth++) {
+      if (node.querySelector) {
+        const hasUpload = Array.from(node.querySelectorAll("button")).some((btn) => {
+          if (this.isExtensionUiNode(btn)) return false;
+          const t = (btn.textContent || "").replace(/\s+/g, " ").trim();
+          return /^upload$/i.test(t);
+        });
+        const hasFile = !!node.querySelector("input[type='file']");
+        if (hasUpload || hasFile) return node;
+      }
+      node = node.parentElement;
+    }
+    return (
+      labelEl.closest(".MuiBox-root")?.parentElement ||
+      labelEl.closest(".MuiBox-root") ||
+      labelEl.parentElement
+    );
+  }
+
   findMeeshoFrontImageSection() {
-    const nodes = document.querySelectorAll("p, span, label, div");
+    const labelPatterns = [/^Front Image\*?$/i, /^Product Image\*?$/i];
+    const nodes = document.querySelectorAll("p, span, label, div, h6");
     for (const el of nodes) {
       if (this.isExtensionUiNode(el)) continue;
-      const text = (el.textContent || "").trim();
-      if (text !== "Front Image") continue;
-      const container =
-        el.closest(".MuiBox-root")?.parentElement ||
-        el.closest(".MuiBox-root");
+      const text = (el.textContent || "").trim().replace(/\s+/g, " ");
+      if (!labelPatterns.some((re) => re.test(text))) continue;
+      const container = this.findMeeshoImageSectionContainer(el);
       if (container) return container;
     }
     return null;
@@ -857,9 +992,38 @@ class MeeshoShippingOptimizer {
     );
   }
 
-  async syncUploadedImageToCatalogForm(meeshoUrl, file, imageInput) {
+  findPrimaryCatalogImagePreview(scope) {
+    if (!scope) return null;
+    const candidates = [];
+    for (const img of scope.querySelectorAll("img[src], img[srcset]")) {
+      if (this.isExtensionUiNode(img)) continue;
+      const low = (img.src || "").toLowerCase();
+      if (low.includes("icon") || low.includes("logo") || low.includes("badge")) {
+        continue;
+      }
+      const w = img.width || parseInt(img.getAttribute("width") || "0", 10);
+      const h = img.height || parseInt(img.getAttribute("height") || "0", 10);
+      if (w > 0 && w < 40 && h > 0 && h < 40) continue;
+
+      let score = 50;
+      if (img.closest("[data-testid='removeImage']")) score += 100;
+      if (
+        low.includes("meeshosupplyassets.com") ||
+        low.includes("images.meesho") ||
+        low.includes("cdnmeesho")
+      ) {
+        score += 80;
+      }
+      candidates.push({ img, score });
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0]?.img || null;
+  }
+
+  async syncUploadedImageToCatalogForm(meeshoUrl, file, imageInput, options = {}) {
     const url = this.normalizeMeeshoImageUrl(meeshoUrl);
     if (!url) return false;
+    const skipFileAssign = options.skipFileAssign === true;
 
     if (typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.cache.catalogImageUrl = url;
@@ -868,19 +1032,15 @@ class MeeshoShippingOptimizer {
     const scope = this.getCatalogImageScope();
     let touched = 0;
 
-    for (const img of scope.querySelectorAll("img[src], img[srcset]")) {
-      if (this.isExtensionUiNode(img)) continue;
-      const low = (img.src || "").toLowerCase();
-      if (low.includes("icon") || low.includes("logo") || low.includes("badge")) {
-        continue;
-      }
-      img.src = url;
-      img.removeAttribute("srcset");
-      img.dispatchEvent(new Event("load", { bubbles: true }));
+    const primaryImg = this.findPrimaryCatalogImagePreview(scope);
+    if (primaryImg) {
+      primaryImg.src = url;
+      primaryImg.removeAttribute("srcset");
+      primaryImg.dispatchEvent(new Event("load", { bubbles: true }));
       touched++;
     }
 
-    for (const inp of document.querySelectorAll("input, textarea")) {
+    for (const inp of scope.querySelectorAll("input, textarea")) {
       if (this.isExtensionUiNode(inp)) continue;
       const inputType = (inp.type || "").toLowerCase();
       if (
@@ -908,7 +1068,7 @@ class MeeshoShippingOptimizer {
       } catch (e) {}
     }
 
-    if (imageInput && file) {
+    if (imageInput && file && !skipFileAssign) {
       const assigned = this.assignFileToCatalogInput(imageInput, file);
       if (assigned) touched++;
     }
@@ -1161,6 +1321,7 @@ class MeeshoShippingOptimizer {
   }
 
   dismissModalForApply() {
+    this.dismissMeeshoBlockingModals({ preferDiscard: true });
     this.restoreMeeshoPageInert();
     this.detachCategoryAutocompleteModalHandlers();
     this.hideCategoryAutocomplete({ force: true });
@@ -1322,6 +1483,8 @@ class MeeshoShippingOptimizer {
     }
 
     this.isLicensed = true;
+
+    this.dismissMeeshoBlockingModals({ preferDiscard: true });
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.init();
@@ -3881,6 +4044,8 @@ Please share payment details and license key.`;
 
 
   async triggerPriceRefresh() {
+    this.dismissMeeshoBlockingModals({ preferDiscard: true });
+
     const priceSelectors = [
       'input[name="price"]',
       'input[name="mrp"]',
@@ -3899,6 +4064,7 @@ Please share payment details and license key.`;
       try {
         const inputs = document.querySelectorAll(sel);
         for (const inp of inputs) {
+          if (this.isMeeshoDialogNode(inp)) continue;
           if (
             inp.value &&
             inp.value.match(/^\d+$/) &&
@@ -3941,12 +4107,15 @@ Please share payment details and license key.`;
       priceInput.dispatchEvent(new FocusEvent("blur", { bubbles: true }));
       priceInput.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
 
-      document.body.click();
+      if (!this.findVisibleMeeshoDialogs().length) {
+        document.body.click();
+      }
     }
 
     const buttons = document.querySelectorAll('button, [role="button"]');
     for (const btn of buttons) {
       if (this.isExtensionUiNode?.(btn)) continue;
+      if (this.isMeeshoDialogNode(btn)) continue;
       const text = (btn.textContent || "").toLowerCase().trim();
       if (
         text.includes("calculate") ||
@@ -3985,15 +4154,8 @@ Please share payment details and license key.`;
     });
   }
 
-  hasOptimizerSession() {
-    return (
-      !!this.getImageFileForGenerate() ||
-      (this.currentResults || []).length > 0
-    );
-  }
-
   shouldConfirmLeavePage() {
-    return this.isProcessing || this.hasOptimizerSession();
+    return this.isProcessing;
   }
 
   setupNavigationGuards() {
@@ -4005,28 +4167,6 @@ Please share payment details and license key.`;
       e.preventDefault();
       e.returnValue = "";
       return "";
-    });
-
-    try {
-      if (!history.state?.optimizerGuard) {
-        history.pushState({ optimizerGuard: true }, "");
-      }
-    } catch {
-      /* ignore */
-    }
-
-    window.addEventListener("popstate", () => {
-      if (!this.shouldConfirmLeavePage()) return;
-      const ok = confirm(
-        "You have an image or generated variants. Leave this page and lose progress?",
-      );
-      if (!ok) {
-        try {
-          history.pushState({ optimizerGuard: true }, "");
-        } catch {
-          /* ignore */
-        }
-      }
     });
   }
 
@@ -8161,6 +8301,12 @@ Please share payment details and license key.`;
       return;
     }
 
+    if (this._applyInProgress) {
+      OptimizerUtils.showNotification("Apply already in progress…", "info");
+      return;
+    }
+
+    this._applyInProgress = true;
     try {
       if (!this.resultHasApplyableImage(result)) {
         OptimizerUtils.showNotification("No image to apply", "error");
@@ -8172,6 +8318,7 @@ Please share payment details and license key.`;
       const baselineShipping = this.detectShipping({ fresh: true });
       const prevPreviewSrc = this.getMeeshoFrontPreviewSrc();
 
+      this.dismissMeeshoBlockingModals({ preferDiscard: true });
       this.dismissModalForApply();
 
       const file = await this.buildApplyFile(result);
@@ -8183,16 +8330,16 @@ Please share payment details and license key.`;
       const prep = await this.prepareMeeshoFrontImageInput();
       const prevSrc = prep.prevSrc || prevPreviewSrc;
 
+      let input = prep.input;
       let fileAssigned = false;
-      if (prep.input) {
-        fileAssigned = this.assignFileToCatalogInput(prep.input, file);
+      if (input) {
+        fileAssigned = this.assignFileToCatalogInput(input, file);
       }
 
       if (!fileAssigned) {
-        const retryPrep = await this.prepareMeeshoFrontImageInput();
-        if (retryPrep.input) {
-          fileAssigned = this.assignFileToCatalogInput(retryPrep.input, file);
-          prep.input = retryPrep.input;
+        input = (await this.waitForCatalogImageInput(4000)) || input;
+        if (input) {
+          fileAssigned = this.assignFileToCatalogInput(input, file);
         }
       }
 
@@ -8210,30 +8357,21 @@ Please share payment details and license key.`;
         MeeshoAPI.cache.catalogImageUrl = meeshoUrl;
       }
 
-      const input =
-        prep.input || (await this.waitForCatalogImageInput(5000));
-
       let applied = false;
 
       if (fileAssigned) {
-        applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl);
+        applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl, 18000);
       }
 
       if (!applied) {
         applied = await this.syncUploadedImageToCatalogForm(
           meeshoUrl,
-          file,
-          input,
+          fileAssigned ? null : file,
+          fileAssigned ? null : input,
+          { skipFileAssign: fileAssigned },
         );
         if (applied) {
-          applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl);
-        }
-      }
-
-      if (!applied && input) {
-        fileAssigned = this.assignFileToCatalogInput(input, file);
-        if (fileAssigned) {
-          applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl);
+          applied = await this.waitForMeeshoFrontImageReady(prevSrc, meeshoUrl, 10000);
         }
       }
 
@@ -8296,6 +8434,8 @@ Please share payment details and license key.`;
     } catch (err) {
       console.error("Apply error:", err);
       OptimizerUtils.showNotification("Error applying image", "error");
+    } finally {
+      this._applyInProgress = false;
     }
   }
 
