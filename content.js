@@ -7612,6 +7612,7 @@ Please share payment details and license key.`;
     }
 
     try {
+      // Un-inert the Meesho page so file inputs and React handlers are reachable.
       this.restoreMeeshoPageInert();
       if (this.modal) {
         this.modal.style.pointerEvents = "none";
@@ -7624,18 +7625,16 @@ Please share payment details and license key.`;
           : { state: "unknown" };
 
       const canApply =
-        ctx.state === "preview" ||
-        ctx.state === "empty" ||
-        this.canApplyToMeeshoPage();
+        ctx.state === "preview" || ctx.state === "empty" || this.canApplyToMeeshoPage();
 
       if (!canApply) {
         OptimizerUtils.showNotification(
-          "Open Catalog Upload → Add Product (Front Image), then tap Apply again",
+          "Open Catalog Upload → Add Product tab (Front Image), then tap Apply again",
           "info",
           7000,
         );
         await this.downloadImage(result);
-        this._restoreModalAfterApply(false);
+        this._restoreModalAfterApply();
         return;
       }
 
@@ -7644,7 +7643,7 @@ Please share payment details and license key.`;
       const blob = await this.resolveResultBlob(result);
       if (!blob?.size) {
         OptimizerUtils.showNotification("Could not load variant image", "error");
-        this._restoreModalAfterApply(false);
+        this._restoreModalAfterApply();
         return;
       }
 
@@ -7660,7 +7659,7 @@ Please share payment details and license key.`;
           8000,
         );
         await this.downloadImage(result);
-        this._restoreModalAfterApply(false);
+        this._restoreModalAfterApply();
         return;
       }
 
@@ -7716,7 +7715,7 @@ Please share payment details and license key.`;
       }
     } catch (err) {
       console.error("Apply error:", err);
-      this._restoreModalAfterApply(false);
+      this._restoreModalAfterApply();
       OptimizerUtils.showNotification(
         "Apply failed — tap Save, then Upload on Front Image",
         "error",
@@ -7725,9 +7724,8 @@ Please share payment details and license key.`;
     }
   }
 
-  _restoreModalAfterApply(success) {
+  _restoreModalAfterApply() {
     if (!this.modal) return;
-    if (success) return;
     this.modal.style.pointerEvents = "";
     this.modal.style.opacity = "";
     this.inertMeeshoPageBehindModal();
