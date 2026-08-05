@@ -2,6 +2,11 @@
 
 document.addEventListener("DOMContentLoaded", async () => {
   const PA = window.PopupActions;
+  PA.armPopupInteractionGuard();
+  document.body?.classList.add("popup-booting");
+  setTimeout(() => {
+    document.body?.classList.remove("popup-booting");
+  }, PA.POPUP_GUARD_MS);
   const statusBadge = document.getElementById("status-badge");
   const licenseInfo = document.getElementById("license-info");
   const activationSection = document.getElementById("activation-section");

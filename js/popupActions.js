@@ -4,6 +4,18 @@ const PopupActions = {
   MEESHO_CATALOG_URL:
     "https://supplier.meesho.com/panel/v3/new/cataloging/single/add",
 
+  /** Ignore taps right after popup opens (ghost click from extension icon). */
+  POPUP_GUARD_MS: 450,
+  _popupReadyAt: 0,
+
+  armPopupInteractionGuard() {
+    this._popupReadyAt = Date.now() + this.POPUP_GUARD_MS;
+  },
+
+  popupInteractionsReady() {
+    return Date.now() >= this._popupReadyAt;
+  },
+
   isAndroid() {
     return /Android/i.test(navigator.userAgent || "");
   },
@@ -38,14 +50,8 @@ const PopupActions = {
 
   openWhatsApp(number, message) {
     const urls = this.buildWhatsAppUrls(number, message);
-    if (this.isAndroid()) {
-      // Prefer WhatsApp app on Android (Kiwi / Chrome mobile)
-      window.location.href = urls.scheme;
-      setTimeout(() => {
-        this.openUrl(urls.api);
-      }, 700);
-      return;
-    }
+    // Never set window.location in the popup — on Kiwi/Android that can hijack
+    // the active tab. Always open WhatsApp in a new tab.
     this.openUrl(urls.waMe || urls.api);
   },
 
@@ -234,6 +240,11 @@ const PopupActions = {
     if (!el || typeof handler !== "function") return;
     let lastTap = 0;
     const run = (e) => {
+      if (!this.popupInteractionsReady()) {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        return;
+      }
       const now = Date.now();
       if (now - lastTap < 400) return;
       lastTap = now;
@@ -242,7 +253,7 @@ const PopupActions = {
       handler(e);
     };
     el.addEventListener("click", run);
-    el.addEventListener("touchend", run, { passive: false });
+    // touchend omitted — it causes ghost taps when the popup opens under the finger
   },
 };
 
