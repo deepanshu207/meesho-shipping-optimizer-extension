@@ -131,16 +131,29 @@ class BackgroundService {
 
     if (demoKeyMatch) {
       const demoInfo = demoKeys[demoKeyMatch];
+      const unlimitedTime =
+        typeof FirebaseLicense !== "undefined" &&
+        FirebaseLicense.isUnlimitedFlag
+          ? FirebaseLicense.isUnlimitedFlag(
+              demoInfo?.unlimited_time ?? demoInfo?.unlimitedTime,
+            )
+          : !!(demoInfo?.unlimited_time || demoInfo?.unlimitedTime);
+      const licenseInfo = {
+        key: trimmedKey,
+        planType: "demo",
+        planName: demoInfo?.label || "Demo",
+        unlimitedTime,
+        activatedAt: new Date().toISOString(),
+      };
+      if (!unlimitedTime) {
+        licenseInfo.expiresAt = new Date(
+          Date.now() + (Number(demoInfo.days) || 30) * 86400000,
+        ).toISOString();
+      }
       await chrome.storage.sync.set({
         licenseKey: trimmedKey,
         licenseStatus: "active",
-        licenseInfo: {
-          key: trimmedKey,
-          planType: "demo",
-          expiresAt: new Date(
-            Date.now() + (demoInfo.days || 30) * 86400000,
-          ).toISOString(),
-        },
+        licenseInfo,
         lastVerified: Date.now(),
       });
       return true;

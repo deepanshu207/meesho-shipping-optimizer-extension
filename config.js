@@ -10,7 +10,7 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.2.0",
+  VERSION: "1.2.1",
 
   // Firebase (swagstree-web) — ONLY uses shipping_optimizer_* collections
   USE_FIREBASE_LICENSE: true,
@@ -26,6 +26,8 @@ const CONFIG = {
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,
 
+  // Fallback demo keys when Firebase is offline. Firebase app.demo_keys and
+  // shipping_optimizer_demo_keys/* override matching keys (5 min cache).
   BUILTIN_DEMO_KEYS: {
     "MEESHO-DEMOFREE": { days: 30 },
     "MEESHO-DEMOFREE-PROMO": { days: 30 },

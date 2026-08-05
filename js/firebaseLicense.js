@@ -701,14 +701,30 @@ const FirebaseLicense = {
   },
 
   async getDemoKeysMap() {
-    const merged = { ...(CONFIG.BUILTIN_DEMO_KEYS || {}) };
+    const merged = {};
     const app = await this.getAppConfig();
-    if (app?.demo_keys && typeof app.demo_keys === "object") {
-      Object.assign(merged, app.demo_keys);
+
+    const ingestInline = (raw) => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+      for (const [rawKey, row] of Object.entries(raw)) {
+        const key = CONFIG.normalizeLicenseKey
+          ? CONFIG.normalizeLicenseKey(rawKey)
+          : String(rawKey || "").toUpperCase();
+        if (!key) continue;
+        merged[key] = this.normalizeDemoKeyEntry(row);
+      }
+    };
+
+    for (const [rawKey, row] of Object.entries(CONFIG.BUILTIN_DEMO_KEYS || {})) {
+      const key = CONFIG.normalizeLicenseKey
+        ? CONFIG.normalizeLicenseKey(rawKey)
+        : String(rawKey || "").toUpperCase();
+      if (!key) continue;
+      merged[key] = this.normalizeDemoKeyEntry(row);
     }
-    if (app?.demoKeys && typeof app.demoKeys === "object") {
-      Object.assign(merged, app.demoKeys);
-    }
+
+    ingestInline(app?.demo_keys);
+    ingestInline(app?.demoKeys);
 
     const docs = await this.listDocs("demo_keys");
     for (const row of docs) {
@@ -717,12 +733,26 @@ const FirebaseLicense = {
         ? CONFIG.normalizeLicenseKey(row.id)
         : String(row.id || "").toUpperCase();
       if (!key) continue;
-      merged[key] = {
-        days: Number(row.days) || 30,
-        label: row.label || row.name || "",
-      };
+      merged[key] = this.normalizeDemoKeyEntry(row);
     }
     return merged;
+  },
+
+  normalizeDemoKeyEntry(row) {
+    const src = row && typeof row === "object" ? row : {};
+    const unlimited_time = this.isUnlimitedFlag(
+      src.unlimited_time ?? src.unlimitedTime,
+    );
+    const daysRaw = src.days;
+    const days =
+      unlimited_time && (daysRaw === 0 || daysRaw === "0")
+        ? 0
+        : Number(daysRaw) || 30;
+    return {
+      days,
+      label: src.label || src.name || "",
+      unlimited_time,
+    };
   },
 
   async verifyPaidLicense(licenseKey, machineId) {

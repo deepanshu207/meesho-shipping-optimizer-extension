@@ -69,19 +69,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     if (demoKeyMatch) {
       const demoInfo = serverDemoKeys[demoKeyMatch];
-      const expiresAt = new Date(
-        Date.now() + demoInfo.days * 24 * 60 * 60 * 1000,
+      const licenseInfo = LicenseManager.buildDemoLicenseInfo(
+        trimmedKey,
+        demoInfo,
       );
 
       await chrome.storage.sync.set({
         licenseKey: trimmedKey,
         licenseStatus: "active",
-        licenseInfo: {
-          key: trimmedKey,
-          planType: "demo",
-          expiresAt: expiresAt.toISOString(),
-          activatedAt: new Date().toISOString(),
-        },
+        licenseInfo,
         lastVerified: Date.now(),
       });
 

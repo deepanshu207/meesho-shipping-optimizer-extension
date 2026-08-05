@@ -114,7 +114,9 @@ const LicenseManager = {
     const unlimitedTime = !!info.unlimitedTime;
     const unlimitedCredits = !!info.unlimitedCredits;
 
-    if (info.planType === "demo" && info.expiresAt) {
+    if (info.planType === "demo") {
+      if (info.unlimitedTime) return true;
+      if (!info.expiresAt) return true;
       return new Date() <= new Date(info.expiresAt);
     }
 
@@ -312,6 +314,10 @@ const LicenseManager = {
       for (const entry of licenses) {
         const info = entry.licenseInfo || {};
         if (info.planType === "demo") {
+          if (info.unlimitedTime || !info.expiresAt) {
+            updated.push(entry);
+            continue;
+          }
           if (info.expiresAt && new Date() > new Date(info.expiresAt)) {
             continue;
           }
@@ -361,6 +367,38 @@ const LicenseManager = {
   },
 
   demoKeys: null,
+
+  isDemoUnlimitedTime(demoInfo) {
+    if (!demoInfo) return false;
+    if (
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isUnlimitedFlag
+    ) {
+      return FirebaseLicense.isUnlimitedFlag(
+        demoInfo.unlimited_time ?? demoInfo.unlimitedTime,
+      );
+    }
+    return !!(demoInfo.unlimited_time || demoInfo.unlimitedTime);
+  },
+
+  buildDemoLicenseInfo(trimmedKey, demoInfo) {
+    const unlimitedTime = this.isDemoUnlimitedTime(demoInfo);
+    const days = Number(demoInfo?.days) || 30;
+    const info = {
+      key: trimmedKey,
+      planType: "demo",
+      planName: demoInfo?.label || "Demo",
+      billingMode: "subscription",
+      unlimitedTime,
+      activatedAt: new Date().toISOString(),
+    };
+    if (!unlimitedTime) {
+      info.expiresAt = new Date(
+        Date.now() + days * 24 * 60 * 60 * 1000,
+      ).toISOString();
+    }
+    return info;
+  },
 
   fetchDemoKeys: async function () {
     if (this.demoKeys) return this.demoKeys;
@@ -482,19 +520,9 @@ const LicenseManager = {
 
     if (demoKeyMatch) {
       const demoInfo = demoKeys[demoKeyMatch];
-      const expiresAt = new Date(
-        Date.now() + demoInfo.days * 24 * 60 * 60 * 1000,
-      );
       const entry = {
         key: trimmedKey,
-        licenseInfo: {
-          key: trimmedKey,
-          planType: "demo",
-          planName: demoInfo.label || "Demo",
-          billingMode: "subscription",
-          expiresAt: expiresAt.toISOString(),
-          activatedAt: new Date().toISOString(),
-        },
+        licenseInfo: this.buildDemoLicenseInfo(trimmedKey, demoInfo),
         activatedAt: new Date().toISOString(),
       };
 
