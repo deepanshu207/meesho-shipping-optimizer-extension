@@ -181,6 +181,12 @@ class MeeshoShippingOptimizer {
     this._gownPhotoZoomTimer = null;
     this._gownPhotoPanTimer = null;
     this._gownPhotoMarginTimer = null;
+    this._colorPickerHexTimer = null;
+    this._textOverlayPreviewTimer = null;
+    this._textControlsVariantId = null;
+    this._editingVariantId = null;
+    this._activeRunMeta = null;
+    this._navigationGuardWired = false;
     this._borderComposeGen = 0;
     this._staticControlsVariantId = null;
     this._categoryUserPicked = false;
@@ -1042,6 +1048,52 @@ class MeeshoShippingOptimizer {
     void this.importPageImageIfNeeded();
   }
 
+  /** Clear all short-lived debounce/editor timers so stray callbacks never
+   *  fire against DOM that has been torn down (modal closed / results reset). */
+  clearTransientTimers() {
+    const timers = [
+      "_borderThicknessTimer",
+      "_gownLayerTimer",
+      "_gownPhotoZoomTimer",
+      "_gownPhotoPanTimer",
+      "_gownPhotoMarginTimer",
+      "_colorPickerHexTimer",
+      "_textOverlayPreviewTimer",
+      "_categoryEditingTimer",
+      "_categoryAcDebounce",
+      "_categoryAcOpenTimer",
+    ];
+    for (const key of timers) {
+      if (this[key]) {
+        clearTimeout(this[key]);
+        this[key] = null;
+      }
+    }
+  }
+
+  /** Release cached blob object URLs held on result rows to avoid leaks. */
+  revokeResultObjectUrls(rows) {
+    (rows || []).forEach((row) => {
+      if (row && row._previewObjectUrl) {
+        try {
+          URL.revokeObjectURL(row._previewObjectUrl);
+        } catch (e) {
+          /* ignore */
+        }
+        row._previewObjectUrl = null;
+        row._previewObjectUrlBlob = null;
+      }
+      if (row?.layers?._composeFallbackUrl) {
+        try {
+          URL.revokeObjectURL(row.layers._composeFallbackUrl);
+        } catch (e) {
+          /* ignore */
+        }
+        row.layers._composeFallbackUrl = null;
+      }
+    });
+  }
+
   closeModal() {
     if (window.WEB_OPTIMIZER_MODE && this.embeddedRoot) {
       this.mountEmbedded(this.embeddedRoot);
@@ -1049,6 +1101,7 @@ class MeeshoShippingOptimizer {
     }
     this.restoreMeeshoPageInert();
     this.detachCategoryAutocompleteModalHandlers();
+    this.clearTransientTimers();
     this._categoryUserEditing = false;
     this._categoryAcPinned = false;
     this._categoryPageSyncedThisModal = false;
@@ -2860,7 +2913,10 @@ Please share payment details.`;
     this._runPreviousResults = null;
     this._runFinalizedEarly = false;
     this.clearStopTimers();
+    this.clearTransientTimers();
     this._activeRunMeta = null;
+    this.revokeResultObjectUrls(this.currentResults);
+    this.revokeResultObjectUrls(this.framedExtraResults);
     this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
@@ -7024,14 +7080,7 @@ Please share payment details.`;
   closeVariantEditor() {
     const panel = document.getElementById("variant-edit-panel");
     if (panel) panel.style.display = "none";
-    clearTimeout(this._borderThicknessTimer);
-    this._borderThicknessTimer = null;
-    clearTimeout(this._gownLayerTimer);
-    this._gownLayerTimer = null;
-    clearTimeout(this._gownPhotoZoomTimer);
-    this._gownPhotoZoomTimer = null;
-    clearTimeout(this._gownPhotoPanTimer);
-    this._gownPhotoPanTimer = null;
+    this.clearTransientTimers();
     this._staticControlsVariantId = null;
     this._textControlsVariantId = null;
     this._editingVariantId = null;

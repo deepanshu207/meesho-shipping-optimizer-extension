@@ -1254,7 +1254,22 @@ const OptimizerUI = {
     if (r.imageUrl) return r.imageUrl;
     if (r.pricingImageUrl) return r.pricingImageUrl;
     if (r.uploadedUrl) return r.uploadedUrl;
-    if (r.blob) return URL.createObjectURL(r.blob);
+    if (r.blob) {
+      // Cache the object URL on the row so repeated renders reuse one URL
+      // instead of leaking a new blob URL each time getResultsHTML runs.
+      if (!r._previewObjectUrl || r._previewObjectUrlBlob !== r.blob) {
+        if (r._previewObjectUrl) {
+          try {
+            URL.revokeObjectURL(r._previewObjectUrl);
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        r._previewObjectUrl = URL.createObjectURL(r.blob);
+        r._previewObjectUrlBlob = r.blob;
+      }
+      return r._previewObjectUrl;
+    }
     return "";
   },
 
