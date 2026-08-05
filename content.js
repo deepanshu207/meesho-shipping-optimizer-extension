@@ -186,6 +186,8 @@ class MeeshoShippingOptimizer {
     this._textControlsVariantId = null;
     this._editingVariantId = null;
     this._activeRunMeta = null;
+    this._imageGenGate = null;
+    this._imageGenRecorded = false;
     this._navigationGuardWired = false;
     this._borderComposeGen = 0;
     this._staticControlsVariantId = null;
@@ -693,6 +695,24 @@ class MeeshoShippingOptimizer {
     );
     this.openModal();
     return false;
+  }
+
+  /** Record a completed generation once per run (new image-gen billing path). */
+  async recordImageGenerationForRun(producedCount) {
+    if (this._imageGenRecorded) return;
+    if (!this.requiresLicense()) return;
+    const gate = this._imageGenGate;
+    // Legacy path already consumed credits at the gate; nothing to record.
+    if (!gate || gate.legacy) return;
+    const n = Math.max(0, Number(producedCount) || 0);
+    if (n <= 0) return;
+    this._imageGenRecorded = true;
+    try {
+      await LicenseManager.recordImageGeneration(n, gate);
+      this.isLicensed = LicenseManager.isLicensed;
+    } catch (e) {
+      console.warn("Image-gen record failed:", e);
+    }
   }
 
   isClickOnVisibleImage(img, event) {
@@ -1510,6 +1530,72 @@ Please share payment details.`;
 
     this.wireClearUploadButton();
     this.setupNavigationGuards();
+
+    const maxAttemptsSelect = document.getElementById("max-attempts");
+    if (maxAttemptsSelect) {
+      maxAttemptsSelect.addEventListener("change", () =>
+        this.refreshImageGenQuotaUi(),
+      );
+    }
+    void this.refreshImageGenQuotaUi();
+  }
+
+  /** Show remaining daily/monthly quota + per-generation credit cost. */
+  async refreshImageGenQuotaUi() {
+    const el = document.getElementById("image-gen-quota");
+    if (!el || !this.requiresLicense()) return;
+    if (typeof LicenseManager === "undefined") return;
+    try {
+      const summary = await LicenseManager.getImageGenSummary();
+      const cfg = summary.config;
+      if (!cfg.configured || !cfg.enabled) {
+        if (cfg.configured && !cfg.enabled) {
+          el.style.display = "block";
+          el.innerHTML = "⚠️ AI image generation is currently disabled.";
+        } else {
+          el.style.display = "none";
+        }
+        return;
+      }
+
+      const batch =
+        Number(document.getElementById("max-attempts")?.value, 10) ||
+        LiveSmart.readMainSmartModeSettings().maxAttempts;
+      const parts = [];
+
+      if (summary.remainingDaily != null) {
+        parts.push(
+          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} left`,
+        );
+      }
+      if (summary.remainingMonthly != null) {
+        parts.push(
+          `This month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} left`,
+        );
+      }
+      if (summary.costPerImage > 0) {
+        const total = summary.costPerImage * batch;
+        const bal =
+          summary.creditsBalance === Infinity
+            ? "∞"
+            : summary.creditsBalance;
+        parts.push(
+          `Cost: <strong>${summary.costPerImage}</strong> credit${summary.costPerImage === 1 ? "" : "s"} × ${batch} = <strong>${total}</strong> (balance ${bal})`,
+        );
+      }
+      if (cfg.max_batch_size > 0) {
+        parts.push(`Max ${cfg.max_batch_size} per generation`);
+      }
+
+      if (!parts.length) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "block";
+      el.innerHTML = "🎫 " + parts.join(" · ");
+    } catch (e) {
+      el.style.display = "none";
+    }
   }
 
 
@@ -3128,12 +3214,32 @@ Please share payment details.`;
       return;
     }
 
-    if (!(await this.ensureLicensed("Generate"))) return;
-
     if (this.isProcessing) {
       this.requestStopGeneration();
       return;
     }
+
+    // Gate generation on license validity + AI image-generation limits.
+    let imageGenGate = { ok: true, legacy: true };
+    if (this.requiresLicense()) {
+      const batchCount = LiveSmart.readMainSmartModeSettings().maxAttempts;
+      imageGenGate = await LicenseManager.ensureCanGenerateImages(batchCount);
+      if (!imageGenGate.ok) {
+        OptimizerUtils.showNotification(
+          imageGenGate.reason || "Cannot generate right now",
+          "error",
+          6000,
+        );
+        this.isLicensed = LicenseManager.isLicensed;
+        if (imageGenGate.openModal || imageGenGate.needsTopUp) {
+          this.openModal();
+        }
+        return;
+      }
+      this.isLicensed = true;
+    }
+    this._imageGenGate = imageGenGate;
+    this._imageGenRecorded = false;
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.syncFromSession?.();
@@ -3396,6 +3502,11 @@ Please share payment details.`;
     if (this._activeRunMeta) {
       this._activeRunMeta.attempts = runMeta.attempts;
     }
+
+    // Charge credits + increment image-generation counters for produced images.
+    const producedCount =
+      result.success && Array.isArray(result.results) ? result.results.length : 0;
+    await this.recordImageGenerationForRun(producedCount);
 
     if (this._runFinalizedEarly && runId === this._generationSeq) {
       this._runFinalizedEarly = false;

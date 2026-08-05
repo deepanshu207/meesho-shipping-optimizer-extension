@@ -35,7 +35,8 @@ const OptimizerUI = {
                         </div>
                         <div style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
                             ⚡ Live Meesho shipping checks — finds the lowest ₹ from generated variants
-                        </div>`;
+                        </div>
+                        <div id="image-gen-quota" style="display:none;margin-top:8px;font-size:10px;color:#c45f12;padding:8px;background:rgba(255,215,0,0.12);border-radius:8px;border:1px solid #f0e0c8;line-height:1.5;"></div>`;
   },
 
   frozenEstShipping: function (r) {

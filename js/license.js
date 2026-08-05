@@ -511,6 +511,298 @@ const LicenseManager = {
     return { ok: true };
   },
 
+  // ── AI image generation limits (synced with admin config) ──────────────
+
+  imageGenDefaultConfig() {
+    return {
+      configured: false,
+      enabled: true,
+      credits_per_image: 0,
+      daily_limit: 0,
+      monthly_limit: 0,
+      max_batch_size: 0,
+    };
+  },
+
+  async getImageGenConfig(forceFresh = false) {
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        return await FirebaseLicense.getImageGenerationConfig(forceFresh);
+      } catch (e) {
+        console.warn("Image-gen config load failed:", e.message);
+      }
+    }
+    return this.imageGenDefaultConfig();
+  },
+
+  async _getLocalImageCounters(key) {
+    try {
+      const r = await chrome.storage.local.get(["imageGenCounters"]);
+      return (r.imageGenCounters || {})[key] || {};
+    } catch (e) {
+      return {};
+    }
+  },
+
+  async _setLocalImageCounters(key, counters) {
+    try {
+      const r = await chrome.storage.local.get(["imageGenCounters"]);
+      const map = r.imageGenCounters || {};
+      map[key] = counters;
+      await chrome.storage.local.set({ imageGenCounters: map });
+    } catch (e) {
+      /* ignore */
+    }
+  },
+
+  /** Current (period-normalized) counters for the primary license. */
+  async getImageGenCounters() {
+    const licenses = await this.getActiveLicenses();
+    const primary = this.pickPrimaryLicense(licenses);
+    const normalize =
+      typeof FirebaseLicense !== "undefined"
+        ? (c) => FirebaseLicense.normalizeImageGenCounters(c)
+        : (c) => c || {};
+    if (!primary) return { normalize: null, ...normalize({}) };
+    const info = primary.licenseInfo || {};
+    if (info.planType === "demo") {
+      const local = await this._getLocalImageCounters(primary.key);
+      return { key: primary.key, demo: true, ...normalize(local) };
+    }
+    return {
+      key: primary.key,
+      demo: false,
+      ...normalize({
+        total: info.imagesGeneratedTotal,
+        today: info.imagesGeneratedToday,
+        todayDate: info.imagesGeneratedTodayDate,
+        month: info.imagesGeneratedMonth,
+        monthKey: info.imagesGeneratedMonthKey,
+      }),
+    };
+  },
+
+  _imageCreditsApply(licenses, config) {
+    if (!config || config.credits_per_image <= 0) return false;
+    if (licenses.some((e) => e.licenseInfo?.unlimitedCredits)) return false;
+    return licenses.some((e) => {
+      const mode = e.licenseInfo?.billingMode || "subscription";
+      return mode === "credits" || mode === "hybrid";
+    });
+  },
+
+  /** Check whether a batch of `batchCount` images can be generated now. */
+  async canGenerateImages(batchCount) {
+    const config = await this.getImageGenConfig();
+    const n = Math.max(1, Number(batchCount) || 1);
+
+    if (!config.configured) {
+      return { ok: true, legacy: true, config, cost: 0 };
+    }
+    if (!config.enabled) {
+      return {
+        ok: false,
+        reason: "AI image generation is currently disabled.",
+        config,
+        cost: 0,
+      };
+    }
+    if (config.max_batch_size > 0 && n > config.max_batch_size) {
+      return {
+        ok: false,
+        reason: `Max ${config.max_batch_size} images per generation — reduce the count and try again.`,
+        config,
+        cost: 0,
+      };
+    }
+
+    const counters = await this.getImageGenCounters();
+
+    if (config.daily_limit > 0) {
+      if (counters.today >= config.daily_limit) {
+        return {
+          ok: false,
+          reason: `Daily limit reached (${config.daily_limit}/day). Resets tomorrow.`,
+          config,
+          counters,
+          cost: 0,
+          limitReached: true,
+        };
+      }
+      if (counters.today + n > config.daily_limit) {
+        const left = Math.max(0, config.daily_limit - counters.today);
+        return {
+          ok: false,
+          reason: `Only ${left} image${left === 1 ? "" : "s"} left today (limit ${config.daily_limit}/day).`,
+          config,
+          counters,
+          cost: 0,
+          limitReached: true,
+        };
+      }
+    }
+
+    if (config.monthly_limit > 0) {
+      if (counters.month >= config.monthly_limit) {
+        return {
+          ok: false,
+          reason: `Monthly limit reached (${config.monthly_limit}/month).`,
+          config,
+          counters,
+          cost: 0,
+          limitReached: true,
+        };
+      }
+      if (counters.month + n > config.monthly_limit) {
+        const left = Math.max(0, config.monthly_limit - counters.month);
+        return {
+          ok: false,
+          reason: `Only ${left} image${left === 1 ? "" : "s"} left this month (limit ${config.monthly_limit}/month).`,
+          config,
+          counters,
+          cost: 0,
+          limitReached: true,
+        };
+      }
+    }
+
+    const licenses = await this.getActiveLicenses();
+    const creditsApply = this._imageCreditsApply(licenses, config);
+    let cost = 0;
+    if (creditsApply) {
+      cost = config.credits_per_image * n;
+      const balance = this.getTotalCreditsBalance(licenses);
+      if (balance !== Infinity && balance < cost) {
+        return {
+          ok: false,
+          reason: `Need ${cost} credits, you have ${balance}. Buy a credit pack to continue.`,
+          needsTopUp: true,
+          config,
+          counters,
+          cost,
+        };
+      }
+    }
+
+    return { ok: true, config, counters, cost, creditsApply };
+  },
+
+  /** Full gate before generation: license validity + image limits. */
+  async ensureCanGenerateImages(batchCount) {
+    await this.checkLicense();
+    if (!this.isLicensed) {
+      return {
+        ok: false,
+        reason: "Activate a license to generate images.",
+        openModal: true,
+      };
+    }
+    const gate = await this.canGenerateImages(batchCount);
+    if (!gate.ok) return gate;
+
+    if (gate.legacy) {
+      const consumed = await this.ensureCanOperate("Generate");
+      if (!consumed.ok) {
+        return {
+          ok: false,
+          reason: consumed.reason,
+          needsTopUp: consumed.needsTopUp,
+        };
+      }
+      return { ok: true, legacy: true };
+    }
+    return gate;
+  },
+
+  /** Deduct credits + increment counters after a successful generation. */
+  async recordImageGeneration(count, gate) {
+    const n = Math.max(0, Number(count) || 0);
+    if (n <= 0) return { ok: true, skipped: true };
+
+    const config = gate?.config || (await this.getImageGenConfig());
+    if (!config.configured) return { ok: true, skipped: true };
+
+    const cost = Number(gate?.cost) || 0;
+    if (cost > 0) {
+      await this.consumeCredits(cost);
+    }
+
+    const licenses = await this.getActiveLicenses();
+    const primary = this.pickPrimaryLicense(licenses);
+    if (!primary) return { ok: false, reason: "No license" };
+    const info = primary.licenseInfo || {};
+
+    const useFirebase =
+      info.planType !== "demo" &&
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled();
+
+    if (!useFirebase) {
+      const cur = FirebaseLicense.normalizeImageGenCounters(
+        await this._getLocalImageCounters(primary.key),
+      );
+      const next = {
+        total: cur.total + n,
+        today: cur.today + n,
+        todayDate: cur.todayDate,
+        month: cur.month + n,
+        monthKey: cur.monthKey,
+      };
+      await this._setLocalImageCounters(primary.key, next);
+      await this.updateLicenseEntry(primary.key, {
+        imagesGeneratedTotal: next.total,
+        imagesGeneratedToday: next.today,
+        imagesGeneratedTodayDate: next.todayDate,
+        imagesGeneratedMonth: next.month,
+        imagesGeneratedMonthKey: next.monthKey,
+      });
+      return { ok: true, counters: next };
+    }
+
+    const res = await FirebaseLicense.recordImageGeneration(primary.key, n);
+    if (res.ok && res.counters) {
+      await this.updateLicenseEntry(primary.key, {
+        imagesGeneratedTotal: res.counters.total,
+        imagesGeneratedToday: res.counters.today,
+        imagesGeneratedTodayDate: res.counters.todayDate,
+        imagesGeneratedMonth: res.counters.month,
+        imagesGeneratedMonthKey: res.counters.monthKey,
+      });
+    }
+    return res;
+  },
+
+  /** Summary for UI: config + counters + remaining + per-image cost. */
+  async getImageGenSummary() {
+    const config = await this.getImageGenConfig();
+    const counters = await this.getImageGenCounters();
+    const licenses = await this.getActiveLicenses();
+    const creditsApply = this._imageCreditsApply(licenses, config);
+    const balance = this.getTotalCreditsBalance(licenses);
+    const remainingDaily =
+      config.daily_limit > 0
+        ? Math.max(0, config.daily_limit - counters.today)
+        : null;
+    const remainingMonthly =
+      config.monthly_limit > 0
+        ? Math.max(0, config.monthly_limit - counters.month)
+        : null;
+    return {
+      config,
+      counters,
+      creditsApply,
+      creditsBalance: balance,
+      costPerImage: creditsApply ? config.credits_per_image : 0,
+      remainingDaily,
+      remainingMonthly,
+    };
+  },
+
   verifyLicenseKey: async function (key) {
     if (!key || key.length < 10) {
       return { success: false, message: "Invalid license key format" };

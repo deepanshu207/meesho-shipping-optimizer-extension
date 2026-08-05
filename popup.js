@@ -575,9 +575,57 @@ Please share payment details and license key.`;
     });
   });
 
+  async function refreshImageGenQuota() {
+    const el = document.getElementById("image-gen-quota-popup");
+    if (!el || typeof LicenseManager === "undefined") return;
+    try {
+      const summary = await LicenseManager.getImageGenSummary();
+      const cfg = summary.config;
+      if (!cfg.configured) {
+        el.style.display = "none";
+        return;
+      }
+      if (!cfg.enabled) {
+        el.style.display = "block";
+        el.innerHTML = "⚠️ AI image generation is currently disabled.";
+        return;
+      }
+      const parts = [];
+      if (summary.remainingDaily != null) {
+        parts.push(
+          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} images left`,
+        );
+      }
+      if (summary.remainingMonthly != null) {
+        parts.push(
+          `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} left`,
+        );
+      }
+      if (summary.costPerImage > 0) {
+        const bal =
+          summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
+        parts.push(
+          `<strong>${summary.costPerImage}</strong> credit${summary.costPerImage === 1 ? "" : "s"}/image · balance ${bal}`,
+        );
+      }
+      if (cfg.max_batch_size > 0) {
+        parts.push(`max ${cfg.max_batch_size}/generation`);
+      }
+      if (!parts.length) {
+        el.style.display = "none";
+        return;
+      }
+      el.style.display = "block";
+      el.innerHTML = "🎫 AI images — " + parts.join(" · ");
+    } catch (e) {
+      el.style.display = "none";
+    }
+  }
+
   await loadFirebaseSettings();
   await hydratePopupPlans();
   await loadLicenseStatus();
+  await refreshImageGenQuota();
   setStatus(
     PA.isMobile()
       ? "Tap Open Image Optimizer on Meesho catalog page."

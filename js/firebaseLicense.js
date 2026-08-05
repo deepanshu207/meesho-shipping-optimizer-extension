@@ -508,7 +508,127 @@ const FirebaseLicense = {
       cost_per_operation:
         Number(raw.cost_per_operation ?? raw.costPerOperation ?? 1) || 1,
       packs: this.sortPlans(packs.filter((p) => p.active !== false)),
+      image_generation: this.normalizeImageGenConfig(
+        raw.image_generation ?? raw.imageGeneration,
+      ),
     };
+  },
+
+  /** Normalize the credits.image_generation admin config. */
+  normalizeImageGenConfig(raw) {
+    const configured = !!raw && typeof raw === "object";
+    const r = configured ? raw : {};
+    return {
+      configured,
+      enabled: r.enabled !== false,
+      credits_per_image:
+        Math.max(0, Number(r.credits_per_image ?? r.creditsPerImage ?? 0) || 0),
+      daily_limit:
+        Math.max(0, Number(r.daily_limit ?? r.dailyLimit ?? 0) || 0),
+      monthly_limit:
+        Math.max(0, Number(r.monthly_limit ?? r.monthlyLimit ?? 0) || 0),
+      max_batch_size:
+        Math.max(0, Number(r.max_batch_size ?? r.maxBatchSize ?? 0) || 0),
+    };
+  },
+
+  /** Extract normalized image_generation config from a config object. */
+  getImageGenConfig(config) {
+    const raw =
+      config?.image_generation ??
+      config?.imageGeneration ??
+      config?.credits?.image_generation ??
+      config?.credits?.imageGeneration;
+    return this.normalizeImageGenConfig(raw);
+  },
+
+  async getImageGenerationConfig(forceFresh = false) {
+    const credits = await this.getCreditsConfig(forceFresh);
+    return this.getImageGenConfig(credits);
+  },
+
+  /** Local-date period keys for daily/monthly counters. */
+  getImageGenPeriodKeys(date = new Date()) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return { todayDate: `${y}-${m}-${d}`, monthKey: `${y}-${m}` };
+  },
+
+  /** Return counters with today/month reset when the period key changed. */
+  normalizeImageGenCounters(counters) {
+    const { todayDate, monthKey } = this.getImageGenPeriodKeys();
+    const c = counters || {};
+    const total =
+      Number(
+        c.total ?? c.images_generated_total ?? c.imagesGeneratedTotal ?? 0,
+      ) || 0;
+    let today =
+      Number(
+        c.today ?? c.images_generated_today ?? c.imagesGeneratedToday ?? 0,
+      ) || 0;
+    let month =
+      Number(
+        c.month ?? c.images_generated_month ?? c.imagesGeneratedMonth ?? 0,
+      ) || 0;
+    const savedTodayDate =
+      c.todayDate ??
+      c.images_generated_today_date ??
+      c.imagesGeneratedTodayDate ??
+      "";
+    const savedMonthKey =
+      c.monthKey ??
+      c.images_generated_month_key ??
+      c.imagesGeneratedMonthKey ??
+      "";
+    if (savedTodayDate !== todayDate) today = 0;
+    if (savedMonthKey !== monthKey) month = 0;
+    return { total, today, todayDate, month, monthKey };
+  },
+
+  /** Increment image-generation counters on a license doc. */
+  async recordImageGeneration(licenseKey, count) {
+    if (!this.isEnabled()) {
+      return { ok: false, reason: "Firebase unavailable" };
+    }
+    const key = this.normalizeKey(licenseKey);
+    const lic = await this.fetchDoc("licenses", key);
+    if (!lic) return { ok: false, reason: "License not found" };
+
+    const cur = this.normalizeImageGenCounters({
+      total: lic.images_generated_total,
+      today: lic.images_generated_today,
+      todayDate: lic.images_generated_today_date,
+      month: lic.images_generated_month,
+      monthKey: lic.images_generated_month_key,
+    });
+    const n = Math.max(0, Number(count) || 0);
+    const next = {
+      total: cur.total + n,
+      today: cur.today + n,
+      todayDate: cur.todayDate,
+      month: cur.month + n,
+      monthKey: cur.monthKey,
+    };
+    const ok = await this.patchDoc(
+      "licenses",
+      key,
+      {
+        images_generated_total: next.total,
+        images_generated_today: next.today,
+        images_generated_today_date: next.todayDate,
+        images_generated_month: next.month,
+        images_generated_month_key: next.monthKey,
+      },
+      [
+        "images_generated_total",
+        "images_generated_today",
+        "images_generated_today_date",
+        "images_generated_month",
+        "images_generated_month_key",
+      ],
+    );
+    return { ok, counters: next };
   },
 
   async getCreditPacks(forceFresh = false) {
@@ -660,6 +780,16 @@ const FirebaseLicense = {
         (Number(lic.addon_credits ?? lic.addonCredits ?? 0) || 0),
       addonCreditIds: extras.addonCreditIds ?? this.getLicenseAddonIds(lic),
       creditsUsed: Number(lic.credits_used ?? lic.creditsUsed ?? 0) || 0,
+      imagesGeneratedTotal:
+        Number(lic.images_generated_total ?? lic.imagesGeneratedTotal ?? 0) || 0,
+      imagesGeneratedToday:
+        Number(lic.images_generated_today ?? lic.imagesGeneratedToday ?? 0) || 0,
+      imagesGeneratedTodayDate:
+        lic.images_generated_today_date || lic.imagesGeneratedTodayDate || "",
+      imagesGeneratedMonth:
+        Number(lic.images_generated_month ?? lic.imagesGeneratedMonth ?? 0) || 0,
+      imagesGeneratedMonthKey:
+        lic.images_generated_month_key || lic.imagesGeneratedMonthKey || "",
       expiresAt: unlimitedTime
         ? null
         : extras.expiresAt || lic.expiresAt || lic.expires_at || null,

@@ -297,6 +297,51 @@ Add to `shipping_optimizer_config/app`:
 
 When credits run out, user buys a pack via WhatsApp → admin adds to `credits_balance` on their license.
 
+### AI image generation limits (`credits.image_generation`)
+
+Control how many images users can generate and whether each image costs credits. Add an `image_generation` object inside `credits` on `shipping_optimizer_config/app`:
+
+```json
+{
+  "credits": {
+    "enabled": true,
+    "image_generation": {
+      "enabled": true,
+      "credits_per_image": 2,
+      "daily_limit": 20,
+      "monthly_limit": 0,
+      "max_batch_size": 4
+    }
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | `false` blocks all AI image generation with a message. Default `true`. |
+| `credits_per_image` | Credits charged per generated image (`0` = free). Only applies to `credits`/`hybrid` licenses — subscription/unlimited plans generate free. |
+| `daily_limit` | Max images per day per license (`0` = unlimited). Resets at local midnight. |
+| `monthly_limit` | Max images per calendar month (`0` = unlimited). Resets on the 1st. |
+| `max_batch_size` | Max images in a single generation run (`0` = unlimited). |
+
+**Behavior & flexibility:**
+- If the whole `image_generation` object is **absent**, nothing changes — the extension keeps its existing behavior (1 credit per operation for credit plans).
+- Once present, the extension enforces these limits client-side **before** generating and persists counters **after** each run.
+- Fully flexible: set every value to `0` (and `enabled: true`) for unlimited free generation; tighten any field to throttle.
+- `unlimited_credits` licenses never pay per image (add-on/limit checks still apply).
+
+**Counters written to the license doc** (`shipping_optimizer_licenses/{key}`) on each generation:
+
+| Field | Description |
+|-------|-------------|
+| `images_generated_total` | Lifetime images generated |
+| `images_generated_today` | Images generated today (reset when the date changes) |
+| `images_generated_today_date` | `YYYY-MM-DD` of the current day counter |
+| `images_generated_month` | Images generated this month (reset when the month changes) |
+| `images_generated_month_key` | `YYYY-MM` of the current month counter |
+
+Credits are deducted from `credits_balance` (→ `credits_used`) at `credits_per_image × images`. The extension shows remaining quota and the credit cost before generating, and blocks with a clear message when a limit is hit or credits are insufficient.
+
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 
 One document per promo code. Document ID = the key (uppercase recommended).
@@ -414,7 +459,10 @@ service cloud.firestore {
           'unlimited_time', 'unlimited_devices', 'unlimited_credits',
           'activatedAt', 'lastVerifiedAt', 'expiresAt',
           'credits_balance', 'credits_used',
-          'included_credits', 'addon_credits', 'addon_credit_ids'
+          'included_credits', 'addon_credits', 'addon_credit_ids',
+          'images_generated_total', 'images_generated_today',
+          'images_generated_today_date', 'images_generated_month',
+          'images_generated_month_key'
         ]);
     }
   }

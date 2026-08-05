@@ -163,6 +163,30 @@ Edit `credits` object on app doc:
 **Custom pack example:** `{ "id": "pack_250", "credits": 250, "price": 400, "label": "250 Credits" }`
 **Custom amount:** show `price_per_credit` × amount (min `min_purchase`) for WhatsApp quote.
 
+**AI image generation limits** — add an editor for `credits.image_generation`:
+
+```json
+{
+  "image_generation": {
+    "enabled": true,
+    "credits_per_image": 2,
+    "daily_limit": 20,
+    "monthly_limit": 0,
+    "max_batch_size": 4
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `enabled` | Master on/off for AI image generation |
+| `credits_per_image` | Credits charged per image (`0` = free; only for credits/hybrid plans) |
+| `daily_limit` | Images/day per license (`0` = unlimited) |
+| `monthly_limit` | Images/month (`0` = unlimited) |
+| `max_batch_size` | Max images per generation run (`0` = unlimited) |
+
+The extension enforces these client-side and writes counters back to each license: `images_generated_total`, `images_generated_today`, `images_generated_today_date`, `images_generated_month`, `images_generated_month_key`. Your **Paid Licenses** view can display these read-only to see usage. Leave the whole `image_generation` object out to keep legacy behavior (1 credit/operation).
+
 ---
 
 ## TAB 3: Demo / Promo Keys
