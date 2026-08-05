@@ -202,23 +202,36 @@ function safeNotify(msg) {
 
 async function autoLicenseCheck() {
   try {
-    const data = await chrome.storage.sync.get(["licenseKey"]);
-    if (!data.licenseKey) return;
+    const data = await chrome.storage.sync.get(["activeLicenses", "licenseKey"]);
+    const keys = [];
+    if (Array.isArray(data.activeLicenses) && data.activeLicenses.length) {
+      data.activeLicenses.forEach((e) => {
+        if (e?.key) keys.push(e.key);
+      });
+    } else if (data.licenseKey) {
+      keys.push(data.licenseKey);
+    }
+    if (!keys.length) return;
 
     const bg = self.backgroundInstance;
     if (!bg) return;
 
-    const valid = await bg.verifyLicenseKey(data.licenseKey);
+    let anyValid = false;
+    for (const key of keys) {
+      if (await bg.verifyLicenseKey(key)) anyValid = true;
+    }
 
-    if (!valid) {
+    if (!anyValid) {
       await chrome.storage.sync.set({
         licenseStatus: "inactive",
         licenseInfo: null,
+        licenseKey: null,
+        activeLicenses: [],
       });
       console.log("License invalid. Extension locked.");
     }
 
-    safeNotify({ type: "LICENSE_UPDATED", valid });
+    safeNotify({ type: "LICENSE_UPDATED", valid: anyValid });
   } catch (e) {
     console.error("License auto-check failed:", e);
   }

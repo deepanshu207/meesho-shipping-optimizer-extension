@@ -27,6 +27,9 @@ const LIVE_SMART_DEFAULTS = {
   maxVariantsCap: 100,
 };
 
+const STOP_FORCE_MS = 1200;
+const STOP_ESCALATE_MS = 600;
+
 const LiveSmart = {
   readMainSmartModeSettings() {
     const maxAttempts = Math.min(
@@ -157,6 +160,7 @@ class MeeshoShippingOptimizer {
     this._runPreviousResults = null;
     this._runFinalizedEarly = false;
     this._stopFinalizeTimer = null;
+    this._stopEscalateTimer = null;
     this._generationSeq = 0;
     this.currentResults = [];
     this.framedExtraResults = [];
@@ -366,17 +370,23 @@ class MeeshoShippingOptimizer {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log("Message received:", message);
         if (message.action === "openOptimizer") {
+          if (document.getElementById("opt-modal")) {
+            sendResponse({ success: true, alreadyOpen: true });
+            return true;
+          }
           this.openModal();
           sendResponse({ success: true });
         } else if (message.type === "LICENSE_UPDATED") {
           void this.checkLicense().then((valid) => {
-            if (!valid && this.modal) {
+            if (!valid && this.modal && this.isLicensed === false) {
               OptimizerUtils.showNotification(
                 "License expired — please activate again",
                 "error",
               );
               this.closeModal();
               setTimeout(() => this.openModal(), 400);
+            } else {
+              this.isLicensed = valid;
             }
           });
           sendResponse({ success: true });
@@ -398,14 +408,15 @@ class MeeshoShippingOptimizer {
   // Observe URL changes for SPA
   observeUrlChanges() {
     let lastUrl = location.href;
+    let setupTimer = null;
     new MutationObserver(() => {
       const url = location.href;
-      if (url !== lastUrl) {
-        lastUrl = url;
-        console.log("URL changed:", url);
-        this.autoPopupShown = false;
-        setTimeout(() => this.setup(), 1000);
-      }
+      if (url === lastUrl) return;
+      lastUrl = url;
+      console.log("URL changed:", url);
+      this.autoPopupShown = false;
+      clearTimeout(setupTimer);
+      setupTimer = setTimeout(() => this.setup(), 800);
     }).observe(document, { subtree: true, childList: true });
   }
 
@@ -610,7 +621,11 @@ class MeeshoShippingOptimizer {
       touch-action: manipulation;
     `;
 
-    fab.onclick = () => this.openModal();
+    fab.onclick = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      this.openModal();
+    };
 
     document.documentElement.appendChild(fab);
     this._optimizerFab = fab;
@@ -629,6 +644,11 @@ class MeeshoShippingOptimizer {
     }
 
     try {
+      if (typeof LicenseManager !== "undefined") {
+        this.isLicensed = await LicenseManager.checkLicense();
+        return this.isLicensed;
+      }
+
       const result = await chrome.storage.sync.get([
         "licenseKey",
         "licenseStatus",
@@ -636,25 +656,8 @@ class MeeshoShippingOptimizer {
       ]);
 
       if (result.licenseStatus === "active" && result.licenseKey) {
-        const info = result.licenseInfo || {};
-        const unlimitedTime = !!info.unlimitedTime;
-        if (!unlimitedTime && info.expiresAt) {
-          const expiresAt = new Date(info.expiresAt);
-          if (new Date() > expiresAt) {
-            this.isLicensed = false;
-            if (typeof LicenseManager !== "undefined") {
-              await LicenseManager.clearLicense("expired");
-            }
-            return false;
-          }
-        }
         this.isLicensed = true;
         return true;
-      }
-
-      if (typeof LicenseManager !== "undefined") {
-        this.isLicensed = await LicenseManager.checkLicense();
-        return this.isLicensed;
       }
 
       this.isLicensed = false;
@@ -805,7 +808,11 @@ class MeeshoShippingOptimizer {
       btn.style.transform = "translateY(0)";
       btn.style.boxShadow = "0 6px 20px rgba(230,126,34,0.35)";
     };
-    btn.onclick = () => this.openModal();
+    btn.onclick = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      this.openModal();
+    };
 
     const wrapper = document.createElement("div");
     wrapper.style.margin = "10px 0";
@@ -952,13 +959,8 @@ class MeeshoShippingOptimizer {
     }
 
     if (!window.WEB_OPTIMIZER_MODE) {
-      try {
-        await chrome.runtime.sendMessage({ type: "FORCE_LICENSE_CHECK" });
-      } catch (e) {
-        console.warn("License check message failed:", e);
-      }
+      await this.checkLicense();
     }
-    await this.checkLicense();
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.init();
@@ -1005,6 +1007,7 @@ class MeeshoShippingOptimizer {
     if (this.isLicensed) {
       this.setupMainEvents();
       this.attachCategoryAutocompleteModalHandlers();
+      void this.setupLicenseAccountEvents();
     } else {
       this.setupLicenseEvents();
     }
@@ -1229,6 +1232,114 @@ Please share payment details.`;
         if (e.key === "Enter") activateBtn.click();
       };
     }
+  }
+
+  async setupLicenseAccountEvents() {
+    if (typeof LicenseManager === "undefined") return;
+    const root = this.modal;
+    await LicenseManager.refreshAccountListUi(root);
+
+    const addToggle = root?.querySelector("#license-add-toggle");
+    const addPanel = root?.querySelector("#license-add-panel");
+    if (addToggle && addPanel) {
+      addToggle.onclick = () => {
+        const open = addPanel.style.display !== "block";
+        addPanel.style.display = open ? "block" : "none";
+        addToggle.textContent = open ? "Cancel" : "+ Add license";
+        if (open) {
+          root.querySelector("#license-key-input-secondary")?.focus();
+        }
+      };
+    }
+
+    const activateSecondary = root?.querySelector("#activate-license-secondary-btn");
+    const secondaryInput = root?.querySelector("#license-key-input-secondary");
+    const activateSecondaryKey = async () => {
+      const key = secondaryInput?.value?.trim();
+      if (!key) {
+        OptimizerUtils.showNotification("Please enter a license key", "error");
+        return;
+      }
+      if (key.length < 10) {
+        OptimizerUtils.showNotification("License key is too short", "error");
+        return;
+      }
+      if (activateSecondary) {
+        activateSecondary.textContent = "Verifying...";
+        activateSecondary.disabled = true;
+      }
+      try {
+        const result = await LicenseManager.verifyLicenseKey(key);
+        if (result.success) {
+          this.isLicensed = true;
+          if (secondaryInput) secondaryInput.value = "";
+          if (addPanel) addPanel.style.display = "none";
+          if (addToggle) addToggle.textContent = "+ Add license";
+          OptimizerUtils.showNotification(
+            result.merged
+              ? "License added — multiple licenses active"
+              : "License activated successfully!",
+            "success",
+          );
+          await LicenseManager.refreshAccountListUi(root);
+        } else {
+          OptimizerUtils.showNotification(
+            result.message || "License verification failed",
+            "error",
+          );
+        }
+      } catch (error) {
+        OptimizerUtils.showNotification("Error: " + error.message, "error");
+      } finally {
+        if (activateSecondary) {
+          activateSecondary.textContent = "Activate License";
+          activateSecondary.disabled = false;
+        }
+      }
+    };
+    if (activateSecondary) activateSecondary.onclick = activateSecondaryKey;
+    if (secondaryInput) {
+      secondaryInput.onkeypress = (e) => {
+        if (e.key === "Enter") activateSecondaryKey();
+      };
+    }
+
+    const bindSignOffButtons = () => {
+      root?.querySelectorAll(".license-signoff-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const key = btn.dataset.licenseKey;
+          if (!key) return;
+          btn.disabled = true;
+          btn.textContent = "Signing off…";
+          const result = await LicenseManager.signOffLicense(key);
+          await this.checkLicense();
+          if (!this.isLicensed) {
+            OptimizerUtils.showNotification("Signed off — enter a new license", "info");
+            this.closeModal();
+            setTimeout(() => this.openModal(), 250);
+            return;
+          }
+          OptimizerUtils.showNotification("License removed from this device", "info");
+          await LicenseManager.refreshAccountListUi(root);
+          bindSignOffButtons();
+        };
+      });
+
+      const signOffAll = root?.querySelector("#license-signoff-all-btn");
+      if (signOffAll && !signOffAll.dataset.wired) {
+        signOffAll.dataset.wired = "1";
+        signOffAll.onclick = async () => {
+          signOffAll.disabled = true;
+          signOffAll.textContent = "Signing off…";
+          await LicenseManager.signOffAllLicenses();
+          this.isLicensed = false;
+          OptimizerUtils.showNotification("All licenses signed off", "info");
+          this.closeModal();
+          setTimeout(() => this.openModal(), 250);
+        };
+      }
+    };
+    bindSignOffButtons();
   }
 
   async ensureFullCategories() {
@@ -2861,8 +2972,8 @@ Please share payment details.`;
     this.selectedVariantId = null;
     this._runPreviousResults = null;
     this._runFinalizedEarly = false;
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
+    this._activeRunMeta = null;
     this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
@@ -2937,21 +3048,51 @@ Please share payment details.`;
   }
 
 
+  clearStopTimers() {
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = null;
+    clearTimeout(this._stopEscalateTimer);
+    this._stopEscalateTimer = null;
+  }
+
+  showNoResultsFallback(resultsArea, meta = {}) {
+    if (!resultsArea) return;
+    this.currentResults = [];
+    resultsArea.style.display = "block";
+    delete resultsArea.dataset.view;
+    resultsArea.innerHTML = OptimizerUI.getResultsHTML([], {
+      ...this.getResultsViewOptions(),
+      emptyState: meta,
+    });
+    this.setupResultsEvents();
+    this.restoreOptimizerChromeAfterResults();
+  }
+
   requestStopGeneration() {
-    if (!this.isProcessing) return;
+    if (!this.isProcessing) {
+      OptimizerUtils.showNotification("Nothing is running to stop", "info", 2500);
+      return;
+    }
+    if (this.shouldStop) return;
     this.shouldStop = true;
     const processingArea = document.getElementById("processing-area");
     this.markSmartModeStopping(processingArea);
-    clearTimeout(this._stopFinalizeTimer);
+    this.clearStopTimers();
+    this._stopEscalateTimer = setTimeout(() => {
+      this.markSmartModeStopping(processingArea, { escalate: true });
+    }, STOP_ESCALATE_MS);
     this._stopFinalizeTimer = setTimeout(() => {
-      this.forceFinishProcessing();
-    }, 2500);
+      this.forceFinishProcessing({
+        reason: "stop_timeout",
+        attempts: this._activeRunMeta?.attempts,
+        maxAttempts: this._activeRunMeta?.maxAttempts,
+      });
+    }, STOP_FORCE_MS);
   }
 
-  forceFinishProcessing() {
+  forceFinishProcessing(meta = {}) {
     if (!this.isProcessing) return;
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
     this._generationSeq++;
     this._runFinalizedEarly = false;
 
@@ -2980,18 +3121,26 @@ Please share payment details.`;
         "Stopped — your previous variants are still available",
         "info",
       );
+    } else if (resultsArea) {
+      this.showNoResultsFallback(resultsArea, {
+        reason: "stopped",
+        attempts: meta.attempts ?? this._activeRunMeta?.attempts,
+        maxAttempts: meta.maxAttempts ?? this._activeRunMeta?.maxAttempts,
+        errorMessage: meta.errorMessage,
+      });
+      OptimizerUtils.showNotification("Search stopped", "info");
     } else {
       const uploadArea = document.getElementById("upload-area");
-      if (resultsArea) resultsArea.style.display = "none";
       if (uploadArea) uploadArea.style.display = "block";
       document.querySelectorAll(".opt-section").forEach((s) => {
         s.style.display = "block";
       });
       this.restoreOptimizerChromeAfterResults();
-      OptimizerUtils.showNotification("Stopped", "info");
+      OptimizerUtils.showNotification("Search stopped", "info");
     }
 
     this._runPreviousResults = null;
+    this._activeRunMeta = null;
     this.finishOptimizerRun();
   }
 
@@ -3052,8 +3201,7 @@ Please share payment details.`;
     this.isProcessing = true;
     this.shouldStop = false;
     this._runFinalizedEarly = false;
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
     this.lastProcessedFile = file;
     this._runPreviousResults = [...(this.currentResults || [])];
     this.lastLivePricedResults = [];
@@ -3081,6 +3229,7 @@ Please share payment details.`;
     const maxAttempts = runSettings.maxAttempts;
     const shippingCap = LiveSmart.getShippingCap();
     const smartSearchCap = runSettings.maxShippingCap;
+    this._activeRunMeta = { maxAttempts, attempts: 0 };
 
     OptimizerUtils.showNotification(
       `🚀 Generating up to ${maxAttempts} variants`,
@@ -3107,10 +3256,9 @@ Please share payment details.`;
       );
     }
 
-    const finishRunUi = (mappedResults) => {
+    const finishRunUi = (mappedResults, runMeta = {}) => {
       if (runId !== this._generationSeq) return;
-      clearTimeout(this._stopFinalizeTimer);
-      this._stopFinalizeTimer = null;
+      this.clearStopTimers();
       if (processingArea) {
         processingArea.style.display = "none";
         processingArea.innerHTML = "";
@@ -3147,24 +3295,31 @@ Please share payment details.`;
           this.setupResultsEvents();
         }
         this.restoreOptimizerChromeAfterResults();
+      } else if (resultsArea) {
+        const emptyReason = runMeta.error
+          ? "error"
+          : this.shouldStop || runMeta.stopped
+            ? "stopped"
+            : "exhausted";
+        this.showNoResultsFallback(resultsArea, {
+          reason: emptyReason,
+          attempts: runMeta.attempts,
+          maxAttempts: runMeta.maxAttempts || maxAttempts,
+          errorMessage: runMeta.errorMessage,
+        });
       } else {
-        if (resultsArea) resultsArea.style.display = "none";
         if (uploadArea) uploadArea.style.display = "block";
         sections.forEach((s) => (s.style.display = "block"));
         this.restoreOptimizerChromeAfterResults();
-        if (window.WEB_OPTIMIZER_MODE) {
-          OptimizerUtils.showNotification(
-            "No variants generated — try another image",
-            "error",
-          );
-        }
       }
       this._runPreviousResults = null;
+      this._activeRunMeta = null;
       this.finishOptimizerRun();
     };
 
     const startTime = Date.now();
     let result = { success: false, results: [] };
+    const runMeta = { maxAttempts };
 
     try {
       const blob = await new Promise((resolve) => {
@@ -3202,6 +3357,7 @@ Please share payment details.`;
           targetShipping,
           maxAttempts,
           (attempt, max, bestSoFar, noPidCount) => {
+            if (this._activeRunMeta) this._activeRunMeta.attempts = attempt;
             if (processingArea && !this.shouldStop) {
               const elapsed = Math.floor((Date.now() - startTime) / 1000);
               this.updateSmartModeProgressUI(
@@ -3247,6 +3403,7 @@ Please share payment details.`;
           blob,
           maxAttempts,
           (attempt, max) => {
+            if (this._activeRunMeta) this._activeRunMeta.attempts = attempt;
             if (processingArea && !this.shouldStop) {
               const elapsed = Math.floor((Date.now() - startTime) / 1000);
               this.updateSmartModeProgressUI(
@@ -3267,16 +3424,26 @@ Please share payment details.`;
       }
     } catch (err) {
       console.error("❌ Error:", err);
-      OptimizerUtils.showNotification("Error: " + err.message, "error");
+      runMeta.error = true;
+      runMeta.errorMessage = err.message || "Generation failed";
+      OptimizerUtils.showNotification("Error: " + runMeta.errorMessage, "error");
+    }
+
+    runMeta.attempts = result.attempts || runMeta.attempts || 0;
+    runMeta.stopped = !!(this.shouldStop || result.stopped);
+    if (this._activeRunMeta) {
+      this._activeRunMeta.attempts = runMeta.attempts;
     }
 
     if (this._runFinalizedEarly && runId === this._generationSeq) {
       this._runFinalizedEarly = false;
+      let earlyMapped = [];
       if (result?.success && result.results?.length > 0) {
         const mapped = result.results.map((r, i) => this.mapResultFromApi(r, i));
         const policy = LiveSmart.applyLiveResultPolicy(mapped);
-        finishRunUi(policy.display);
+        earlyMapped = policy.display;
       }
+      finishRunUi(earlyMapped, runMeta);
       return;
     }
 
@@ -3337,14 +3504,14 @@ Please share payment details.`;
           "info",
         );
       }
-    } else if (!window.WEB_OPTIMIZER_MODE) {
-      OptimizerUtils.showNotification(
-        `⚠️ No results yet. Try different image or check Meesho session.`,
-        "error",
-      );
+    } else if (mappedResults.length === 0) {
+      const emptyMsg = this.shouldStop || runMeta.stopped
+        ? "Search stopped — no variants to show"
+        : `No results after ${runMeta.attempts || maxAttempts} attempts — try another image`;
+      OptimizerUtils.showNotification(emptyMsg, this.shouldStop ? "info" : "error", 5000);
     }
 
-    finishRunUi(mappedResults);
+    finishRunUi(mappedResults, runMeta);
   }
 
 
@@ -3398,19 +3565,25 @@ Please share payment details.`;
     return root;
   }
 
-  markSmartModeStopping(processingArea) {
+  markSmartModeStopping(processingArea, options = {}) {
     if (!processingArea) return;
     const stopping = processingArea.querySelector("#smp-stopping");
     const stopBtn = processingArea.querySelector("#stop-btn");
     const label = processingArea.querySelector("#smp-best-label");
-    if (stopping) stopping.style.display = "block";
+    if (stopping) {
+      stopping.style.display = "block";
+      stopping.textContent = options.escalate
+        ? "Still finishing current step — showing results shortly…"
+        : "Stopping — showing results so far…";
+    }
     if (stopBtn) {
       stopBtn.disabled = true;
       stopBtn.style.opacity = "0.55";
       stopBtn.style.cursor = "not-allowed";
+      stopBtn.textContent = "Stopping…";
     }
-    if (label && label.textContent === "Searching…") {
-      label.textContent = "Wrapping up…";
+    if (label && (label.textContent === "Searching…" || label.textContent === "Wrapping up…")) {
+      label.textContent = options.escalate ? "Finishing up…" : "Wrapping up…";
     }
   }
 
@@ -3685,6 +3858,10 @@ Please share payment details.`;
       return "";
     });
 
+    // History guards only on web app — pushState on Meesho catalog can trigger
+    // their SPA router and cause a full page reload.
+    if (!window.WEB_OPTIMIZER_MODE) return;
+
     try {
       if (!history.state?.optimizerGuard) {
         history.pushState({ optimizerGuard: true }, "");
@@ -3721,8 +3898,7 @@ Please share payment details.`;
 
 
   finishOptimizerRun() {
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
     this.isProcessing = false;
     this.shouldStop = false;
     this.enableAllGenerateButtons();
@@ -7976,16 +8152,17 @@ Please share payment details.`;
   }
 
   stopProcessing() {
-    this.shouldStop = true;
-    const processingArea = document.getElementById("processing-area");
-    this.markSmartModeStopping(processingArea);
+    this.requestStopGeneration();
   }
 }
 
-// Initialize
+// Initialize — singleton so popup re-inject does not duplicate listeners
 if (window.WEB_OPTIMIZER_MODE) {
   window.MeeshoShippingOptimizer = MeeshoShippingOptimizer;
   if (typeof initWebOptimizerButtons === "function") initWebOptimizerButtons();
-} else {
+} else if (!window.meeshoOptimizer) {
   window.meeshoOptimizer = new MeeshoShippingOptimizer();
+} else if (typeof window.meeshoOptimizer.openModal === "function") {
+  // Script re-injected (e.g. from popup) — open on request only, no second instance
+  console.log("Shipping Optimizer already active on this tab");
 }

@@ -228,6 +228,22 @@ Extension generates Device ID per browser profile (e.g. `M1A2B3C4D5E6`). Kiwi An
 | `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) |
 | `hybrid` | Not expired AND has credits (unless unlimited flags) |
 
+### Stacked licenses (plan + credit top-up)
+
+The extension supports **multiple active keys on one device**:
+
+| Key type | Example | Behavior |
+|----------|---------|----------|
+| Primary plan | Yearly hybrid / subscription | Grants time-based access |
+| Credit top-up | Separate `billing_mode: credits` key | Stacks credits; deducted after hybrid plan credits |
+
+**Admin workflow for credit pack purchase:**
+1. Create a **new** paid license with `billing_mode: credits` and `credits_balance` = pack size (e.g. 50).
+2. Send that key to the customer — they activate it **in addition to** their existing plan key.
+3. Extension shows both licenses and combined credit balance.
+
+**Sign-off:** Customer can remove a key from the device in popup/modal — extension unbinds their device ID from that license doc (`device_ids[]`).
+
 ---
 
 ## Technical
@@ -244,8 +260,10 @@ Extension generates Device ID per browser profile (e.g. `M1A2B3C4D5E6`). Kiwi An
 1. Add custom plan "Lifetime" → shows in extension popup
 2. Create family license (3 devices) → 3rd device works, 4th blocked
 3. Create credits license → deduct on use → top-up adds balance
-4. Unlimited plan → no expiry, no device cap, no credit deduction
-5. Kiwi mobile activation → device ID appears in `device_ids[]`
+4. Create separate credit top-up key → customer stacks with plan → combined balance shown
+5. Unlimited plan → no expiry, no device cap, no credit deduction
+6. Kiwi mobile activation → device ID appears in `device_ids[]`
+7. Sign-off in extension → device removed from `device_ids[]` for that key
 
 ---
 

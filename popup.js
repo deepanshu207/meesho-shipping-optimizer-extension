@@ -138,32 +138,68 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   async function loadLicenseStatus() {
     try {
-      const result = await chrome.storage.sync.get([
-        "licenseKey",
-        "licenseStatus",
-        "licenseInfo",
-      ]);
+      if (typeof LicenseManager !== "undefined") {
+        await LicenseManager.checkLicense();
+      }
 
-      if (result.licenseStatus === "active" && result.licenseKey) {
-        statusBadge.textContent = "Active";
+      const licenses =
+        typeof LicenseManager !== "undefined"
+          ? await LicenseManager.getActiveLicenses()
+          : [];
+      const activeList = document.getElementById("active-licenses-list");
+      const activeActions = document.getElementById("license-active-actions");
+
+      if (licenses.length) {
+        statusBadge.textContent = licenses.length > 1 ? `${licenses.length} Active` : "Active";
         statusBadge.className = "status-badge active";
 
-        const info = result.licenseInfo || {};
-        let infoHTML = `<div class="license-key">${maskKey(result.licenseKey)}</div>`;
-        infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:6px;">Plan: <strong>${info.planType || "premium"}</strong>`;
+        if (activeList && typeof LicenseManager !== "undefined") {
+          activeList.innerHTML = LicenseManager.renderAccountListHtml(licenses);
+          activeList.querySelectorAll(".license-signoff-btn").forEach((btn) => {
+            PA.bindTap(btn, async () => {
+              const key = btn.dataset.licenseKey;
+              btn.disabled = true;
+              btn.textContent = "Signing off…";
+              await LicenseManager.signOffLicense(key);
+              showMessage("License removed from this device", "success");
+              await loadLicenseStatus();
+            });
+          });
+          const signOffAllInline = activeList.querySelector("#license-signoff-all-btn");
+          if (signOffAllInline) signOffAllInline.remove();
+        }
+
+        const primary = LicenseManager.pickPrimaryLicense(licenses);
+        const info = primary?.licenseInfo || {};
+        const typeLabel = LicenseManager.formatLicenseTypeLabel(info);
+        const totalCredits = LicenseManager.getTotalCreditsBalance(licenses);
+
+        let infoHTML = `<div class="license-type-pill">${LicenseManager.getLicenseRoleLabel(primary)}</div>`;
+        infoHTML += `<div style="font-size:14px;font-weight:700;color:var(--mso-ink);margin-bottom:6px;">${typeLabel}</div>`;
+        infoHTML += `<div class="license-key">${maskKey(primary.key)}</div>`;
+        infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:8px;line-height:1.45;">`;
+        if (licenses.length > 1) {
+          infoHTML += `<strong>${licenses.length} licenses</strong> on this device`;
+          if (totalCredits !== Infinity && totalCredits > 0) {
+            infoHTML += ` · Combined credits: <strong>${totalCredits}</strong>`;
+          }
+          infoHTML += `<br>`;
+        }
         if (info.maxDevices != null) {
           const devLabel = info.unlimitedDevices
             ? "Unlimited devices"
-            : `${info.deviceCount || 1}/${info.maxDevices}`;
-          infoHTML += ` · Devices: <strong>${devLabel}</strong>`;
-        }
-        if (info.unlimitedTime) {
-          infoHTML += ` · <strong>Unlimited time</strong>`;
+            : `${info.deviceCount || 1}/${info.maxDevices} devices`;
+          infoHTML += `${devLabel}`;
         }
         if (info.billingMode === "credits" || info.billingMode === "hybrid") {
           infoHTML += info.unlimitedCredits
             ? ` · Credits: <strong>Unlimited</strong>`
             : ` · Credits: <strong>${info.creditsBalance ?? 0}</strong>`;
+        }
+        if (info.unlimitedTime) {
+          infoHTML += ` · <strong>Unlimited time</strong>`;
+        } else if (info.expiresAt) {
+          infoHTML += ` · Expires: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong>`;
         }
         if (info.activatedAt) {
           infoHTML += ` · Activated: ${formatWhen(info.activatedAt)}`;
@@ -185,42 +221,39 @@ document.addEventListener("DOMContentLoaded", async () => {
 
         const creditsSection = document.getElementById("popup-credits-section");
         const showCreditsTopUp =
-          info.billingMode === "credits" ||
-          info.billingMode === "hybrid" ||
-          (info.creditsBalance != null && Number(info.creditsBalance) <= 0);
+          licenses.some((e) => {
+            const m = e.licenseInfo?.billingMode;
+            return m === "credits" || m === "hybrid";
+          }) || (totalCredits !== Infinity && totalCredits <= 5);
         if (creditsSection) {
           creditsSection.classList.toggle("hidden", !showCreditsTopUp);
         }
 
-        if (info.expiresAt && !info.unlimitedTime) {
+        if (!LicenseManager.licenseEntryHasAccess(primary)) {
+          statusBadge.textContent = "Expired";
+          statusBadge.className = "status-badge inactive";
+          infoHTML += `<div class="expiry-warning"><span>❌</span><span>Primary license inactive — add a new key or sign off</span></div>`;
+          activationSection.classList.remove("hidden");
+        } else if (info.expiresAt && !info.unlimitedTime) {
           const expiresAt = new Date(info.expiresAt);
           const diffMs = expiresAt - new Date();
-
           if (diffMs <= 0) {
             statusBadge.textContent = "Expired";
             statusBadge.className = "status-badge inactive";
             infoHTML += `<div class="expiry-warning"><span>❌</span><span>License expired</span></div>`;
             activationSection.classList.remove("hidden");
           } else {
-            const diffMins = Math.floor(diffMs / 60000);
-            const diffHours = Math.floor(diffMs / 3600000);
             const diffDays = Math.floor(diffMs / 86400000);
-
-            let expiryText = "";
-            if (diffMins < 60) {
-              expiryText = `${diffMins} minute${diffMins !== 1 ? "s" : ""}`;
-            } else if (diffHours < 24) {
-              expiryText = `${diffHours} hour${diffHours !== 1 ? "s" : ""}`;
-            } else {
-              expiryText = `${diffDays} day${diffDays !== 1 ? "s" : ""}`;
-            }
-
             if (diffDays < 7) {
+              const diffHours = Math.floor(diffMs / 3600000);
+              const expiryText =
+                diffHours < 24
+                  ? `${Math.floor(diffMs / 60000)} minutes`
+                  : diffDays < 1
+                    ? `${diffHours} hours`
+                    : `${diffDays} days`;
               infoHTML += `<div class="expiry-warning"><span>⚠️</span><span>Expires in ${expiryText}</span></div>`;
-            } else if (info.planType === "demo") {
-              infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:8px;">Demo · ${expiryText} left</p>`;
             }
-
             activationSection.classList.add("hidden");
           }
         } else {
@@ -228,11 +261,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         licenseInfo.innerHTML = infoHTML;
+        if (activeActions) activeActions.classList.remove("hidden");
       } else {
         statusBadge.textContent = "Inactive";
         statusBadge.className = "status-badge inactive";
         licenseInfo.innerHTML =
           '<p style="font-size:12px;color:var(--mso-muted);">Activate a license to use generate &amp; apply.</p>';
+        if (activeList) activeList.innerHTML = "";
+        if (activeActions) activeActions.classList.add("hidden");
         activationSection.classList.remove("hidden");
         const supportRow = document.getElementById("license-support-row");
         const deviceEl = document.getElementById("device-id-display");
@@ -414,9 +450,17 @@ Please share payment details and license key.`;
     showMessage("", "");
 
     try {
-      const result = await verifyLicenseWithServer(key);
+      const result =
+        typeof LicenseManager !== "undefined"
+          ? await LicenseManager.verifyLicenseKey(key)
+          : await verifyLicenseWithServer(key);
       if (result.success) {
-        showMessage("License activated successfully!", "success");
+        showMessage(
+          result.merged
+            ? "License added — multiple licenses now active"
+            : "License activated successfully!",
+          "success",
+        );
         await loadLicenseStatus();
       } else {
         showMessage(result.message || "License verification failed", "error");
@@ -435,11 +479,36 @@ Please share payment details and license key.`;
     });
   }
 
+  PA.bindTap(document.getElementById("show-add-license-btn"), () => {
+    scrollToActivation();
+  });
+
+  PA.bindTap(document.getElementById("signoff-all-btn"), async () => {
+    if (typeof LicenseManager === "undefined") return;
+    const btn = document.getElementById("signoff-all-btn");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Signing off…";
+    }
+    await LicenseManager.signOffAllLicenses();
+    showMessage("All licenses signed off — enter a new key below", "success");
+    await loadLicenseStatus();
+    scrollToActivation();
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Sign off all licenses";
+    }
+  });
+
   PA.bindTap(document.getElementById("copy-support-btn"), async () => {
-    const result = await chrome.storage.sync.get(["licenseKey", "licenseInfo"]);
+    const licenses =
+      typeof LicenseManager !== "undefined"
+        ? await LicenseManager.getActiveLicenses()
+        : [];
+    const primary = LicenseManager?.pickPrimaryLicense?.(licenses);
     const copied = await MachineId.copySupportBundle(
-      result.licenseKey,
-      result.licenseInfo,
+      primary?.key || licenses[0]?.key,
+      primary?.licenseInfo || licenses[0]?.licenseInfo,
     );
     showMessage(
       copied ? "Support info copied — paste in WhatsApp" : "Could not copy",

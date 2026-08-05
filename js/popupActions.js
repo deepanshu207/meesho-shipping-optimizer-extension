@@ -55,19 +55,14 @@ const PopupActions = {
       try {
         if (chrome?.tabs?.create) {
           chrome.tabs.create({ url }, () => {
-            if (chrome.runtime.lastError) {
-              const opened = window.open(url, "_blank");
-              if (!opened) window.location.href = url;
-            }
-            resolve(true);
+            resolve(!chrome.runtime.lastError);
           });
           return;
         }
       } catch (e) {}
       try {
         const opened = window.open(url, "_blank");
-        if (!opened) window.location.href = url;
-        resolve(true);
+        resolve(!!opened);
       } catch (e) {
         resolve(false);
       }
@@ -134,7 +129,23 @@ const PopupActions = {
     );
   },
 
+  async isOptimizerReady(tabId) {
+    try {
+      if (!chrome?.scripting?.executeScript) return false;
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () =>
+          !!(window.meeshoOptimizer && window.meeshoOptimizer.openModal),
+      });
+      return !!results?.[0]?.result;
+    } catch (e) {
+      return false;
+    }
+  },
+
   async injectOptimizer(tabId) {
+    if (await this.isOptimizerReady(tabId)) return true;
+
     try {
       if (chrome?.scripting?.insertCSS) {
         await chrome.scripting.insertCSS({
@@ -150,6 +161,8 @@ const PopupActions = {
           target: { tabId },
           files: [
             "config.js",
+            "js/firebaseLicense.js",
+            "js/machineId.js",
             "js/utils.js",
             "js/license.js",
             "js/meeshoCategories.js",
@@ -159,22 +172,29 @@ const PopupActions = {
             "content.js",
           ],
         });
+        return await this.isOptimizerReady(tabId);
       }
     } catch (e) {
       console.warn("Script inject failed:", e);
     }
+    return false;
   },
 
-  async sendOpenOptimizer(tabId) {
-    return new Promise((resolve) => {
-      try {
-        chrome.tabs.sendMessage(tabId, { action: "openOptimizer" }, () => {
-          resolve(!chrome.runtime.lastError);
-        });
-      } catch (e) {
-        resolve(false);
-      }
-    });
+  async sendOpenOptimizer(tabId, retries = 4) {
+    for (let i = 0; i < retries; i++) {
+      const ok = await new Promise((resolve) => {
+        try {
+          chrome.tabs.sendMessage(tabId, { action: "openOptimizer" }, () => {
+            resolve(!chrome.runtime.lastError);
+          });
+        } catch (e) {
+          resolve(false);
+        }
+      });
+      if (ok) return true;
+      await new Promise((r) => setTimeout(r, 200 + i * 150));
+    }
+    return false;
   },
 
   async openOptimizerOnMeesho(onStatus) {
@@ -202,8 +222,7 @@ const PopupActions = {
     }
 
     if (!ok) {
-      report("On Meesho page, tap the orange Optimizer button.");
-      await this.openUrl(tab.url || this.MEESHO_CATALOG_URL);
+      report("Tap the orange Optimizer button on the Meesho page.");
     }
 
     try {
