@@ -249,10 +249,18 @@ const LicenseManager = {
         const mode = info.billingMode || "subscription";
         let details = "";
 
-        if (mode === "credits" || mode === "hybrid") {
-          details += info.unlimitedCredits
-            ? `<div>Credits: <strong>Unlimited</strong></div>`
-            : `<div>Credits: <strong>${info.creditsBalance ?? 0}</strong></div>`;
+        const addonCredits = Number(info.addonCredits) || 0;
+        if (mode === "credits" || mode === "hybrid" || addonCredits > 0) {
+          if (info.unlimitedCredits) {
+            details += `<div>Credits: <strong>Unlimited</strong></div>`;
+          } else {
+            const baseCredits = Number(info.includedCredits) || 0;
+            const breakdown =
+              addonCredits > 0
+                ? ` <span style="color:#9ca3af;">(${baseCredits} base + ${addonCredits} addon)</span>`
+                : "";
+            details += `<div>Credits: <strong>${info.creditsBalance ?? 0}</strong>${breakdown}</div>`;
+          }
         }
         if (info.unlimitedTime) {
           details += `<div>Validity: <strong>Unlimited time</strong></div>`;

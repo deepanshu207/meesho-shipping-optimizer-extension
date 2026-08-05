@@ -226,7 +226,103 @@ const FirebaseLicense = {
       plan_kind: planKind,
       included_credits:
         Number(p?.included_credits ?? p?.includedCredits ?? 0) || 0,
+      allow_credit_addons: !!(
+        p?.allow_credit_addons ?? p?.allowCreditAddons
+      ),
+      max_addon_selections:
+        Number(p?.max_addon_selections ?? p?.maxAddonSelections ?? 0) || 0,
+      credit_addons: this.parseCreditAddons(
+        p?.credit_addons ?? p?.creditAddons,
+      ),
     };
+  },
+
+  normalizeCreditAddon(a, idFallback, index) {
+    const id = this.slugifyPlanId(a?.id || idFallback || `addon_${index}`);
+    const credits = Number(a?.credits ?? a?.credit ?? 0) || 0;
+    return {
+      id: id || `addon_${index}`,
+      credits,
+      price: Number(a?.price) || 0,
+      label: a?.label || a?.name || `+${credits} credits`,
+      active: a?.active !== false,
+      default_selected: this.isUnlimitedFlag(
+        a?.default_selected ?? a?.defaultSelected,
+      ),
+      order: a?.order != null ? Number(a.order) : index,
+    };
+  },
+
+  parseCreditAddons(raw) {
+    if (!raw) return [];
+    let list = [];
+    if (Array.isArray(raw)) {
+      list = raw
+        .filter((a) => a && typeof a === "object")
+        .map((a, i) => this.normalizeCreditAddon(a, a.id || `addon_${i}`, i));
+    } else if (typeof raw === "object") {
+      list = Object.entries(raw).map(([id, a], i) =>
+        this.normalizeCreditAddon({ ...a, id: a?.id || id }, id, i),
+      );
+    }
+    return this.sortPlans(list);
+  },
+
+  /** Active add-ons for a plan (empty when unlimited credits or not allowed). */
+  getPlanCreditAddons(plan) {
+    if (!plan || plan.unlimited_credits) return [];
+    if (plan.allow_credit_addons === false) return [];
+    const list = (plan.credit_addons || []).filter((a) => a.active !== false);
+    if (!list.length) return [];
+    return this.sortPlans(list);
+  },
+
+  /** Credits + price for a plan given selected add-on ids. */
+  calculatePlanCredits(plan, selectedAddonIds) {
+    const included = Number(plan?.included_credits || 0) || 0;
+    const addons = this.getPlanCreditAddons(plan);
+    const selected = new Set((selectedAddonIds || []).map((x) => String(x)));
+    let addon = 0;
+    let addonPrice = 0;
+    addons.forEach((a) => {
+      if (selected.has(String(a.id))) {
+        addon += Number(a.credits) || 0;
+        addonPrice += Number(a.price) || 0;
+      }
+    });
+    return { included, addon, total: included + addon, addonPrice };
+  },
+
+  getLicenseAddonIds(lic) {
+    const ids = lic?.addon_credit_ids || lic?.addonCreditIds;
+    if (Array.isArray(ids)) return ids.filter(Boolean).map((x) => String(x));
+    return [];
+  },
+
+  /** Resolve credits to grant a license: existing balance, else included + addon. */
+  resolveLicenseCredits(lic, plan) {
+    const existingBalance = this.resolveCreditsBalance(lic);
+    const addonIds = this.getLicenseAddonIds(lic);
+    const hasLicIncluded =
+      lic?.included_credits != null || lic?.includedCredits != null;
+    const hasLicAddon =
+      lic?.addon_credits != null || lic?.addonCredits != null;
+    const included = hasLicIncluded
+      ? Number(lic.included_credits ?? lic.includedCredits) || 0
+      : Number(plan?.included_credits || 0) || 0;
+    const addon = hasLicAddon
+      ? Number(lic.addon_credits ?? lic.addonCredits) || 0
+      : this.calculatePlanCredits(plan, addonIds).addon;
+    const total = existingBalance > 0 ? existingBalance : included + addon;
+    return { included, addon, total, addonIds, existingBalance };
+  },
+
+  escapeAttr(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
   },
 
   parsePlansRaw(raw) {
@@ -556,6 +652,13 @@ const FirebaseLicense = {
       deviceIds,
       creditsBalance:
         extras.creditsBalance ?? this.resolveCreditsBalance(lic),
+      includedCredits:
+        extras.includedCredits ??
+        (Number(lic.included_credits ?? lic.includedCredits ?? 0) || 0),
+      addonCredits:
+        extras.addonCredits ??
+        (Number(lic.addon_credits ?? lic.addonCredits ?? 0) || 0),
+      addonCreditIds: extras.addonCreditIds ?? this.getLicenseAddonIds(lic),
       creditsUsed: Number(lic.credits_used ?? lic.creditsUsed ?? 0) || 0,
       expiresAt: unlimitedTime
         ? null
@@ -824,22 +927,13 @@ const FirebaseLicense = {
         resolvedExpiresAt = this.computeExpiresAt(activatedAt, planDays);
       }
 
-      if (
-        creditsBalance <= 0 &&
-        this.isCreditsBilling(billingMode)
-      ) {
-        const preset =
-          Number(
-            lic.credits_balance ??
-              lic.creditsBalance ??
-              lic.included_credits ??
-              lic.includedCredits ??
-              lic.initial_credits ??
-              lic.initialCredits ??
-              plan?.included_credits ??
-              0,
-          ) || 0;
-        if (preset > 0) creditsBalance = preset;
+      // Grant credits on first activation from included + selected add-ons.
+      // Priority: existing balance > lic included+addon > plan + lic addon ids.
+      const creditInfo = this.resolveLicenseCredits(lic, plan);
+      const grantCredits =
+        this.resolveCreditsBalance(lic) <= 0 && creditInfo.total > 0;
+      if (grantCredits && !unlimitedCredits) {
+        creditsBalance = creditInfo.total;
       }
 
       const patch = {
@@ -855,12 +949,13 @@ const FirebaseLicense = {
       };
       if (resolvedExpiresAt) patch.expiresAt = resolvedExpiresAt;
       else if (unlimitedTime) patch.expiresAt = "";
-      if (
-        this.isCreditsBilling(billingMode) &&
-        creditsBalance > 0 &&
-        this.resolveCreditsBalance(lic) <= 0
-      ) {
-        patch.credits_balance = creditsBalance;
+      if (grantCredits && !unlimitedCredits) {
+        // Store the credit breakdown so subscription plans can still expose
+        // add-on credits for hybrid use, and display can show base + addon.
+        patch.included_credits = creditInfo.included;
+        patch.addon_credits = creditInfo.addon;
+        patch.addon_credit_ids = creditInfo.addonIds;
+        patch.credits_balance = creditInfo.total;
       }
 
       await this.patchDoc("licenses", key, patch, Object.keys(patch));
@@ -892,6 +987,11 @@ const FirebaseLicense = {
       return { valid: false, reason: "License expired" };
     }
 
+    const finalCreditInfo = this.resolveLicenseCredits(
+      { ...lic, credits_balance: creditsBalance },
+      plan,
+    );
+
     return {
       valid: true,
       license: this.buildLicensePayload(lic, plan, {
@@ -904,6 +1004,9 @@ const FirebaseLicense = {
         unlimitedCredits,
         unlimitedDevices: binding.unlimitedDevices,
         creditsBalance,
+        includedCredits: finalCreditInfo.included,
+        addonCredits: finalCreditInfo.addon,
+        addonCreditIds: finalCreditInfo.addonIds,
         expiresAt: resolvedExpiresAt,
         activatedAt: resolvedActivatedAt,
       }),
@@ -1045,14 +1148,16 @@ const FirebaseLicense = {
           const priceStyle = p.best
             ? ' style="color:var(--mso-success);"'
             : "";
-          return `<button type="button" class="plan-btn plan-buy-btn${bestClass}" data-plan="${p.id}" data-price="${p.price}" data-days="${p.days}" data-duration="${p.duration || durationLabel}" data-plan-kind="${p.plan_kind || ""}">
+          const btn = `<button type="button" class="plan-btn plan-buy-btn${bestClass}" ${this.planDataAttrs(p, durationLabel)}>
             ${tag}
             <div class="plan-name"${nameStyle}>${p.name}</div>
             <div class="plan-price"${priceStyle}>₹${p.price}</div>
             ${save}
           </button>`;
+          return this.planCellWrap(btn, p);
         })
         .join("");
+      this.wirePlanAddonSelection(container);
       return;
     }
 
@@ -1069,14 +1174,165 @@ const FirebaseLicense = {
         const save = p.save
           ? `<div style="font-size:9px;color:#10b981;">${p.save}</div>`
           : `<div style="font-size:9px;color:#6b7280;">${durationLabel} · ${devicesLabel}</div>`;
-        return `<button type="button" class="plan-buy-btn" data-plan="${p.id}" data-price="${p.price}" data-days="${p.days}" data-duration="${p.duration || durationLabel}" data-plan-kind="${p.plan_kind || ""}" style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
+        const btn = `<button type="button" class="plan-buy-btn" ${this.planDataAttrs(p, durationLabel)} style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
           ${tag}
           <div style="font-size:11px;color:#6b7280;${p.best ? "margin-top:4px;" : ""}">${p.name}</div>
           <div style="font-size:20px;font-weight:700;color:#e67e22;">₹${p.price}</div>
           ${save}
         </button>`;
+        return this.planCellWrap(btn, p);
       })
       .join("");
+
+    this.wirePlanAddonSelection(container);
+  },
+
+  /** Shared data attributes on a plan buy button. */
+  planDataAttrs(p, durationLabel) {
+    return [
+      `data-plan="${this.escapeAttr(p.id)}"`,
+      `data-price="${p.price}"`,
+      `data-days="${p.days}"`,
+      `data-duration="${this.escapeAttr(p.duration || durationLabel)}"`,
+      `data-plan-name="${this.escapeAttr(p.name)}"`,
+      `data-plan-kind="${this.escapeAttr(p.plan_kind || "")}"`,
+      `data-included-credits="${Number(p.included_credits) || 0}"`,
+      `data-billing-mode="${this.escapeAttr(p.billing_mode || "subscription")}"`,
+      `data-unlimited-credits="${p.unlimited_credits ? "true" : "false"}"`,
+    ].join(" ");
+  },
+
+  /** Wrap a plan button with its credit add-on chips (if any). */
+  planCellWrap(buttonHtml, p) {
+    const addons = this.getPlanCreditAddons(p);
+    if (!addons.length) return buttonHtml;
+    const max = Number(p.max_addon_selections) || 0;
+    const chips = addons
+      .map((a) => {
+        const sel = !!a.default_selected;
+        return `<button type="button" class="plan-addon-btn" data-plan="${this.escapeAttr(p.id)}" data-addon-id="${this.escapeAttr(a.id)}" data-addon-credits="${a.credits}" data-addon-price="${a.price}" data-addon-label="${this.escapeAttr(a.label)}" data-addon-max="${max}" aria-pressed="${sel ? "true" : "false"}" style="font-size:9px;padding:4px 7px;border-radius:8px;cursor:pointer;white-space:nowrap;background:${sel ? "linear-gradient(135deg,#ffd700,#e67e22)" : "#fff"};color:${sel ? "#3d2914" : "#c45f12"};border:1px solid ${sel ? "#e67e22" : "#f0e0c8"};font-weight:${sel ? "700" : "600"};">+${a.credits} · ₹${a.price}</button>`;
+      })
+      .join("");
+    const hint =
+      max === 1
+        ? "Pick one add-on"
+        : max > 1
+          ? `Pick up to ${max}`
+          : "Add extra credits";
+    return `<div class="plan-cell" style="display:flex;flex-direction:column;">
+      ${buttonHtml}
+      <div class="plan-addons" data-plan="${this.escapeAttr(p.id)}" style="margin-top:6px;">
+        <div style="font-size:8px;color:#9ca3af;text-align:center;margin-bottom:3px;">⚡ ${hint}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;justify-content:center;">${chips}</div>
+      </div>
+    </div>`;
+  },
+
+  styleAddonChip(chip) {
+    if (!chip) return;
+    const sel = chip.getAttribute("aria-pressed") === "true";
+    chip.style.background = sel
+      ? "linear-gradient(135deg,#ffd700,#e67e22)"
+      : "#fff";
+    chip.style.color = sel ? "#3d2914" : "#c45f12";
+    chip.style.border = sel ? "1px solid #e67e22" : "1px solid #f0e0c8";
+    chip.style.fontWeight = sel ? "700" : "600";
+  },
+
+  addonChipsForPlan(planId, root) {
+    const scope = root || document;
+    return Array.from(
+      scope.querySelectorAll(".plan-addon-btn"),
+    ).filter((c) => c.dataset.plan === String(planId));
+  },
+
+  toggleAddonChip(chip, root) {
+    if (!chip) return;
+    const planId = chip.dataset.plan;
+    const max = Number(chip.dataset.addonMax) || 0;
+    const isSel = chip.getAttribute("aria-pressed") === "true";
+    const siblings = this.addonChipsForPlan(planId, root);
+
+    if (!isSel && max === 1) {
+      siblings.forEach((c) => {
+        if (c !== chip) {
+          c.setAttribute("aria-pressed", "false");
+          this.styleAddonChip(c);
+        }
+      });
+    }
+    if (!isSel && max > 1) {
+      const selectedCount = siblings.filter(
+        (c) => c.getAttribute("aria-pressed") === "true",
+      ).length;
+      if (selectedCount >= max) return;
+    }
+    chip.setAttribute("aria-pressed", isSel ? "false" : "true");
+    this.styleAddonChip(chip);
+  },
+
+  /** Wire add-on chip toggling within a root; safe to call repeatedly. */
+  wirePlanAddonSelection(root) {
+    const scope = root || document;
+    scope.querySelectorAll(".plan-addon-btn").forEach((chip) => {
+      this.styleAddonChip(chip);
+      if (chip.dataset.wired === "1") return;
+      chip.dataset.wired = "1";
+      const handler = (e) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        this.toggleAddonChip(chip, root);
+      };
+      chip.addEventListener("click", handler);
+    });
+  },
+
+  getSelectedAddonIds(planId, root) {
+    return this.addonChipsForPlan(planId, root)
+      .filter((c) => c.getAttribute("aria-pressed") === "true")
+      .map((c) => c.dataset.addonId);
+  },
+
+  /** Build a WhatsApp purchase message from the selected plan + add-ons. */
+  buildPlanPurchaseMessage(planId, productName, root) {
+    const scope = root || document;
+    const btn = Array.from(scope.querySelectorAll(".plan-buy-btn")).find(
+      (b) => b.dataset.plan === String(planId),
+    );
+    const name =
+      btn?.dataset.planName || btn?.dataset.duration || "Plan";
+    const price = Number(btn?.dataset.price) || 0;
+    const included = Number(btn?.dataset.includedCredits) || 0;
+    const unlimitedCredits = btn?.dataset.unlimitedCredits === "true";
+
+    const selChips = this.addonChipsForPlan(planId, root).filter(
+      (c) => c.getAttribute("aria-pressed") === "true",
+    );
+    let addonCredits = 0;
+    let addonPrice = 0;
+    const labels = [];
+    selChips.forEach((c) => {
+      addonCredits += Number(c.dataset.addonCredits) || 0;
+      addonPrice += Number(c.dataset.addonPrice) || 0;
+      labels.push(
+        c.dataset.addonLabel || `${c.dataset.addonCredits} credits`,
+      );
+    });
+    const total = price + addonPrice;
+
+    let msg = `Hi! I want to purchase ${productName || "Shipping Optimizer"}.\n\n📦 *Plan:* ${name} — ₹${price}`;
+    if (labels.length) {
+      msg += `\n⚡ *Add-ons:* ${labels.join(", ")} — +₹${addonPrice}`;
+    }
+    msg += `\n💳 *Total:* ₹${total}`;
+    if (!unlimitedCredits && (included > 0 || addonCredits > 0)) {
+      msg += `\n🎫 *Credits:* ${included} base`;
+      if (addonCredits > 0) {
+        msg += ` + ${addonCredits} addon = ${included + addonCredits}`;
+      }
+    }
+    msg += `\n\nPlease share payment details and license key.`;
+    return msg;
   },
 
   renderCreditPacks(container, packs, variant = "popup") {

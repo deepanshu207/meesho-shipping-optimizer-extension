@@ -1151,31 +1151,50 @@ class MeeshoShippingOptimizer {
     const keyInput = document.getElementById("license-key-input");
 
     const bindPlanButtons = () => {
+      if (
+        typeof FirebaseLicense !== "undefined" &&
+        FirebaseLicense.wirePlanAddonSelection
+      ) {
+        FirebaseLicense.wirePlanAddonSelection(this.modal || document);
+      }
       const planBtns = document.querySelectorAll(".plan-buy-btn");
+      const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
       planBtns.forEach((btn) => {
         btn.onclick = async () => {
           const price = btn.dataset.price;
           const duration = btn.dataset.duration;
-
-          try {
-            const settings = await LicenseManager.getWhatsAppSettings();
-            const message = `Hi! I want to purchase ${CONFIG?.EXTENSION_NAME || "Shipping Optimizer"}.
+          const planId = btn.dataset.plan;
+          const buildMsg = () => {
+            if (
+              planId &&
+              typeof FirebaseLicense !== "undefined" &&
+              FirebaseLicense.buildPlanPurchaseMessage
+            ) {
+              return FirebaseLicense.buildPlanPurchaseMessage(
+                planId,
+                productName,
+                this.modal || document,
+              );
+            }
+            return `Hi! I want to purchase ${productName}.
 
 📦 *Plan Selected:* ${duration}
 💰 *Price:* ₹${price}
 
 Please share payment details and license key.`;
+          };
 
+          try {
+            const settings = await LicenseManager.getWhatsAppSettings();
             window.open(
               `https://wa.me/${settings.number}?text=${encodeURIComponent(
-                message,
+                buildMsg(),
               )}`,
               "_blank",
             );
           } catch (error) {
-            const message = `Hi! I want to purchase Meesho Shipping Cost AI Optimizer - ${duration} plan (₹${price})`;
             window.open(
-              `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent(message)}`,
+              `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent(buildMsg())}`,
               "_blank",
             );
           }

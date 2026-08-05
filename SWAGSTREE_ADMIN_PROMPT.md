@@ -98,9 +98,26 @@ Save to `shipping_optimizer_config/app`:
 | `unlimited_time` | No | `true` = never expires |
 | `unlimited_devices` | No | `true` = no device limit |
 | `unlimited_credits` | No | `true` = never deduct credits |
+| `allow_credit_addons` | No | `true` = show per-plan credit add-on chips |
+| `max_addon_selections` | No | `1` = pick one; `0` = unlimited multi-select |
+| `credit_addons` | No | Array: `{ id, credits, price, label, active, default_selected, order }` |
 | `description` | No | Admin note |
 
 **Editor actions:** + Add Plan, ▲/▼ reorder, Show (active), ✕ remove, validate unique IDs.
+
+**Per-plan credit add-ons:** When `allow_credit_addons` is on, add a sub-editor for `credit_addons[]` (add/remove/reorder, set credits+price+label, mark default). The extension shows these as chips; the customer's selection is included in the WhatsApp message. When you create the license, set `addon_credit_ids` (and optionally `addon_credits`) so activation grants the right balance. Add-ons are hidden if `unlimited_credits` is true.
+
+```json
+{
+  "id": "yearly", "name": "Yearly", "price": 3099, "days": 365,
+  "billing_mode": "hybrid", "included_credits": 100,
+  "allow_credit_addons": true, "max_addon_selections": 2,
+  "credit_addons": [
+    { "id": "addon_25", "credits": 25, "price": 40, "label": "+25 credits", "order": 0 },
+    { "id": "addon_50", "credits": 50, "price": 70, "label": "+50 credits", "order": 1 }
+  ]
+}
+```
 
 **Preset templates (quick-add buttons):**
 - Standard Monthly (1 device, 30 days)
@@ -166,10 +183,12 @@ Merged with inline `demo_keys` in config.
 | billing_mode | Auto from plan; allow override |
 | max_devices | Auto from plan; allow override |
 | credits_balance | For credits/hybrid; or use included_credits from plan |
+| addon_credit_ids | Add-ons the customer paid for (ids from plan `credit_addons`) |
+| addon_credits | Optional explicit add-on credit total (else summed from ids) |
 | unlimited_time / unlimited_devices / unlimited_credits | Checkboxes; override plan |
 | customer_name, customer_phone, customer_email, support_notes | Optional |
 
-**On create** copy from plan: `planId`, `planType`, `planDays`, `max_devices`, `billing_mode`, `included_credits` → `credits_balance`, unlimited flags.
+**On create** copy from plan: `planId`, `planType`, `planDays`, `max_devices`, `billing_mode`, `included_credits`, `addon_credit_ids` (selected add-ons), unlimited flags. Leave `credits_balance: 0` — the extension grants `included_credits + add-ons` on first activation.
 
 ```json
 {

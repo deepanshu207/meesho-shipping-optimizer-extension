@@ -108,7 +108,71 @@ Plans live in the `plans` array on `shipping_optimizer_config/app`. The extensio
 | `unlimited_time` | No | `true` = never expires (or set `days: 0`) |
 | `unlimited_devices` | No | `true` = no device cap (or `max_devices: 0`) |
 | `unlimited_credits` | No | `true` = never deduct credits |
+| `allow_credit_addons` | No | `true` = show per-plan credit add-on chips under the plan |
+| `max_addon_selections` | No | Max add-ons a customer can pick (`1` = radio/pick one, `0` = unlimited multi-select) |
+| `credit_addons` | No | Array of add-on objects (see below) |
 | `description` | No | Extra note shown in admin (optional) |
+
+### Per-plan credit add-ons
+
+A plan can offer optional credit top-ups the customer selects **before** buying. Add-ons appear as chips under the plan; selections are included in the WhatsApp purchase message and, once you create the license, granted on activation.
+
+Each entry in `credit_addons[]`:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | Yes | Stable slug (e.g. `addon_25`) |
+| `credits` | Yes | Credits this add-on grants |
+| `price` | Yes | INR price added to the plan total |
+| `label` | No | Chip/label text (default `+{credits} credits`) |
+| `active` | No | `false` hides it; default `true` |
+| `default_selected` | No | `true` pre-selects the chip in the UI |
+| `order` | No | Sort order (lower first) |
+
+**Example plan with add-ons:**
+```json
+{
+  "id": "yearly",
+  "name": "Yearly",
+  "price": 3099,
+  "days": 365,
+  "billing_mode": "hybrid",
+  "included_credits": 100,
+  "allow_credit_addons": true,
+  "max_addon_selections": 2,
+  "credit_addons": [
+    { "id": "addon_25", "credits": 25, "price": 40, "label": "+25 credits", "order": 0, "default_selected": false },
+    { "id": "addon_50", "credits": 50, "price": 70, "label": "+50 credits", "order": 1 },
+    { "id": "addon_100", "credits": 100, "price": 130, "label": "+100 credits", "order": 2 }
+  ]
+}
+```
+
+**Rules & edge cases:**
+- `unlimited_credits: true` → add-ons are hidden (nothing to add).
+- `subscription` plans may still define add-ons; the add-on credits are stored on the license (`addon_credits`) for hybrid use.
+- Credits-only plan with `included_credits: 0` but add-ons allowed → balance = selected add-on total.
+- Inactive add-ons are never shown.
+- `default_selected` chips are pre-highlighted.
+
+**On the license doc**, you (or the admin panel) can pre-set which add-ons the customer paid for so activation grants the right balance:
+```json
+{
+  "planId": "yearly",
+  "billing_mode": "hybrid",
+  "included_credits": 100,
+  "addon_credit_ids": ["addon_50"],
+  "addon_credits": 50,
+  "credits_balance": 0
+}
+```
+On first activation the extension resolves credits in priority order:
+1. `credits_balance` if already > 0
+2. `included_credits` + `addon_credits` (if set on the license)
+3. `plan.included_credits` + sum of add-ons in `addon_credit_ids`
+4. `plan.included_credits` only
+
+It then patches `included_credits`, `addon_credits`, `addon_credit_ids`, and `credits_balance` onto the license.
 
 ### Custom & unlimited plans
 
@@ -349,7 +413,8 @@ service cloud.firestore {
           'machineId', 'device_ids', 'max_devices', 'billing_mode',
           'unlimited_time', 'unlimited_devices', 'unlimited_credits',
           'activatedAt', 'lastVerifiedAt', 'expiresAt',
-          'credits_balance', 'credits_used'
+          'credits_balance', 'credits_used',
+          'included_credits', 'addon_credits', 'addon_credit_ids'
         ]);
     }
   }

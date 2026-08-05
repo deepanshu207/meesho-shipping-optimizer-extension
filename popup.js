@@ -192,10 +192,22 @@ document.addEventListener("DOMContentLoaded", async () => {
             : `${info.deviceCount || 1}/${info.maxDevices} devices`;
           infoHTML += `${devLabel}`;
         }
-        if (info.billingMode === "credits" || info.billingMode === "hybrid") {
-          infoHTML += info.unlimitedCredits
-            ? ` · Credits: <strong>Unlimited</strong>`
-            : ` · Credits: <strong>${info.creditsBalance ?? 0}</strong>`;
+        const addonCredits = Number(info.addonCredits) || 0;
+        const showCredits =
+          info.billingMode === "credits" ||
+          info.billingMode === "hybrid" ||
+          addonCredits > 0;
+        if (showCredits) {
+          if (info.unlimitedCredits) {
+            infoHTML += ` · Credits: <strong>Unlimited</strong>`;
+          } else {
+            const balance = Number(info.creditsBalance) || 0;
+            const baseCredits = Number(info.includedCredits) || 0;
+            infoHTML += ` · Credits: <strong>${balance}</strong>`;
+            if (addonCredits > 0) {
+              infoHTML += ` <span style="color:var(--mso-muted);">(${baseCredits} base + ${addonCredits} addon)</span>`;
+            }
+          }
         }
         if (info.unlimitedTime) {
           infoHTML += ` · <strong>Unlimited time</strong>`;
@@ -338,17 +350,40 @@ Please share payment details.`;
     });
   }
 
+  function bindPlanAddonButtons() {
+    if (
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.wirePlanAddonSelection
+    ) {
+      FirebaseLicense.wirePlanAddonSelection(document);
+    }
+  }
+
   function bindPlanButtons() {
     document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
       PA.bindTap(btn, () => {
-        const duration = btn.dataset.duration;
-        const price = btn.dataset.price;
-        const message = `Hi! I want to purchase ${productName}.
+        const planId = btn.dataset.plan;
+        let message;
+        if (
+          planId &&
+          typeof FirebaseLicense !== "undefined" &&
+          FirebaseLicense.buildPlanPurchaseMessage
+        ) {
+          message = FirebaseLicense.buildPlanPurchaseMessage(
+            planId,
+            productName,
+            document,
+          );
+        } else {
+          const duration = btn.dataset.duration;
+          const price = btn.dataset.price;
+          message = `Hi! I want to purchase ${productName}.
 
 📦 *Plan Selected:* ${duration}
 💰 *Price:* ₹${price}
 
 Please share payment details and license key.`;
+        }
         openWhatsApp(message);
       });
     });
@@ -400,6 +435,7 @@ Please share payment details and license key.`;
         "popup",
       );
     }
+    bindPlanAddonButtons();
     bindPlanButtons();
     bindCreditPackButtons();
   }
