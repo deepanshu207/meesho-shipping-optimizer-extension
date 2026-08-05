@@ -530,6 +530,14 @@ const FirebaseLicense = {
       key: extras.key,
       planType: lic.planType || lic.plan_type || lic.planId || "premium",
       planId: lic.planId || lic.plan_id || lic.planType,
+      planName:
+        extras.planName ||
+        plan?.name ||
+        lic.plan_name ||
+        lic.planName ||
+        lic.planId ||
+        lic.plan_type ||
+        "Premium",
       planKind:
         lic.plan_kind ||
         lic.planKind ||
@@ -857,6 +865,7 @@ const FirebaseLicense = {
       license: this.buildLicensePayload(lic, plan, {
         key,
         planDays,
+        planName: plan?.name,
         deviceIds,
         maxDevices,
         unlimitedTime,
@@ -901,6 +910,7 @@ const FirebaseLicense = {
       license: this.buildLicensePayload(lic, plan, {
         key,
         planDays: await this.resolvePlanDays(lic),
+        planName: plan?.name,
         deviceIds,
         maxDevices: this.resolveMaxDevices(lic, plan),
         unlimitedTime: this.resolveUnlimitedTime(lic, plan),
@@ -951,6 +961,24 @@ const FirebaseLicense = {
     if (!ok) return { ok: false, reason: "Could not update credits" };
 
     return { ok: true, balance: newBalance, used, deducted: cost };
+  },
+
+  async unbindDevice(licenseKey, machineId) {
+    const key = this.normalizeKey(licenseKey);
+    if (!key || !machineId) return { ok: false, reason: "Missing key or device" };
+    const lic = await this.fetchDoc("licenses", key);
+    if (!lic) return { ok: true, skipped: true };
+    const deviceIds = this.getDeviceIds(lic).filter((id) => id !== machineId);
+    const ok = await this.patchDoc(
+      "licenses",
+      key,
+      {
+        device_ids: deviceIds,
+        machineId: deviceIds[0] || "",
+      },
+      ["device_ids", "machineId"],
+    );
+    return { ok };
   },
 
   renderPlanButtons(container, plans, variant = "modal") {

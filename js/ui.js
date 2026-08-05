@@ -658,6 +658,24 @@ const OptimizerUI = {
   },
 
 
+  getLicenseAccountHTML: function () {
+    return `
+                    <div class="opt-section" id="license-account-section" style="padding:12px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;">
+                            <div class="opt-section-title" style="margin:0;">🔑 Your Licenses</div>
+                            <button type="button" id="license-add-toggle" class="opt-btn opt-btn-secondary" style="padding:6px 10px;font-size:11px;white-space:nowrap;">+ Add license</button>
+                        </div>
+                        <div id="license-account-list"><div style="font-size:11px;color:#9ca3af;">Loading licenses…</div></div>
+                        <div id="license-add-panel" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #f0e0c8;">
+                            <label class="opt-label">Enter another license key</label>
+                            <input type="text" id="license-key-input-secondary" class="opt-input" placeholder="Plan or credit top-up key" style="margin-bottom:8px;font-size:13px;">
+                            <button type="button" id="activate-license-secondary-btn" class="opt-btn opt-btn-success" style="width:100%;padding:10px;">Activate License</button>
+                            <p style="font-size:10px;color:#9ca3af;margin-top:8px;text-align:center;line-height:1.45;">Stack a credit top-up key with your plan, or sign off and enter a new plan key.</p>
+                        </div>
+                    </div>`;
+  },
+
+
   // Main optimizer HTML — Live generate + preview + apply
   getMainHTML: function () {
     return `
@@ -715,6 +733,8 @@ const OptimizerUI = {
 
                     <div id="processing-area" style="display:none;"></div>
                     <div id="results-area" style="display:none;"></div>
+
+                    ${this.getLicenseAccountHTML()}
                 </div>
             </div>
         `;
