@@ -378,15 +378,13 @@ class MeeshoShippingOptimizer {
           sendResponse({ success: true });
         } else if (message.type === "LICENSE_UPDATED") {
           void this.checkLicense().then((valid) => {
-            if (!valid && this.modal && this.isLicensed === false) {
+            if (!valid && this.modal && !this.isProcessing) {
               OptimizerUtils.showNotification(
                 "License expired — please activate again",
                 "error",
               );
               this.closeModal();
               setTimeout(() => this.openModal(), 400);
-            } else {
-              this.isLicensed = valid;
             }
           });
           sendResponse({ success: true });
@@ -958,9 +956,7 @@ class MeeshoShippingOptimizer {
       }
     }
 
-    if (!window.WEB_OPTIMIZER_MODE) {
-      await this.checkLicense();
-    }
+    await this.checkLicense();
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.init();

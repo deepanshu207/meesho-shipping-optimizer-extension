@@ -271,6 +271,11 @@
       user-select: none;
     }
 
+    body.popup-booting .content,
+    body.popup-booting .footer {
+      pointer-events: none;
+    }
+
     .btn-primary {
       background: var(--mso-grad);
       color: var(--mso-ink);
@@ -506,7 +511,7 @@
     }
   </style>
 </head>
-<body>
+<body class="popup-booting">
   <div class="header">
     <span class="version-badge" id="version-badge">v1.2.0</span>
     <div class="brand-row">
