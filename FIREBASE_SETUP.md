@@ -1,8 +1,24 @@
-# Firebase setup — Shipping Optimizer (swagstree-web)
+# Firebase setup — Shipping Optimizer (extension-e6e32)
 
-The extension uses your existing **swagstree-web** Firebase project for license verification, pricing, demo promo codes, and WhatsApp settings.
+The extension uses the dedicated **extension-e6e32** Firebase project for license verification, pricing, demo promo codes, and WhatsApp settings.
 
-**Important:** All data lives in collections prefixed with `shipping_optimizer_`. This does **not** read or write Swagstree app collections.
+**Important:** All data lives in collections prefixed with `shipping_optimizer_`. The extension does **not** read or write any other project's data. The old `swagstree-web` project is no longer used.
+
+## Project config (in `config.js`)
+
+```javascript
+FIREBASE: {
+  apiKey: "AIzaSyDJd0Ufed0zwCHYmakz-WcncU_NSWxkJ1U",
+  authDomain: "extension-e6e32.firebaseapp.com",
+  projectId: "extension-e6e32",
+  storageBucket: "extension-e6e32.firebasestorage.app",
+  messagingSenderId: "860976240598",
+  appId: "1:860976240598:web:e5d903d52db5b71e48b677",
+  measurementId: "G-WCTXFCDXLT",
+}
+```
+
+The Firestore REST base URL is derived automatically from `projectId`, so this block is the single source of truth.
 
 ## Collections
 
@@ -302,7 +318,7 @@ Create a document when a customer pays. Document ID = license key.
 
 ## Firestore security rules
 
-**Merge** these rules into your existing Swagstree rules — do not replace the whole file.
+These are the full rules for the dedicated **extension-e6e32** project (it only hosts `shipping_optimizer_*` data).
 
 ```javascript
 rules_version = '2';
@@ -313,8 +329,6 @@ service cloud.firestore {
       return request.auth != null
         && request.auth.token.email == 'superadmin@swagstree.com';
     }
-
-    // ... your existing Swagstree rules ...
 
     // Shipping Optimizer — extension reads; admin panel writes config/licenses
     match /shipping_optimizer_config/{doc} {
@@ -342,7 +356,7 @@ service cloud.firestore {
 }
 ```
 
-Your admin panel (or Firebase Console) manages config, demo keys, and licenses. The extension patches device binding, activation timestamps, expiry, and credit usage on paid licenses.
+Your admin panel (or Firebase Console) manages config, demo keys, and licenses on **extension-e6e32**. The extension patches device binding, activation timestamps, expiry, and credit usage on paid licenses.
 
 ## Fallback chain
 
@@ -371,8 +385,9 @@ Only built-in demo keys and local defaults will work. Paid license verification 
 4. Activate demo key `MEESHO-DEMOFREE` (works even without Firebase).
 5. Create a test license in `shipping_optimizer_licenses` and activate it.
 
-## Project config (already in extension)
+## Project summary
 
-- **Project:** `swagstree-web`
+- **Project:** `extension-e6e32` (dedicated to the extension)
 - **Collections prefix:** `shipping_optimizer_*` only
 - **No Analytics SDK** in the extension (Firestore REST API only)
+- **Admin writes:** `superadmin@swagstree.com` only

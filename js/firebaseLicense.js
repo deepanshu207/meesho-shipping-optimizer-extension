@@ -1,7 +1,9 @@
 // ============================================
 // SHIPPING OPTIMIZER — Firebase license service
-// Uses ONLY shipping_optimizer_* collections in swagstree-web.
-// Does NOT touch any other Swagstree app data.
+// Dedicated project: extension-e6e32.
+// Reads/writes ONLY shipping_optimizer_* collections
+// (shipping_optimizer_config, _demo_keys, _licenses).
+// REST base URL is derived from CONFIG.FIREBASE.projectId.
 // ============================================
 
 const FirebaseLicense = {

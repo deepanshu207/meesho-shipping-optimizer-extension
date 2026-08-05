@@ -10,22 +10,22 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.2.2",
+  VERSION: "1.3.0",
 
   /** Default Meesho single-catalog add page (supplier panel). */
   MEESHO_CATALOG_URL:
     "https://supplier.meesho.com/panel/v3/new/cataloging/ytnlz/catalogs/single/add",
 
-  // Firebase (swagstree-web) — ONLY uses shipping_optimizer_* collections
+  // Firebase (extension-e6e32) — dedicated project, ONLY shipping_optimizer_* collections
   USE_FIREBASE_LICENSE: true,
   FIREBASE: {
-    apiKey: "AIzaSyAKXSFKuhQXMGvmtjh0CHnz48vbYz9a_4A",
-    authDomain: "swagstree-web.firebaseapp.com",
-    projectId: "swagstree-web",
-    storageBucket: "swagstree-web.firebasestorage.app",
-    messagingSenderId: "224485840604",
-    appId: "1:224485840604:web:1c69dd064caf7605614619",
-    measurementId: "G-K8WVW9EF3X",
+    apiKey: "AIzaSyDJd0Ufed0zwCHYmakz-WcncU_NSWxkJ1U",
+    authDomain: "extension-e6e32.firebaseapp.com",
+    projectId: "extension-e6e32",
+    storageBucket: "extension-e6e32.firebasestorage.app",
+    messagingSenderId: "860976240598",
+    appId: "1:860976240598:web:e5d903d52db5b71e48b677",
+    measurementId: "G-WCTXFCDXLT",
   },
 
   LICENSE_CHECK_INTERVAL: 24 * 60 * 60 * 1000,

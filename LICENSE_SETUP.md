@@ -1,6 +1,6 @@
 # License validation — Firebase only
 
-All license, pricing, demo promo codes, and WhatsApp settings are managed in **Firebase** (`swagstree-web` project).
+All license, pricing, demo promo codes, and WhatsApp settings are managed in **Firebase** (`extension-e6e32` project).
 
 See **[FIREBASE_SETUP.md](./FIREBASE_SETUP.md)** for the full schema, security rules, and seed data.
 

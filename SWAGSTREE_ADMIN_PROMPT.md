@@ -6,9 +6,9 @@ Copy everything below the line into Cursor in the **Swagstree** repo (`deepanshu
 
 ## Prompt (copy from here)
 
-Build a **Shipping Optimizer Extension** admin panel in Swagstree **Superadmin** tab. Manages the Meesho Chrome extension license backend in Firebase project `swagstree-web`.
+Build a **Shipping Optimizer Extension** admin panel in Swagstree **Superadmin** tab. Manages the Meesho Chrome extension license backend in the dedicated Firebase project `extension-e6e32` (NOT `swagstree-web`).
 
-**CRITICAL:** Only read/write `shipping_optimizer_*` collections. Never touch Swagstree storefront data.
+**CRITICAL:** Only read/write `shipping_optimizer_*` collections on the `extension-e6e32` project. Point this admin panel's Firebase access at `extension-e6e32`.
 
 **Access:** `superadmin@swagstree.com` only — use existing `isSuperAdmin` gating.
 

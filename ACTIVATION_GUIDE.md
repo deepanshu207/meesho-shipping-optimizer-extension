@@ -85,7 +85,7 @@ Store on `shipping_optimizer_licenses/{KEY}` for your support — extension does
 
 ### Firebase (paid keys)
 
-Path: `shipping_optimizer_licenses/{KEY}`
+Project: `extension-e6e32` · Path: `shipping_optimizer_licenses/{KEY}`
 
 | Field | Who writes | When |
 |-------|------------|------|
