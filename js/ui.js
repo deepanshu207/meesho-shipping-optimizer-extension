@@ -1016,13 +1016,60 @@ const OptimizerUI = {
     const hasAnalysis = analysisPrimary.length > 0;
 
     if (!hasLive && !hasAnalysis) {
+      const empty = options.emptyState || {};
+      const reason = empty.reason || "default";
+      const attempts = Number(empty.attempts) || 0;
+      const maxAttempts = Number(empty.maxAttempts) || 0;
+      let icon = "😔";
+      let title = "No Results Found";
+      let message = "Could not get accurate prices for this image.";
+      let submessage = "Try with a different image or category.";
+      let detail = "";
+
+      if (reason === "stopped") {
+        icon = "⏹️";
+        title = "Search Stopped";
+        message = "Stopped before any variants were ready to show.";
+        submessage = "You can try again with the same image or pick a different one.";
+      } else if (reason === "exhausted") {
+        icon = "🔍";
+        title = "No Results Found";
+        message = "Tried every variant — no shipping results came back.";
+        submessage =
+          "Try a different image or category, or check your Meesho session.";
+      } else if (reason === "error") {
+        icon = "⚠️";
+        title = "Something Went Wrong";
+        message = empty.errorMessage || "Generation failed unexpectedly.";
+        submessage = "Please try again in a moment.";
+      }
+
+      if (empty.title) title = empty.title;
+      if (empty.message) message = empty.message;
+      if (empty.submessage) submessage = empty.submessage;
+
+      if (attempts > 0 && maxAttempts > 0) {
+        detail = `Searched ${attempts} of ${maxAttempts} variant${
+          maxAttempts === 1 ? "" : "s"
+        }.`;
+      } else if (attempts > 0) {
+        detail = `Searched ${attempts} variant${attempts === 1 ? "" : "s"}.`;
+      }
+
       return `
-                <div style="text-align:center;padding:30px;">
-                    <div style="font-size:50px;margin-bottom:15px;">😔</div>
-                    <h3 style="color:#ef4444;margin:0 0 10px 0;">No Results Found</h3>
-                    <p style="color:#9ca3af;font-size:12px;margin-bottom:15px;">Could not get accurate prices for this image.</p>
-                    <p style="color:#0f0f10;font-size:11px;">Try with a different image or category.</p>
-                    <button id="restart-btn" class="opt-btn opt-btn-primary" style="margin-top:15px;padding:10px 25px;">Try Again</button>
+                <div style="text-align:center;padding:24px 18px;">
+                    <div style="background:linear-gradient(135deg, rgba(255,215,0,0.14) 0%, rgba(5,150,105,0.1) 100%);border:1px solid #f0e0c8;border-radius:14px;padding:22px 16px;">
+                        <div style="font-size:46px;margin-bottom:12px;line-height:1;">${icon}</div>
+                        <h3 style="color:#c45f12;margin:0 0 8px 0;font-size:17px;font-weight:700;">${title}</h3>
+                        <p style="color:#6b7280;font-size:12px;margin:0 0 8px 0;line-height:1.45;">${message}</p>
+                        ${
+                          detail
+                            ? `<p style="color:#9ca3af;font-size:11px;margin:0 0 8px 0;">${detail}</p>`
+                            : ""
+                        }
+                        <p style="color:#0f0f10;font-size:11px;margin:0;line-height:1.45;">${submessage}</p>
+                        <button id="restart-btn" class="opt-btn opt-btn-primary" style="margin-top:16px;padding:10px 25px;">Try Again</button>
+                    </div>
                 </div>
             `;
     }

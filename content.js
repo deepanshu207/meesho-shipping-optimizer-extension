@@ -27,6 +27,9 @@ const LIVE_SMART_DEFAULTS = {
   maxVariantsCap: 100,
 };
 
+const STOP_FORCE_MS = 1200;
+const STOP_ESCALATE_MS = 600;
+
 const LiveSmart = {
   readMainSmartModeSettings() {
     const maxAttempts = Math.min(
@@ -157,6 +160,7 @@ class MeeshoShippingOptimizer {
     this._runPreviousResults = null;
     this._runFinalizedEarly = false;
     this._stopFinalizeTimer = null;
+    this._stopEscalateTimer = null;
     this._generationSeq = 0;
     this.currentResults = [];
     this.framedExtraResults = [];
@@ -2861,8 +2865,8 @@ Please share payment details.`;
     this.selectedVariantId = null;
     this._runPreviousResults = null;
     this._runFinalizedEarly = false;
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
+    this._activeRunMeta = null;
     this.currentResults = [];
     this.framedExtraResults = [];
     this.showFramedExtras = false;
@@ -2937,21 +2941,51 @@ Please share payment details.`;
   }
 
 
+  clearStopTimers() {
+    clearTimeout(this._stopFinalizeTimer);
+    this._stopFinalizeTimer = null;
+    clearTimeout(this._stopEscalateTimer);
+    this._stopEscalateTimer = null;
+  }
+
+  showNoResultsFallback(resultsArea, meta = {}) {
+    if (!resultsArea) return;
+    this.currentResults = [];
+    resultsArea.style.display = "block";
+    delete resultsArea.dataset.view;
+    resultsArea.innerHTML = OptimizerUI.getResultsHTML([], {
+      ...this.getResultsViewOptions(),
+      emptyState: meta,
+    });
+    this.setupResultsEvents();
+    this.restoreOptimizerChromeAfterResults();
+  }
+
   requestStopGeneration() {
-    if (!this.isProcessing) return;
+    if (!this.isProcessing) {
+      OptimizerUtils.showNotification("Nothing is running to stop", "info", 2500);
+      return;
+    }
+    if (this.shouldStop) return;
     this.shouldStop = true;
     const processingArea = document.getElementById("processing-area");
     this.markSmartModeStopping(processingArea);
-    clearTimeout(this._stopFinalizeTimer);
+    this.clearStopTimers();
+    this._stopEscalateTimer = setTimeout(() => {
+      this.markSmartModeStopping(processingArea, { escalate: true });
+    }, STOP_ESCALATE_MS);
     this._stopFinalizeTimer = setTimeout(() => {
-      this.forceFinishProcessing();
-    }, 2500);
+      this.forceFinishProcessing({
+        reason: "stop_timeout",
+        attempts: this._activeRunMeta?.attempts,
+        maxAttempts: this._activeRunMeta?.maxAttempts,
+      });
+    }, STOP_FORCE_MS);
   }
 
-  forceFinishProcessing() {
+  forceFinishProcessing(meta = {}) {
     if (!this.isProcessing) return;
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
     this._generationSeq++;
     this._runFinalizedEarly = false;
 
@@ -2980,18 +3014,26 @@ Please share payment details.`;
         "Stopped — your previous variants are still available",
         "info",
       );
+    } else if (resultsArea) {
+      this.showNoResultsFallback(resultsArea, {
+        reason: "stopped",
+        attempts: meta.attempts ?? this._activeRunMeta?.attempts,
+        maxAttempts: meta.maxAttempts ?? this._activeRunMeta?.maxAttempts,
+        errorMessage: meta.errorMessage,
+      });
+      OptimizerUtils.showNotification("Search stopped", "info");
     } else {
       const uploadArea = document.getElementById("upload-area");
-      if (resultsArea) resultsArea.style.display = "none";
       if (uploadArea) uploadArea.style.display = "block";
       document.querySelectorAll(".opt-section").forEach((s) => {
         s.style.display = "block";
       });
       this.restoreOptimizerChromeAfterResults();
-      OptimizerUtils.showNotification("Stopped", "info");
+      OptimizerUtils.showNotification("Search stopped", "info");
     }
 
     this._runPreviousResults = null;
+    this._activeRunMeta = null;
     this.finishOptimizerRun();
   }
 
@@ -3052,8 +3094,7 @@ Please share payment details.`;
     this.isProcessing = true;
     this.shouldStop = false;
     this._runFinalizedEarly = false;
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
     this.lastProcessedFile = file;
     this._runPreviousResults = [...(this.currentResults || [])];
     this.lastLivePricedResults = [];
@@ -3081,6 +3122,7 @@ Please share payment details.`;
     const maxAttempts = runSettings.maxAttempts;
     const shippingCap = LiveSmart.getShippingCap();
     const smartSearchCap = runSettings.maxShippingCap;
+    this._activeRunMeta = { maxAttempts, attempts: 0 };
 
     OptimizerUtils.showNotification(
       `🚀 Generating up to ${maxAttempts} variants`,
@@ -3107,10 +3149,9 @@ Please share payment details.`;
       );
     }
 
-    const finishRunUi = (mappedResults) => {
+    const finishRunUi = (mappedResults, runMeta = {}) => {
       if (runId !== this._generationSeq) return;
-      clearTimeout(this._stopFinalizeTimer);
-      this._stopFinalizeTimer = null;
+      this.clearStopTimers();
       if (processingArea) {
         processingArea.style.display = "none";
         processingArea.innerHTML = "";
@@ -3147,24 +3188,31 @@ Please share payment details.`;
           this.setupResultsEvents();
         }
         this.restoreOptimizerChromeAfterResults();
+      } else if (resultsArea) {
+        const emptyReason = runMeta.error
+          ? "error"
+          : this.shouldStop || runMeta.stopped
+            ? "stopped"
+            : "exhausted";
+        this.showNoResultsFallback(resultsArea, {
+          reason: emptyReason,
+          attempts: runMeta.attempts,
+          maxAttempts: runMeta.maxAttempts || maxAttempts,
+          errorMessage: runMeta.errorMessage,
+        });
       } else {
-        if (resultsArea) resultsArea.style.display = "none";
         if (uploadArea) uploadArea.style.display = "block";
         sections.forEach((s) => (s.style.display = "block"));
         this.restoreOptimizerChromeAfterResults();
-        if (window.WEB_OPTIMIZER_MODE) {
-          OptimizerUtils.showNotification(
-            "No variants generated — try another image",
-            "error",
-          );
-        }
       }
       this._runPreviousResults = null;
+      this._activeRunMeta = null;
       this.finishOptimizerRun();
     };
 
     const startTime = Date.now();
     let result = { success: false, results: [] };
+    const runMeta = { maxAttempts };
 
     try {
       const blob = await new Promise((resolve) => {
@@ -3202,6 +3250,7 @@ Please share payment details.`;
           targetShipping,
           maxAttempts,
           (attempt, max, bestSoFar, noPidCount) => {
+            if (this._activeRunMeta) this._activeRunMeta.attempts = attempt;
             if (processingArea && !this.shouldStop) {
               const elapsed = Math.floor((Date.now() - startTime) / 1000);
               this.updateSmartModeProgressUI(
@@ -3247,6 +3296,7 @@ Please share payment details.`;
           blob,
           maxAttempts,
           (attempt, max) => {
+            if (this._activeRunMeta) this._activeRunMeta.attempts = attempt;
             if (processingArea && !this.shouldStop) {
               const elapsed = Math.floor((Date.now() - startTime) / 1000);
               this.updateSmartModeProgressUI(
@@ -3267,16 +3317,26 @@ Please share payment details.`;
       }
     } catch (err) {
       console.error("❌ Error:", err);
-      OptimizerUtils.showNotification("Error: " + err.message, "error");
+      runMeta.error = true;
+      runMeta.errorMessage = err.message || "Generation failed";
+      OptimizerUtils.showNotification("Error: " + runMeta.errorMessage, "error");
+    }
+
+    runMeta.attempts = result.attempts || runMeta.attempts || 0;
+    runMeta.stopped = !!(this.shouldStop || result.stopped);
+    if (this._activeRunMeta) {
+      this._activeRunMeta.attempts = runMeta.attempts;
     }
 
     if (this._runFinalizedEarly && runId === this._generationSeq) {
       this._runFinalizedEarly = false;
+      let earlyMapped = [];
       if (result?.success && result.results?.length > 0) {
         const mapped = result.results.map((r, i) => this.mapResultFromApi(r, i));
         const policy = LiveSmart.applyLiveResultPolicy(mapped);
-        finishRunUi(policy.display);
+        earlyMapped = policy.display;
       }
+      finishRunUi(earlyMapped, runMeta);
       return;
     }
 
@@ -3337,14 +3397,14 @@ Please share payment details.`;
           "info",
         );
       }
-    } else if (!window.WEB_OPTIMIZER_MODE) {
-      OptimizerUtils.showNotification(
-        `⚠️ No results yet. Try different image or check Meesho session.`,
-        "error",
-      );
+    } else if (mappedResults.length === 0) {
+      const emptyMsg = this.shouldStop || runMeta.stopped
+        ? "Search stopped — no variants to show"
+        : `No results after ${runMeta.attempts || maxAttempts} attempts — try another image`;
+      OptimizerUtils.showNotification(emptyMsg, this.shouldStop ? "info" : "error", 5000);
     }
 
-    finishRunUi(mappedResults);
+    finishRunUi(mappedResults, runMeta);
   }
 
 
@@ -3398,19 +3458,25 @@ Please share payment details.`;
     return root;
   }
 
-  markSmartModeStopping(processingArea) {
+  markSmartModeStopping(processingArea, options = {}) {
     if (!processingArea) return;
     const stopping = processingArea.querySelector("#smp-stopping");
     const stopBtn = processingArea.querySelector("#stop-btn");
     const label = processingArea.querySelector("#smp-best-label");
-    if (stopping) stopping.style.display = "block";
+    if (stopping) {
+      stopping.style.display = "block";
+      stopping.textContent = options.escalate
+        ? "Still finishing current step — showing results shortly…"
+        : "Stopping — showing results so far…";
+    }
     if (stopBtn) {
       stopBtn.disabled = true;
       stopBtn.style.opacity = "0.55";
       stopBtn.style.cursor = "not-allowed";
+      stopBtn.textContent = "Stopping…";
     }
-    if (label && label.textContent === "Searching…") {
-      label.textContent = "Wrapping up…";
+    if (label && (label.textContent === "Searching…" || label.textContent === "Wrapping up…")) {
+      label.textContent = options.escalate ? "Finishing up…" : "Wrapping up…";
     }
   }
 
@@ -3721,8 +3787,7 @@ Please share payment details.`;
 
 
   finishOptimizerRun() {
-    clearTimeout(this._stopFinalizeTimer);
-    this._stopFinalizeTimer = null;
+    this.clearStopTimers();
     this.isProcessing = false;
     this.shouldStop = false;
     this.enableAllGenerateButtons();
@@ -7976,9 +8041,7 @@ Please share payment details.`;
   }
 
   stopProcessing() {
-    this.shouldStop = true;
-    const processingArea = document.getElementById("processing-area");
-    this.markSmartModeStopping(processingArea);
+    this.requestStopGeneration();
   }
 }
 

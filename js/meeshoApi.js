@@ -1694,6 +1694,7 @@ const MeeshoAPI = {
         attempts: 0,
         noPidCount: 0,
         verifiedCount: 0,
+        stopped: true,
       };
     }
     if (this.preloadBadges) {
@@ -1708,6 +1709,7 @@ const MeeshoAPI = {
         attempts: 0,
         noPidCount: 0,
         verifiedCount: 0,
+        stopped: true,
       };
     }
 
@@ -1721,6 +1723,7 @@ const MeeshoAPI = {
         attempts: 0,
         noPidCount: 0,
         verifiedCount: 0,
+        stopped: true,
       };
     }
 
@@ -1860,6 +1863,7 @@ const MeeshoAPI = {
       Math.max(parseInt(maxAttempts, 10) || this.MAX_RESULT_VARIANTS, 1),
       this.MAX_RESULT_VARIANTS,
     );
+    const wasStopped = !!(shouldStopFn && shouldStopFn());
 
     return {
       success: results.length > 0,
@@ -1869,6 +1873,7 @@ const MeeshoAPI = {
       attempts: attempt,
       noPidCount,
       verifiedCount: results.filter((r) => r.isVerified).length,
+      stopped: wasStopped,
     };
   },
 
@@ -3600,9 +3605,10 @@ const MeeshoAPI = {
       framedExtras,
       bestResult: results[0] || null,
       targetReached: false,
-      attempts: results.length,
+      attempts: Math.max(attempts, results.length),
       verifiedCount: 0,
       localOnly: true,
+      stopped: !!(shouldStopFn && shouldStopFn()),
     };
   },
 
