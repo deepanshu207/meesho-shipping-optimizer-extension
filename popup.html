@@ -485,7 +485,7 @@
 </head>
 <body>
   <div class="header">
-    <span class="version-badge" id="version-badge">v1.1.0</span>
+    <span class="version-badge" id="version-badge">v1.2.0</span>
     <div class="brand-row">
       <img class="brand-logo" src="icons/icon48.png" width="48" height="48" alt="">
       <div class="brand">
@@ -509,8 +509,9 @@
         <p style="font-size:12px;color:var(--mso-muted);">Checking license…</p>
       </div>
       <div id="license-support-row" class="hidden" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--mso-border);">
-        <div style="font-size:10px;color:var(--mso-muted);margin-bottom:4px;">Device ID (send to support if activation fails)</div>
+        <div style="font-size:10px;color:var(--mso-muted);margin-bottom:4px;">Device ID (Kiwi/Chrome — send to support if activation fails)</div>
         <div id="device-id-display" style="font-family:Consolas,monospace;font-size:11px;color:#c45f12;word-break:break-all;"></div>
+        <div id="device-browser-label" style="font-size:10px;color:var(--mso-muted);margin-top:4px;"></div>
         <button type="button" id="copy-support-btn" class="btn btn-secondary" style="margin-top:8px;padding:8px;font-size:11px;">Copy support info</button>
       </div>
     </div>
@@ -523,7 +524,15 @@
         <div class="plan-grid" id="license-plans-grid">
           <div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--mso-muted);font-size:11px;">Loading plans…</div>
         </div>
-        <p class="hint" id="license-demo-hint">Demo keys like <strong>MEESHO-DEMOFREE</strong> work for trial.</p>
+        <p class="hint" id="license-demo-hint">1 device per license · Family/Friends for more devices · Demo: <strong>MEESHO-DEMOFREE</strong></p>
+      </div>
+
+      <div id="popup-credits-section" class="status-card hidden" style="padding:12px;margin-top:10px;">
+        <div style="text-align:center;margin-bottom:10px;">
+          <span style="font-size:11px;color:#c45f12;font-weight:700;">⚡ BUY CREDITS — pay as you go (min 10)</span>
+        </div>
+        <div class="plan-grid" id="license-credits-grid"></div>
+        <p class="hint" id="credits-price-hint" style="margin-top:8px;">₹2 per credit · top up when credits run out</p>
       </div>
 
       <div id="popup-message" class="message"></div>
