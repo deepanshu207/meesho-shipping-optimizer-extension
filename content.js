@@ -370,17 +370,23 @@ class MeeshoShippingOptimizer {
       chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log("Message received:", message);
         if (message.action === "openOptimizer") {
+          if (document.getElementById("opt-modal")) {
+            sendResponse({ success: true, alreadyOpen: true });
+            return true;
+          }
           this.openModal();
           sendResponse({ success: true });
         } else if (message.type === "LICENSE_UPDATED") {
           void this.checkLicense().then((valid) => {
-            if (!valid && this.modal) {
+            if (!valid && this.modal && this.isLicensed === false) {
               OptimizerUtils.showNotification(
                 "License expired — please activate again",
                 "error",
               );
               this.closeModal();
               setTimeout(() => this.openModal(), 400);
+            } else {
+              this.isLicensed = valid;
             }
           });
           sendResponse({ success: true });
@@ -402,14 +408,15 @@ class MeeshoShippingOptimizer {
   // Observe URL changes for SPA
   observeUrlChanges() {
     let lastUrl = location.href;
+    let setupTimer = null;
     new MutationObserver(() => {
       const url = location.href;
-      if (url !== lastUrl) {
-        lastUrl = url;
-        console.log("URL changed:", url);
-        this.autoPopupShown = false;
-        setTimeout(() => this.setup(), 1000);
-      }
+      if (url === lastUrl) return;
+      lastUrl = url;
+      console.log("URL changed:", url);
+      this.autoPopupShown = false;
+      clearTimeout(setupTimer);
+      setupTimer = setTimeout(() => this.setup(), 800);
     }).observe(document, { subtree: true, childList: true });
   }
 
@@ -614,7 +621,11 @@ class MeeshoShippingOptimizer {
       touch-action: manipulation;
     `;
 
-    fab.onclick = () => this.openModal();
+    fab.onclick = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      this.openModal();
+    };
 
     document.documentElement.appendChild(fab);
     this._optimizerFab = fab;
@@ -797,7 +808,11 @@ class MeeshoShippingOptimizer {
       btn.style.transform = "translateY(0)";
       btn.style.boxShadow = "0 6px 20px rgba(230,126,34,0.35)";
     };
-    btn.onclick = () => this.openModal();
+    btn.onclick = (e) => {
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      this.openModal();
+    };
 
     const wrapper = document.createElement("div");
     wrapper.style.margin = "10px 0";
@@ -944,13 +959,8 @@ class MeeshoShippingOptimizer {
     }
 
     if (!window.WEB_OPTIMIZER_MODE) {
-      try {
-        await chrome.runtime.sendMessage({ type: "FORCE_LICENSE_CHECK" });
-      } catch (e) {
-        console.warn("License check message failed:", e);
-      }
+      await this.checkLicense();
     }
-    await this.checkLicense();
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.init();
@@ -3847,6 +3857,10 @@ Please share payment details.`;
       e.returnValue = "";
       return "";
     });
+
+    // History guards only on web app — pushState on Meesho catalog can trigger
+    // their SPA router and cause a full page reload.
+    if (!window.WEB_OPTIMIZER_MODE) return;
 
     try {
       if (!history.state?.optimizerGuard) {
@@ -8142,10 +8156,13 @@ Please share payment details.`;
   }
 }
 
-// Initialize
+// Initialize — singleton so popup re-inject does not duplicate listeners
 if (window.WEB_OPTIMIZER_MODE) {
   window.MeeshoShippingOptimizer = MeeshoShippingOptimizer;
   if (typeof initWebOptimizerButtons === "function") initWebOptimizerButtons();
-} else {
+} else if (!window.meeshoOptimizer) {
   window.meeshoOptimizer = new MeeshoShippingOptimizer();
+} else if (typeof window.meeshoOptimizer.openModal === "function") {
+  // Script re-injected (e.g. from popup) — open on request only, no second instance
+  console.log("Shipping Optimizer already active on this tab");
 }
