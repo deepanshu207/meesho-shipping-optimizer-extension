@@ -84,8 +84,81 @@ Plans live in the `plans` array on `shipping_optimizer_config/app`. The extensio
 | `best` | No | Highlight as "BEST VALUE" (only one shown) |
 | `active` | No | `false` hides from extension; default `true` |
 | `order` | No | Sort order (lower first) |
+| `max_devices` | No | Device limit (`1` default; `0` = unlimited devices) |
+| `device_tier` | No | `standard` \| `family` \| `friends` \| `unlimited` |
+| `billing_mode` | No | `subscription` \| `credits` \| `hybrid` |
+| `plan_kind` | No | Free label: `subscription`, `lifetime`, `unlimited`, `enterprise`, `custom`, etc. |
+| `included_credits` | No | Starting credits for credits/hybrid plans |
+| `unlimited_time` | No | `true` = never expires (or set `days: 0`) |
+| `unlimited_devices` | No | `true` = no device cap (or `max_devices: 0`) |
+| `unlimited_credits` | No | `true` = never deduct credits |
+| `description` | No | Extra note shown in admin (optional) |
 
-**Add a plan:** append a new object to `plans` and save.
+### Custom & unlimited plans
+
+Add **any** plan to the `plans[]` array — the extension does not hardcode plan IDs. Examples:
+
+**Lifetime / unlimited time:**
+```json
+{
+  "id": "lifetime",
+  "name": "Lifetime",
+  "price": 9999,
+  "days": 0,
+  "duration": "Forever",
+  "unlimited_time": true,
+  "plan_kind": "lifetime",
+  "billing_mode": "subscription",
+  "max_devices": 1,
+  "active": true
+}
+```
+
+**Unlimited devices (enterprise):**
+```json
+{
+  "id": "enterprise_unlimited",
+  "name": "Enterprise Unlimited",
+  "price": 14999,
+  "days": 365,
+  "unlimited_devices": true,
+  "max_devices": 0,
+  "plan_kind": "enterprise",
+  "active": true
+}
+```
+
+**Unlimited everything:**
+```json
+{
+  "id": "unlimited_all",
+  "name": "Unlimited Pro",
+  "price": 19999,
+  "days": 0,
+  "unlimited_time": true,
+  "unlimited_devices": true,
+  "unlimited_credits": true,
+  "plan_kind": "unlimited",
+  "billing_mode": "hybrid",
+  "active": true
+}
+```
+
+**Custom pay-as-you-go plan:**
+```json
+{
+  "id": "credits_starter",
+  "name": "Credits Starter",
+  "price": 99,
+  "days": 0,
+  "billing_mode": "credits",
+  "included_credits": 50,
+  "plan_kind": "custom",
+  "active": true
+}
+```
+
+License documents can **override** any plan field (`max_devices`, `unlimited_*`, `credits_balance`, `billing_mode`) per customer.
 
 **Update a plan:** change `price`, `name`, `days`, etc. Existing licenses keep their stored `planDays` from creation time.
 
@@ -260,6 +333,7 @@ service cloud.firestore {
       allow update: if request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly([
           'machineId', 'device_ids', 'max_devices', 'billing_mode',
+          'unlimited_time', 'unlimited_devices', 'unlimited_credits',
           'activatedAt', 'lastVerifiedAt', 'expiresAt',
           'credits_balance', 'credits_used'
         ]);

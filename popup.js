@@ -152,10 +152,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         let infoHTML = `<div class="license-key">${maskKey(result.licenseKey)}</div>`;
         infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:6px;">Plan: <strong>${info.planType || "premium"}</strong>`;
         if (info.maxDevices != null) {
-          infoHTML += ` · Devices: <strong>${info.deviceCount || 1}/${info.maxDevices}</strong>`;
+          const devLabel = info.unlimitedDevices
+            ? "Unlimited devices"
+            : `${info.deviceCount || 1}/${info.maxDevices}`;
+          infoHTML += ` · Devices: <strong>${devLabel}</strong>`;
+        }
+        if (info.unlimitedTime) {
+          infoHTML += ` · <strong>Unlimited time</strong>`;
         }
         if (info.billingMode === "credits" || info.billingMode === "hybrid") {
-          infoHTML += ` · Credits: <strong>${info.creditsBalance ?? 0}</strong>`;
+          infoHTML += info.unlimitedCredits
+            ? ` · Credits: <strong>Unlimited</strong>`
+            : ` · Credits: <strong>${info.creditsBalance ?? 0}</strong>`;
         }
         if (info.activatedAt) {
           infoHTML += ` · Activated: ${formatWhen(info.activatedAt)}`;
@@ -184,7 +192,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           creditsSection.classList.toggle("hidden", !showCreditsTopUp);
         }
 
-        if (info.expiresAt) {
+        if (info.expiresAt && !info.unlimitedTime) {
           const expiresAt = new Date(info.expiresAt);
           const diffMs = expiresAt - new Date();
 

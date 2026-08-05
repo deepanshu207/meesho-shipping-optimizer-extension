@@ -1,314 +1,255 @@
-# Swagstree superadmin prompt — Shipping Optimizer extension
+# Swagstree superadmin prompt — Shipping Optimizer extension (v1.2)
 
-Copy everything below the line into Cursor (or your agent) in the **Swagstree** repo (`deepanshu207/swagstree`).
+Copy everything below the line into Cursor in the **Swagstree** repo (`deepanshu207/swagstree`).
 
 ---
 
 ## Prompt (copy from here)
 
-Build a **Shipping Optimizer Extension** admin panel inside the existing Swagstree **Superadmin** tab. This manages the Meesho Chrome extension license backend in Firebase. **Do not read or write any other Swagstree storefront collections** — only `shipping_optimizer_*` collections.
+Build a **Shipping Optimizer Extension** admin panel in Swagstree **Superadmin** tab. Manages the Meesho Chrome extension license backend in Firebase project `swagstree-web`.
 
-### Context
+**CRITICAL:** Only read/write `shipping_optimizer_*` collections. Never touch Swagstree storefront data.
 
-- **Firebase project:** `swagstree-web` (already used by Swagstree)
-- **Extension repo (reference only):** `deepanshu207/meesho-shipping-optimizer-extension` — see `FIREBASE_SETUP.md` and `ACTIVATION_GUIDE.md` for schema and flows
-- **Access:** Only `superadmin@swagstree.com` can write; match existing superadmin gating (`isSuperAdmin`)
-- **UI location:** Superadmin tab → new section **"Shipping Optimizer Extension"** with 3 sub-tabs
+**Access:** `superadmin@swagstree.com` only — use existing `isSuperAdmin` gating.
 
-### Firestore collections (isolated prefix)
+**UI:** Superadmin → **Shipping Optimizer Extension** → 4 sub-tabs:
+1. Config & Pricing
+2. Credits & Packs
+3. Demo / Promo Keys
+4. Paid Licenses
 
-| Collection | Document ID | Purpose |
-|------------|-------------|---------|
-| `shipping_optimizer_config` | `app` | WhatsApp, plans, inline demo keys, announcement, kill switch |
-| `shipping_optimizer_demo_keys` | `{KEY}` uppercase | Extra promo codes (optional collection) |
-| `shipping_optimizer_licenses` | `{LICENSE_KEY}` | Paid licenses + device binding |
+Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` → `FIREBASE_SETUP.md`, `ACTIVATION_GUIDE.md`
 
-### Firestore security rules (merge into existing rules)
+---
+
+### Firestore collections
+
+| Collection | Doc ID | Purpose |
+|------------|--------|---------|
+| `shipping_optimizer_config` | `app` | WhatsApp, plans[], credits{}, demo_keys{}, announcement |
+| `shipping_optimizer_demo_keys` | `{KEY}` | Extra promo codes |
+| `shipping_optimizer_licenses` | `{LICENSE_KEY}` | Paid licenses |
+
+### Firestore rules (merge)
 
 ```javascript
 function isShippingOptimizerSuperAdmin() {
-  return request.auth != null
-    && request.auth.token.email == 'superadmin@swagstree.com';
+  return request.auth != null && request.auth.token.email == 'superadmin@swagstree.com';
 }
-
 match /shipping_optimizer_config/{doc} {
   allow read: if true;
   allow write: if isShippingOptimizerSuperAdmin();
 }
-
 match /shipping_optimizer_demo_keys/{key} {
   allow read: if true;
   allow write: if isShippingOptimizerSuperAdmin();
 }
-
 match /shipping_optimizer_licenses/{key} {
   allow read: if true;
   allow create, update, delete: if isShippingOptimizerSuperAdmin();
-      allow update: if request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['machineId', 'device_ids', 'max_devices', 'billing_mode', 'activatedAt', 'lastVerifiedAt', 'expiresAt', 'credits_balance', 'credits_used']);
+  allow update: if request.resource.data.diff(resource.data).affectedKeys()
+    .hasOnly([
+      'machineId', 'device_ids', 'max_devices', 'billing_mode',
+      'unlimited_time', 'unlimited_devices', 'unlimited_credits',
+      'activatedAt', 'lastVerifiedAt', 'expiresAt',
+      'credits_balance', 'credits_used'
+    ]);
 }
 ```
 
-The Chrome extension only patches `machineId`, `activatedAt`, `lastVerifiedAt`, `expiresAt` on paid licenses during customer activation.
-
 ---
 
-## Tab 1: Config & Pricing
+## TAB 1: Config & Pricing
 
-Load/save `shipping_optimizer_config/app`:
+Save to `shipping_optimizer_config/app`:
 
 ```json
 {
   "whatsapp_number": "919654414891",
   "whatsapp_message": "Hi! I want to purchase Shipping Optimizer license.",
   "extension_enabled": true,
-  "min_extension_version": "1.0.0",
+  "min_extension_version": "1.2.0",
   "announcement": "",
   "plans": [],
-  "demo_keys": {
-    "MEESHO-DEMOFREE": { "days": 30, "label": "Free 30-day trial" }
-  },
-  "updatedAt": "<serverTimestamp>",
-  "updatedBy": "<auth email>"
+  "demo_keys": { "MEESHO-DEMOFREE": { "days": 30, "label": "Free trial" } }
 }
 ```
 
-### Config fields UI
+### Plans editor — fully flexible `plans[]`
 
-- **WhatsApp number** — digits only, country code included (default `919654414891`)
-- **WhatsApp message** — pre-filled text when user taps a plan in extension
-- **Min extension version** — string, e.g. `1.0.0`
-- **Announcement** — optional banner text shown in extension popup/modal
-- **Extension enabled** — checkbox; when `false`, block new paid activations
-
-### Pricing plans editor (`plans` array)
-
-The extension reads **active** plans only. Inactive plans stay in Firebase for existing licenses that reference them.
-
-Each plan object:
+**+ Add Plan** for any custom plan (monthly, lifetime, unlimited, enterprise, credits-only, etc.). No hardcoded plan list in extension.
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `id` | Yes | Stable slug (`yearly`, `monthly`). **Never rename** after licenses issued |
+| `id` | Yes | Stable slug — never rename after licenses issued |
 | `name` | Yes | Display name |
-| `price` | Yes | INR integer |
-| `days` | Yes | License duration; expiry = activation + days |
-| `duration` | No | Short label, e.g. `1 Year` |
-| `save` | No | Badge, e.g. `Save ₹8000` |
-| `best` | No | One plan gets "BEST VALUE" in extension |
-| `active` | No | `false` hides from extension; default `true` |
-| `order` | No | Sort order (lower first); set from row position |
+| `price` | Yes | INR |
+| `days` | Yes* | Duration days; `0` = unlimited/lifetime |
+| `duration` | No | Label e.g. "1 Year", "Forever" |
+| `save` | No | Badge e.g. "Save ₹8000" |
+| `best` | No | One "BEST VALUE" in extension |
+| `active` | No | `false` hides from UI |
+| `order` | No | Sort order |
+| `max_devices` | No | `1` default; `3` family; `5` friends; `0` = unlimited |
+| `device_tier` | No | `standard` \| `family` \| `friends` \| `unlimited` |
+| `billing_mode` | No | `subscription` \| `credits` \| `hybrid` |
+| `plan_kind` | No | Free text: `lifetime`, `unlimited`, `enterprise`, `custom` |
+| `included_credits` | No | Starting credits for credits/hybrid plans |
+| `unlimited_time` | No | `true` = never expires |
+| `unlimited_devices` | No | `true` = no device limit |
+| `unlimited_credits` | No | `true` = never deduct credits |
+| `description` | No | Admin note |
 
-**Plan editor actions:**
-- **+ Add Plan** — append row with defaults
-- **▲ / ▼** — reorder (update `order` from index)
-- **Show** checkbox — maps to `active` (soft hide)
-- **✕** — remove row from array (only if no licenses use that `planId`)
-- Validate: unique IDs, non-empty name, price ≥ 0, days ≥ 1
+**Editor actions:** + Add Plan, ▲/▼ reorder, Show (active), ✕ remove, validate unique IDs.
 
-**Slugify plan IDs:** lowercase, spaces → `_`, strip invalid chars.
+**Preset templates (quick-add buttons):**
+- Standard Monthly (1 device, 30 days)
+- Family Yearly (3 devices, 365 days)
+- Friends Yearly (5 devices, 365 days)
+- Lifetime (unlimited time, 1 device)
+- Unlimited Pro (unlimited time + devices + credits)
+- Credits Starter (billing_mode: credits, included_credits: 50)
 
-Default seed plans if empty:
-- monthly ₹599 / 30d
-- quarterly ₹1399 / 90d
-- halfyearly ₹2299 / 180d
-- yearly ₹3099 / 365d (best)
+**Example custom plans in Firebase:**
 
-### Inline demo keys editor (`demo_keys` map on config doc)
+```json
+{ "id": "lifetime", "name": "Lifetime", "price": 9999, "days": 0, "unlimited_time": true, "plan_kind": "lifetime", "max_devices": 1, "active": true }
+{ "id": "family_yearly", "name": "Family Yearly", "price": 4999, "days": 365, "max_devices": 3, "device_tier": "family", "active": true }
+{ "id": "unlimited_pro", "name": "Unlimited Pro", "price": 19999, "days": 0, "unlimited_time": true, "unlimited_devices": true, "unlimited_credits": true, "plan_kind": "unlimited", "active": true }
+```
 
-Key-value editor for quick promo codes stored in config:
-- Key: uppercase, e.g. `MEESHO-DEMOFREE`
-- `days`: number
-- `label`: optional string
-- **+ Add Key** / **✕ Remove**
-
-### Save button
-
-- `db.collection('shipping_optimizer_config').doc('app').set(payload, { merge: true })`
-- Show toast on success/error
-- Set `updatedAt: firebase.firestore.FieldValue.serverTimestamp()`
+### Inline demo keys (`demo_keys` map)
+Key → { days, label } editor with + Add / ✕ Remove.
 
 ---
 
-## Tab 2: Demo / Promo Keys (collection)
+## TAB 2: Credits & Packs
 
-Optional extra promos in `shipping_optimizer_demo_keys/{KEY}` (merged with inline `demo_keys` in extension).
+Edit `credits` object on app doc:
 
-**List** existing docs with: key, days, label, active status.
-
-**Add form:**
-- Key (uppercase, min 6 chars)
-- Days
-- Label
-- `active: true` on create
-
-**Per-row actions:**
-- Enable / Disable (`active` toggle)
-- Delete document
-
-Document shape:
 ```json
 {
-  "days": 30,
-  "label": "Summer promo",
-  "active": true,
-  "createdAt": "<timestamp>"
+  "enabled": true,
+  "price_per_credit": 2,
+  "min_purchase": 10,
+  "cost_per_operation": 1,
+  "packs": [
+    { "id": "pack_10", "credits": 10, "price": 20, "label": "10 Credits", "active": true, "order": 0 },
+    { "id": "pack_20", "credits": 20, "price": 38, "label": "20 Credits", "active": true, "order": 1 },
+    { "id": "pack_50", "credits": 50, "price": 90, "label": "50 Credits", "active": true, "order": 2 },
+    { "id": "pack_100", "credits": 100, "price": 170, "label": "100 Credits", "active": true, "order": 3 }
+  ]
 }
 ```
 
+**Packs editor:** + Add Pack (any credits/price), ▲/▼ reorder, Show toggle, ✕ remove.
+**Custom pack example:** `{ "id": "pack_250", "credits": 250, "price": 400, "label": "250 Credits" }`
+**Custom amount:** show `price_per_credit` × amount (min `min_purchase`) for WhatsApp quote.
+
 ---
 
-## Tab 3: Paid Licenses
+## TAB 3: Demo / Promo Keys
 
-Manage `shipping_optimizer_licenses/{LICENSE_KEY}`.
+Collection `shipping_optimizer_demo_keys/{KEY}` — list, add, enable/disable, delete.
+Merged with inline `demo_keys` in config.
+
+---
+
+## TAB 4: Paid Licenses
 
 ### Create license form
 
-| Field | Required | Notes |
-|-------|----------|-------|
-| License key | Auto or manual | Format `MEESHO-XXXX-XXXX-XXXX` |
-| Plan | Dropdown | From active `plans` in config; copies `planId` + `planDays` |
-| Customer name | Optional | `customer_name` |
-| Customer phone | Optional | `customer_phone` |
-| Customer email | Optional | `customer_email` |
-| Support notes | Optional | `support_notes` |
+| Field | Notes |
+|-------|-------|
+| License key | `MEESHO-XXXX-XXXX-XXXX` or Generate 🎲 |
+| Plan | Dropdown from **all** plans (including custom/unlimited) |
+| billing_mode | Auto from plan; allow override |
+| max_devices | Auto from plan; allow override |
+| credits_balance | For credits/hybrid; or use included_credits from plan |
+| unlimited_time / unlimited_devices / unlimited_credits | Checkboxes; override plan |
+| customer_name, customer_phone, customer_email, support_notes | Optional |
 
-**Generate key (🎲):**
-```
-MEESHO-{4 random}-{4 random}-{4 random}
-```
-Uppercase alphanumeric segments. Check uniqueness against:
-1. `shipping_optimizer_licenses`
-2. `shipping_optimizer_demo_keys`
-3. `demo_keys` map in config doc
+**On create** copy from plan: `planId`, `planType`, `planDays`, `max_devices`, `billing_mode`, `included_credits` → `credits_balance`, unlimited flags.
 
-Retry up to 12 times on collision.
-
-**On create, write:**
 ```json
 {
   "active": true,
-  "planId": "<selected>",
-  "planType": "<selected>",
-  "planDays": <from plan.days>,
+  "planId": "yearly",
+  "planDays": 365,
+  "billing_mode": "subscription",
+  "max_devices": 1,
+  "device_ids": [],
+  "credits_balance": 0,
+  "credits_used": 0,
+  "unlimited_time": false,
+  "unlimited_devices": false,
+  "unlimited_credits": false,
   "expiry_starts_on_activation": true,
   "expiresAt": "",
   "machineId": "",
-  "activatedAt": "",
-  "customer_name": "",
-  "customer_phone": "",
-  "customer_email": "",
-  "support_notes": "",
-  "createdAt": "<serverTimestamp>",
-  "createdBy": "<auth email>"
+  "activatedAt": ""
 }
 ```
 
-Show hint: *"Expiry starts when customer activates: {planDays} days from activation date."*
+### License list & actions
 
-### License list
+Show: key, customer, plan, billing_mode, devices (2/3 or Unlimited), credits, expiry (or "Unlimited"), status.
 
-Load up to 200 licenses, order by `expiresAt` desc (fallback: unsorted limit 200).
+| Action | Effect |
+|--------|--------|
+| Revoke/Activate | Toggle `active` |
+| Reset devices | Clear `device_ids[]`, `machineId`, `activatedAt` |
+| Add credits | `credits_balance += N` (top-up after pack purchase) |
+| Edit overrides | Change unlimited flags, max_devices, billing_mode per customer |
+| Delete | Confirm + type DELETE |
 
-**Search/filter** by: key, `machineId`, `planId`/`planType`.
-
-**Each row shows:**
-- License key (monospace)
-- Customer name + phone (if set)
-- Support notes (if set)
-- Plan + planDays
-- Status: Not activated yet / Activated date / Expires date (expired badge if past)
-- Device ID (`machineId` or `—`)
-- Active / Revoked badge
-
-**Per-row actions:**
-- **Revoke / Activate** — toggle `active` (confirm on revoke)
-- **Reset device** — clear `machineId` and `activatedAt` (confirm); lets customer activate on new device
-- **Delete** — remove doc (confirm + type `DELETE`)
-
-### Activation flow (for your reference in UI tooltips)
-
-1. Customer taps plan in extension → WhatsApp opens
-2. After payment, you create license here and send key
-3. Customer enters key in extension → extension sets `machineId`, `activatedAt`, `expiresAt = now + planDays`
-4. One device per key; reset device if they change PC
+Search: key, phone, planId, machineId, device_ids.
 
 ---
 
-## Technical requirements
+## Device ID (Kiwi mobile)
 
-1. **Match existing Swagstree superadmin styling** — dark theme, `btn-gold`, same fonts/spacing as other superadmin sections
-2. **Use existing Firebase `db` and `auth`** — same as rest of Swagstree app
-3. **Gate all writes** behind superadmin check; show toast if unauthorized
-4. **Load on superadmin tab open** — hook into existing `navigateToCore` when `id === 'super'`
-5. **Files to add:**
-   - `js/shipping-optimizer-admin.js` — all logic
-   - HTML block in `index.html` inside `#super-view` (before other superadmin sections)
-   - Script tag: `<script src="js/shipping-optimizer-admin.js?v=1.0"></script>` before `bind-globals.js`
-   - In `js/app.js` super tab handler: `if (typeof loadShippingOptimizerAdmin === 'function') loadShippingOptimizerAdmin();`
-6. **Do not touch** Swagstree products, orders, users, or any non-`shipping_optimizer_*` collections
-7. **Escape HTML** in all dynamic renders to prevent XSS
+Extension generates Device ID per browser profile (e.g. `M1A2B3C4D5E6`). Kiwi Android = same check as Chrome. Admin shows `device_ids[]` list per license.
+
+| Plan | Devices |
+|------|---------|
+| Standard | 1 |
+| Family | 3 (configurable) |
+| Friends | 5 (configurable) |
+| Unlimited | `max_devices: 0` or `unlimited_devices: true` |
 
 ---
 
-## Default config seed (if `app` doc missing)
+## Billing modes
 
-```javascript
-{
-  whatsapp_number: '919654414891',
-  whatsapp_message: 'Hi! I want to purchase Shipping Optimizer license.',
-  extension_enabled: true,
-  min_extension_version: '1.0.0',
-  announcement: '',
-  plans: [
-    { id: 'monthly', name: 'Monthly', price: 599, days: 30, duration: '1 Month', save: '', best: false, active: true, order: 0 },
-    { id: 'quarterly', name: '3 Months', price: 1399, days: 90, duration: '3 Months', save: 'Save ₹1000', best: false, active: true, order: 1 },
-    { id: 'halfyearly', name: '6 Months', price: 2299, days: 180, duration: '6 Months', save: 'Save ₹3000', best: false, active: true, order: 2 },
-    { id: 'yearly', name: 'Yearly', price: 3099, days: 365, duration: '1 Year', save: 'Save ₹8000', best: true, active: true, order: 3 },
-  ],
-  demo_keys: {
-    'MEESHO-DEMOFREE': { days: 30, label: 'Free 30-day trial' },
-  },
-}
-```
+| Mode | Rule |
+|------|------|
+| `subscription` | Valid until `expiresAt` (or forever if `unlimited_time`) |
+| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) |
+| `hybrid` | Not expired AND has credits (unless unlimited flags) |
 
 ---
 
-## Verify after implementation
+## Technical
 
-1. Log in as `superadmin@swagstree.com` → Superadmin → Shipping Optimizer
-2. Save config with custom plan price → reload extension popup → price matches
-3. Add plan, reorder, hide with `active: false` → only active plans show in extension
-4. Create test license → activate in extension → `machineId` and `expiresAt` populate in Firebase
-5. Reset device → customer can re-activate on new machine
-6. Revoke license → extension rejects on next check
+- Match Swagstree superadmin dark theme (`btn-gold`)
+- Use existing `db`, `auth`, `showToast`, `isSuperAdmin`
+- Files: `js/shipping-optimizer-admin.js`, HTML in `#super-view`, hook `loadShippingOptimizerAdmin()` on super tab
+- Escape HTML in all renders
 
 ---
 
-## Multi-device & credits (v1.2.0)
+## Verify
 
-### Device limits
-- Plans: add `max_devices` (default 1), `device_tier` (`standard`|`family`|`friends`)
-- Licenses: `device_ids[]` array, `max_devices` copied from plan at creation
-- Admin: show device count (e.g. 2/3), list device IDs, **Reset all devices** or remove single device
-- Kiwi mobile uses same Device ID system — one ID per browser profile
-
-### Credits (pay-as-you-go)
-Config `credits` object on app doc:
-- `price_per_credit` (default 2), `min_purchase` (default 10), `cost_per_operation` (default 1)
-- `packs[]`: id, credits, price, label, active, order — defaults 10/20/50/100 credits
-
-License fields:
-- `billing_mode`: subscription | credits | hybrid
-- `credits_balance`, `credits_used`
-- Admin: **Add credits** field on license row (top-up after payment)
-- Create credits license: set billing_mode=credits, credits_balance=50
-
-Firestore rules — extension may also patch: `device_ids`, `max_devices`, `billing_mode`, `credits_balance`, `credits_used`
+1. Add custom plan "Lifetime" → shows in extension popup
+2. Create family license (3 devices) → 3rd device works, 4th blocked
+3. Create credits license → deduct on use → top-up adds balance
+4. Unlimited plan → no expiry, no device cap, no credit deduction
+5. Kiwi mobile activation → device ID appears in `device_ids[]`
 
 ---
 
-## Reference docs (extension repo)
+## Reference
 
-- `FIREBASE_SETUP.md` — full schema + rules
-- `ACTIVATION_GUIDE.md` — key generation, expiry, support workflow
+- `FIREBASE_SETUP.md` — complete schema
+- `ACTIVATION_GUIDE.md` — workflows

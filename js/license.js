@@ -21,9 +21,11 @@ const LicenseManager = {
         return false;
       }
 
-      // Check expiry (subscription / hybrid)
+      // Check expiry (subscription / hybrid) — skip if unlimited time
       const billingMode = result.licenseInfo?.billingMode || "subscription";
+      const unlimitedTime = !!result.licenseInfo?.unlimitedTime;
       if (
+        !unlimitedTime &&
         billingMode !== "credits" &&
         result.licenseInfo &&
         result.licenseInfo.expiresAt
@@ -36,10 +38,10 @@ const LicenseManager = {
         }
       }
 
-      // Check credits (credits / hybrid)
+      // Check credits (credits / hybrid) — skip if unlimited credits
       if (
-        billingMode === "credits" ||
-        billingMode === "hybrid"
+        (billingMode === "credits" || billingMode === "hybrid") &&
+        !result.licenseInfo?.unlimitedCredits
       ) {
         const balance = Number(result.licenseInfo?.creditsBalance ?? 0);
         if (balance <= 0) {
@@ -106,6 +108,9 @@ const LicenseManager = {
     }
     const mode = this.licenseInfo?.billingMode || "subscription";
     if (mode === "subscription") return { ok: true, skipped: true };
+    if (this.licenseInfo?.unlimitedCredits) {
+      return { ok: true, skipped: true, unlimited: true };
+    }
 
     if (
       CONFIG?.USE_FIREBASE_LICENSE &&
@@ -135,6 +140,9 @@ const LicenseManager = {
 
     const mode = this.licenseInfo?.billingMode || "subscription";
     if (mode === "credits" || mode === "hybrid") {
+      if (this.licenseInfo?.unlimitedCredits) {
+        return { ok: true };
+      }
       const balance = Number(this.licenseInfo?.creditsBalance ?? 0);
       if (balance <= 0) {
         return {

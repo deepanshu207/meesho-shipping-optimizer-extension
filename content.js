@@ -636,8 +636,10 @@ class MeeshoShippingOptimizer {
       ]);
 
       if (result.licenseStatus === "active" && result.licenseKey) {
-        if (result.licenseInfo?.expiresAt) {
-          const expiresAt = new Date(result.licenseInfo.expiresAt);
+        const info = result.licenseInfo || {};
+        const unlimitedTime = !!info.unlimitedTime;
+        if (!unlimitedTime && info.expiresAt) {
+          const expiresAt = new Date(info.expiresAt);
           if (new Date() > expiresAt) {
             this.isLicensed = false;
             if (typeof LicenseManager !== "undefined") {
