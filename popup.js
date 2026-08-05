@@ -531,8 +531,7 @@ Please share payment details and license key.`;
   document.querySelectorAll("[data-action]").forEach((el) => {
     PA.bindTap(el, () => {
       const action = el.dataset.action;
-      if (action === "optimizer") handleOpenOptimizer();
-      else if (action === "meesho") handleOpenMeesho();
+      if (action === "meesho") handleOpenMeesho();
       else if (action === "license") scrollToActivation();
       else if (action === "whatsapp") {
         openWhatsApp(`Hi! I want to upgrade my ${productName} license.`);
@@ -545,7 +544,7 @@ Please share payment details and license key.`;
   await loadLicenseStatus();
   setStatus(
     PA.isMobile()
-      ? "Tip: open Meesho catalog, then tap Open Image Optimizer."
+      ? "Tap Open Image Optimizer on Meesho catalog page."
       : "",
   );
 });

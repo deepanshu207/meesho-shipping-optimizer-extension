@@ -10,7 +10,11 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.2.1",
+  VERSION: "1.2.2",
+
+  /** Default Meesho single-catalog add page (supplier panel). */
+  MEESHO_CATALOG_URL:
+    "https://supplier.meesho.com/panel/v3/new/cataloging/ytnlz/catalogs/single/add",
 
   // Firebase (swagstree-web) — ONLY uses shipping_optimizer_* collections
   USE_FIREBASE_LICENSE: true,

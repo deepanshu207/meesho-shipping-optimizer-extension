@@ -2,7 +2,8 @@
 
 const PopupActions = {
   MEESHO_CATALOG_URL:
-    "https://supplier.meesho.com/panel/v3/new/cataloging/single/add",
+    (typeof CONFIG !== "undefined" && CONFIG.MEESHO_CATALOG_URL) ||
+    "https://supplier.meesho.com/panel/v3/new/cataloging/ytnlz/catalogs/single/add",
 
   /** Ignore taps right after popup opens (ghost click from extension icon). */
   POPUP_GUARD_MS: 450,
@@ -50,9 +51,54 @@ const PopupActions = {
 
   openWhatsApp(number, message) {
     const urls = this.buildWhatsAppUrls(number, message);
-    // Never set window.location in the popup — on Kiwi/Android that can hijack
-    // the active tab. Always open WhatsApp in a new tab.
-    this.openUrl(urls.waMe || urls.api);
+    if (this.isMobile()) {
+      return this.openWhatsAppApp(urls);
+    }
+    return this.openUrl(urls.waMe || urls.api);
+  },
+
+  /** Mobile: prefer WhatsApp app (intent/scheme), then web fallback. */
+  openWhatsAppApp(urls) {
+    const candidates = this.isAndroid()
+      ? [urls.intent, urls.scheme, urls.api]
+      : [urls.scheme, urls.waMe || urls.api];
+
+    return new Promise((resolve) => {
+      const tryAt = (index) => {
+        if (index >= candidates.length) {
+          resolve(false);
+          return;
+        }
+        const url = candidates[index];
+        const isLast = index >= candidates.length - 1;
+
+        if (chrome?.tabs?.create) {
+          chrome.tabs.create({ url }, () => {
+            const err = chrome.runtime.lastError;
+            if (!err || isLast) {
+              resolve(true);
+              return;
+            }
+            setTimeout(() => tryAt(index + 1), 350);
+          });
+          return;
+        }
+
+        try {
+          const link = document.createElement("a");
+          link.href = url;
+          link.rel = "noopener";
+          link.style.display = "none";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          resolve(true);
+        } catch (e) {
+          tryAt(index + 1);
+        }
+      };
+      tryAt(0);
+    });
   },
 
   openUrl(url) {

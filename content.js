@@ -1003,7 +1003,6 @@ class MeeshoShippingOptimizer {
     if (this.isLicensed) {
       this.setupMainEvents();
       this.attachCategoryAutocompleteModalHandlers();
-      void this.setupLicenseAccountEvents();
     } else {
       this.setupLicenseEvents();
     }
@@ -1228,114 +1227,6 @@ Please share payment details.`;
         if (e.key === "Enter") activateBtn.click();
       };
     }
-  }
-
-  async setupLicenseAccountEvents() {
-    if (typeof LicenseManager === "undefined") return;
-    const root = this.modal;
-    await LicenseManager.refreshAccountListUi(root);
-
-    const addToggle = root?.querySelector("#license-add-toggle");
-    const addPanel = root?.querySelector("#license-add-panel");
-    if (addToggle && addPanel) {
-      addToggle.onclick = () => {
-        const open = addPanel.style.display !== "block";
-        addPanel.style.display = open ? "block" : "none";
-        addToggle.textContent = open ? "Cancel" : "+ Add license";
-        if (open) {
-          root.querySelector("#license-key-input-secondary")?.focus();
-        }
-      };
-    }
-
-    const activateSecondary = root?.querySelector("#activate-license-secondary-btn");
-    const secondaryInput = root?.querySelector("#license-key-input-secondary");
-    const activateSecondaryKey = async () => {
-      const key = secondaryInput?.value?.trim();
-      if (!key) {
-        OptimizerUtils.showNotification("Please enter a license key", "error");
-        return;
-      }
-      if (key.length < 10) {
-        OptimizerUtils.showNotification("License key is too short", "error");
-        return;
-      }
-      if (activateSecondary) {
-        activateSecondary.textContent = "Verifying...";
-        activateSecondary.disabled = true;
-      }
-      try {
-        const result = await LicenseManager.verifyLicenseKey(key);
-        if (result.success) {
-          this.isLicensed = true;
-          if (secondaryInput) secondaryInput.value = "";
-          if (addPanel) addPanel.style.display = "none";
-          if (addToggle) addToggle.textContent = "+ Add license";
-          OptimizerUtils.showNotification(
-            result.merged
-              ? "License added — multiple licenses active"
-              : "License activated successfully!",
-            "success",
-          );
-          await LicenseManager.refreshAccountListUi(root);
-        } else {
-          OptimizerUtils.showNotification(
-            result.message || "License verification failed",
-            "error",
-          );
-        }
-      } catch (error) {
-        OptimizerUtils.showNotification("Error: " + error.message, "error");
-      } finally {
-        if (activateSecondary) {
-          activateSecondary.textContent = "Activate License";
-          activateSecondary.disabled = false;
-        }
-      }
-    };
-    if (activateSecondary) activateSecondary.onclick = activateSecondaryKey;
-    if (secondaryInput) {
-      secondaryInput.onkeypress = (e) => {
-        if (e.key === "Enter") activateSecondaryKey();
-      };
-    }
-
-    const bindSignOffButtons = () => {
-      root?.querySelectorAll(".license-signoff-btn").forEach((btn) => {
-        btn.onclick = async () => {
-          const key = btn.dataset.licenseKey;
-          if (!key) return;
-          btn.disabled = true;
-          btn.textContent = "Signing off…";
-          const result = await LicenseManager.signOffLicense(key);
-          await this.checkLicense();
-          if (!this.isLicensed) {
-            OptimizerUtils.showNotification("Signed off — enter a new license", "info");
-            this.closeModal();
-            setTimeout(() => this.openModal(), 250);
-            return;
-          }
-          OptimizerUtils.showNotification("License removed from this device", "info");
-          await LicenseManager.refreshAccountListUi(root);
-          bindSignOffButtons();
-        };
-      });
-
-      const signOffAll = root?.querySelector("#license-signoff-all-btn");
-      if (signOffAll && !signOffAll.dataset.wired) {
-        signOffAll.dataset.wired = "1";
-        signOffAll.onclick = async () => {
-          signOffAll.disabled = true;
-          signOffAll.textContent = "Signing off…";
-          await LicenseManager.signOffAllLicenses();
-          this.isLicensed = false;
-          OptimizerUtils.showNotification("All licenses signed off", "info");
-          this.closeModal();
-          setTimeout(() => this.openModal(), 250);
-        };
-      }
-    };
-    bindSignOffButtons();
   }
 
   async ensureFullCategories() {
