@@ -113,7 +113,7 @@ class BackgroundService {
         resolve([]);
       }
     });
-  },
+  }
 
   async focusTab(tab) {
     if (!tab?.id) return;
@@ -123,7 +123,7 @@ class BackgroundService {
         await chrome.windows.update(tab.windowId, { focused: true });
       }
     } catch (e) {}
-  },
+  }
 
   async pickMeeshoTab() {
     const active = await this.tabsQuery({
@@ -142,7 +142,7 @@ class BackgroundService {
       meeshoTabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] ||
       null
     );
-  },
+  }
 
   /** Desktop — wa.me in a new tab. */
   async openWhatsAppWeb(message) {
@@ -159,7 +159,7 @@ class BackgroundService {
         resolve(false);
       }
     });
-  },
+  }
 
   /**
    * Mobile — inject deep-link click into Meesho page (MAIN world).
@@ -211,7 +211,7 @@ class BackgroundService {
       console.warn("WhatsApp mobile launch failed:", e.message);
       return false;
     }
-  },
+  }
 
   /** @deprecated use openWhatsAppWeb */
   async openWhatsApp(message) {
