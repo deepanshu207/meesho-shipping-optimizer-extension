@@ -189,6 +189,7 @@ class MeeshoShippingOptimizer {
     this._imageGenGate = null;
     this._imageGenRecorded = false;
     this._imageGenRunStarted = false;
+    this._imageGenCreditsCharged = false;
     this._navigationGuardWired = false;
     this._borderComposeGen = 0;
     this._staticControlsVariantId = null;
@@ -698,17 +699,47 @@ class MeeshoShippingOptimizer {
     return false;
   }
 
+  /** Charge credits when a generation run starts (1 per run, even if stopped). */
+  async chargeImageGenerationForRun() {
+    if (this._imageGenCreditsCharged) return true;
+    if (!this._imageGenRunStarted) return false;
+    if (!this.requiresLicense()) return true;
+    const gate = this._imageGenGate;
+    if (!gate) return false;
+
+    const result = await LicenseManager.chargeImageGenerationRun(gate);
+    if (result.ok || result.skipped) {
+      this._imageGenCreditsCharged = true;
+      this.isLicensed = LicenseManager.isLicensed;
+      return true;
+    }
+
+    OptimizerUtils.showNotification(
+      result.reason || "Could not charge credits for this run.",
+      "error",
+      6000,
+    );
+    return false;
+  }
+
   /** Record one generation run (upload → variants), even if stopped or zero results. */
   async recordImageGenerationForRun() {
     if (this._imageGenRecorded) return;
     if (!this._imageGenRunStarted) return;
     if (!this.requiresLicense()) return;
     const gate = this._imageGenGate;
-    // Legacy path already consumed credits at the gate; nothing to record.
-    if (!gate || gate.legacy) return;
+    if (!gate) return;
     this._imageGenRecorded = true;
     try {
-      await LicenseManager.recordImageGeneration(1, gate);
+      if (!this._imageGenCreditsCharged) {
+        const charge = await LicenseManager.chargeImageGenerationRun(gate);
+        if (charge.ok || charge.skipped) {
+          this._imageGenCreditsCharged = true;
+        }
+      }
+      if (gate.config?.configured) {
+        await LicenseManager.recordImageGeneration(1, gate);
+      }
       this.isLicensed = LicenseManager.isLicensed;
     } catch (e) {
       console.warn("Image-gen record failed:", e);
@@ -3162,7 +3193,7 @@ Please share payment details.`;
     }, STOP_FORCE_MS);
   }
 
-  forceFinishProcessing(meta = {}) {
+  async forceFinishProcessing(meta = {}) {
     if (!this.isProcessing) return;
     this.clearStopTimers();
     this._generationSeq++;
@@ -3213,7 +3244,7 @@ Please share payment details.`;
 
     this._runPreviousResults = null;
     this._activeRunMeta = null;
-    void this.recordImageGenerationForRun();
+    await this.recordImageGenerationForRun();
     this.finishOptimizerRun();
   }
 
@@ -3266,6 +3297,7 @@ Please share payment details.`;
     this._imageGenGate = imageGenGate;
     this._imageGenRecorded = false;
     this._imageGenRunStarted = false;
+    this._imageGenCreditsCharged = false;
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.syncFromSession?.();
@@ -3297,6 +3329,27 @@ Please share payment details.`;
     this.shouldStop = false;
     this._runFinalizedEarly = false;
     this.clearStopTimers();
+
+    if (this.requiresLicense()) {
+      const charged = await this.chargeImageGenerationForRun();
+      if (!charged) {
+        this.isProcessing = false;
+        this._imageGenRunStarted = false;
+        this._imageGenGate = null;
+        const uploadArea = document.getElementById("upload-area");
+        const sections = document.querySelectorAll(".opt-section");
+        const processingArea = document.getElementById("processing-area");
+        if (uploadArea) uploadArea.style.display = "block";
+        sections.forEach((s) => (s.style.display = "block"));
+        if (processingArea) {
+          processingArea.style.display = "none";
+          processingArea.innerHTML = "";
+        }
+        this.enableAllGenerateButtons();
+        return;
+      }
+    }
+
     this.lastProcessedFile = file;
     this._runPreviousResults = [...(this.currentResults || [])];
     this.lastLivePricedResults = [];
