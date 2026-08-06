@@ -75,6 +75,10 @@ class BackgroundService {
         case "GET_SETTINGS":
           sendResponse({ success: true, settings: await this.getSettings() });
           break;
+        case "OPEN_WHATSAPP":
+          await this.openWhatsApp(message);
+          sendResponse({ ok: true });
+          break;
         default:
           sendResponse({ success: false, error: "Unknown message type" });
       }
@@ -85,6 +89,54 @@ class BackgroundService {
 
   async processImageVariations(imageData) {
     return [{ name: "Original", data: imageData, modifications: [] }];
+  }
+
+  normalizeWhatsAppPhone(number) {
+    let digits = String(number || "").replace(/\D/g, "");
+    if (digits.length === 10) digits = "91" + digits;
+    return digits;
+  }
+
+  /** Open WhatsApp from background — mobile uses app scheme only (no web fallback timer). */
+  async openWhatsApp(message) {
+    const phone = this.normalizeWhatsAppPhone(message?.phone);
+    const text = encodeURIComponent(message?.message || "");
+    const scheme = `whatsapp://send?phone=${phone}&text=${text}`;
+    const web = `https://wa.me/${phone}?text=${text}`;
+
+    const createTab = (url) =>
+      new Promise((resolve) => {
+        try {
+          chrome.tabs.create({ url, active: true }, (tab) => {
+            if (chrome.runtime.lastError) {
+              resolve({ ok: false, tabId: null });
+              return;
+            }
+            resolve({ ok: true, tabId: tab?.id ?? null });
+          });
+        } catch (e) {
+          resolve({ ok: false, tabId: null });
+        }
+      });
+
+    if (message?.mobile) {
+      const { ok, tabId } = await createTab(scheme);
+      if (!ok) {
+        await createTab(web);
+        return;
+      }
+      // App handoff — remove the intermediate scheme tab so the user stays on Meesho.
+      if (tabId != null) {
+        setTimeout(() => {
+          try {
+            chrome.tabs.remove(tabId);
+          } catch (e) {}
+        }, 2500);
+      }
+      return;
+    }
+
+    await createTab(web);
   }
 
   async checkShippingCost(imageData) {

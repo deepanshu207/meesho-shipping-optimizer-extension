@@ -1109,17 +1109,12 @@ const LicenseManager = {
       const phone = String(settings.number || CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
       const text = settings.message || "";
       if (typeof WhatsAppLink !== "undefined") {
-        WhatsAppLink.open(phone, text);
-      } else if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "")) {
-        window.location.href = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`;
-        setTimeout(() => {
-          window.open(
-            `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`,
-            "_blank",
-          );
-        }, 600);
+        await WhatsAppLink.open(phone, text);
       } else {
-        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank");
+        window.open(
+          `https://wa.me/${phone}?text=${encodeURIComponent(text)}`,
+          "_blank",
+        );
       }
     } catch (error) {
       const phone = String(CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");

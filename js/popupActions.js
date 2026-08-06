@@ -57,10 +57,9 @@ const PopupActions = {
     }
     const urls = this.buildWhatsAppUrls(number, message);
     if (this.isMobile()) {
-      try {
-        window.location.href = urls.scheme;
-      } catch (e) {}
-      setTimeout(() => this.openUrl(urls.api || urls.waMe), 800);
+      if (typeof WhatsAppLink !== "undefined") {
+        return WhatsAppLink.openMobileScheme(urls.scheme);
+      }
       return Promise.resolve(true);
     }
     return this.openUrl(urls.waMe || urls.api);
