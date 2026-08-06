@@ -593,23 +593,24 @@ Please share payment details and license key.`;
       const parts = [];
       if (summary.remainingDaily != null) {
         parts.push(
-          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} images left`,
+          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
         );
       }
       if (summary.remainingMonthly != null) {
         parts.push(
-          `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} left`,
+          `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
         );
       }
-      if (summary.costPerImage > 0) {
+      const costPerRun = summary.costPerRun ?? summary.costPerImage ?? 0;
+      if (costPerRun > 0) {
         const bal =
           summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
         parts.push(
-          `<strong>${summary.costPerImage}</strong> credit${summary.costPerImage === 1 ? "" : "s"}/image · balance ${bal}`,
+          `<strong>${costPerRun}</strong> credit${costPerRun === 1 ? "" : "s"}/run · balance ${bal}`,
         );
       }
       if (cfg.max_batch_size > 0) {
-        parts.push(`max ${cfg.max_batch_size}/generation`);
+        parts.push(`max ${cfg.max_batch_size} variants/run`);
       }
       if (!parts.length) {
         el.style.display = "none";

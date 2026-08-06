@@ -595,10 +595,15 @@ const LicenseManager = {
     });
   },
 
-  /** Check whether a batch of `batchCount` images can be generated now. */
-  async canGenerateImages(batchCount) {
+  /**
+   * Check whether a generation run can start now.
+   * Limits and credits are per run (1 upload → variants), not per variant.
+   * `variantCount` is only used for max_batch_size (max variants per run).
+   */
+  async canGenerateImages(variantCount) {
     const config = await this.getImageGenConfig();
-    const n = Math.max(1, Number(batchCount) || 1);
+    const variants = Math.max(1, Number(variantCount) || 1);
+    const runs = 1;
 
     if (!config.configured) {
       return { ok: true, legacy: true, config, cost: 0 };
@@ -611,10 +616,10 @@ const LicenseManager = {
         cost: 0,
       };
     }
-    if (config.max_batch_size > 0 && n > config.max_batch_size) {
+    if (config.max_batch_size > 0 && variants > config.max_batch_size) {
       return {
         ok: false,
-        reason: `Max ${config.max_batch_size} images per generation — reduce the count and try again.`,
+        reason: `Max ${config.max_batch_size} variants per generation — reduce the count and try again.`,
         config,
         cost: 0,
       };
@@ -633,11 +638,11 @@ const LicenseManager = {
           limitReached: true,
         };
       }
-      if (counters.today + n > config.daily_limit) {
+      if (counters.today + runs > config.daily_limit) {
         const left = Math.max(0, config.daily_limit - counters.today);
         return {
           ok: false,
-          reason: `Only ${left} image${left === 1 ? "" : "s"} left today (limit ${config.daily_limit}/day).`,
+          reason: `Only ${left} generation${left === 1 ? "" : "s"} left today (limit ${config.daily_limit}/day).`,
           config,
           counters,
           cost: 0,
@@ -657,11 +662,11 @@ const LicenseManager = {
           limitReached: true,
         };
       }
-      if (counters.month + n > config.monthly_limit) {
+      if (counters.month + runs > config.monthly_limit) {
         const left = Math.max(0, config.monthly_limit - counters.month);
         return {
           ok: false,
-          reason: `Only ${left} image${left === 1 ? "" : "s"} left this month (limit ${config.monthly_limit}/month).`,
+          reason: `Only ${left} generation${left === 1 ? "" : "s"} left this month (limit ${config.monthly_limit}/month).`,
           config,
           counters,
           cost: 0,
@@ -674,7 +679,7 @@ const LicenseManager = {
     const creditsApply = this._imageCreditsApply(licenses, config);
     let cost = 0;
     if (creditsApply) {
-      cost = config.credits_per_image * n;
+      cost = config.credits_per_image * runs;
       const balance = this.getTotalCreditsBalance(licenses);
       if (balance !== Infinity && balance < cost) {
         return {
@@ -718,10 +723,9 @@ const LicenseManager = {
     return gate;
   },
 
-  /** Deduct credits + increment counters after a successful generation. */
+  /** Deduct credits + increment counters after a generation run (always 1 per run). */
   async recordImageGeneration(count, gate) {
-    const n = Math.max(0, Number(count) || 0);
-    if (n <= 0) return { ok: true, skipped: true };
+    const n = Math.max(1, Number(count) || 1);
 
     const config = gate?.config || (await this.getImageGenConfig());
     if (!config.configured) return { ok: true, skipped: true };
@@ -777,7 +781,7 @@ const LicenseManager = {
     return res;
   },
 
-  /** Summary for UI: config + counters + remaining + per-image cost. */
+  /** Summary for UI: config + counters + remaining + per-run cost. */
   async getImageGenSummary() {
     const config = await this.getImageGenConfig();
     const counters = await this.getImageGenCounters();
@@ -797,6 +801,8 @@ const LicenseManager = {
       counters,
       creditsApply,
       creditsBalance: balance,
+      costPerRun: creditsApply ? config.credits_per_image : 0,
+      /** @deprecated use costPerRun — kept for older callers */
       costPerImage: creditsApply ? config.credits_per_image : 0,
       remainingDaily,
       remainingMonthly,

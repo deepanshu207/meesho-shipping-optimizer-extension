@@ -299,7 +299,9 @@ When credits run out, user buys a pack via WhatsApp → admin adds to `credits_b
 
 ### AI image generation limits (`credits.image_generation`)
 
-Control how many images users can generate and whether each image costs credits. Add an `image_generation` object inside `credits` on `shipping_optimizer_config/app`:
+Control how many **generation runs** users can start and whether each run costs credits. One run = one upload → variant generation (20, 50, or 100 variants still count as **1** run; stopping mid-run also counts as **1**).
+
+Add an `image_generation` object inside `credits` on `shipping_optimizer_config/app`:
 
 ```json
 {
@@ -310,7 +312,7 @@ Control how many images users can generate and whether each image costs credits.
       "credits_per_image": 2,
       "daily_limit": 20,
       "monthly_limit": 0,
-      "max_batch_size": 4
+      "max_batch_size": 100
     }
   }
 }
@@ -319,28 +321,28 @@ Control how many images users can generate and whether each image costs credits.
 | Field | Description |
 |-------|-------------|
 | `enabled` | `false` blocks all AI image generation with a message. Default `true`. |
-| `credits_per_image` | Credits charged per generated image (`0` = free). Only applies to `credits`/`hybrid` licenses — subscription/unlimited plans generate free. |
-| `daily_limit` | Max images per day per license (`0` = unlimited). Resets at local midnight. |
-| `monthly_limit` | Max images per calendar month (`0` = unlimited). Resets on the 1st. |
-| `max_batch_size` | Max images in a single generation run (`0` = unlimited). |
+| `credits_per_image` | Credits charged **per generation run** (`0` = free). Only applies to `credits`/`hybrid` licenses — subscription/unlimited plans generate free. Field name kept for compatibility. |
+| `daily_limit` | Max **runs** per day per license (`0` = unlimited). Resets at local midnight. |
+| `monthly_limit` | Max **runs** per calendar month (`0` = unlimited). Resets on the 1st. |
+| `max_batch_size` | Max **variants** allowed in a single run (`0` = unlimited). Does not affect how runs are counted. |
 
 **Behavior & flexibility:**
 - If the whole `image_generation` object is **absent**, nothing changes — the extension keeps its existing behavior (1 credit per operation for credit plans).
-- Once present, the extension enforces these limits client-side **before** generating and persists counters **after** each run.
+- Once present, the extension enforces these limits client-side **before** generating and persists counters **after** each run starts (including stopped runs with zero results).
 - Fully flexible: set every value to `0` (and `enabled: true`) for unlimited free generation; tighten any field to throttle.
-- `unlimited_credits` licenses never pay per image (add-on/limit checks still apply).
+- `unlimited_credits` licenses never pay per run (quota/limit checks still apply).
 
-**Counters written to the license doc** (`shipping_optimizer_licenses/{key}`) on each generation:
+**Counters written to the license doc** (`shipping_optimizer_licenses/{key}`) after each run:
 
 | Field | Description |
 |-------|-------------|
-| `images_generated_total` | Lifetime images generated |
-| `images_generated_today` | Images generated today (reset when the date changes) |
+| `images_generated_total` | Lifetime generation runs (field name kept for compatibility) |
+| `images_generated_today` | Runs today (reset when the date changes) |
 | `images_generated_today_date` | `YYYY-MM-DD` of the current day counter |
-| `images_generated_month` | Images generated this month (reset when the month changes) |
+| `images_generated_month` | Runs this month (reset when the month changes) |
 | `images_generated_month_key` | `YYYY-MM` of the current month counter |
 
-Credits are deducted from `credits_balance` (→ `credits_used`) at `credits_per_image × images`. The extension shows remaining quota and the credit cost before generating, and blocks with a clear message when a limit is hit or credits are insufficient.
+Credits are deducted from `credits_balance` (→ `credits_used`) at `credits_per_image` **per run** (not per variant). The extension shows remaining quota and the credit cost before generating, and blocks with a clear message when a limit is hit or credits are insufficient.
 
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 

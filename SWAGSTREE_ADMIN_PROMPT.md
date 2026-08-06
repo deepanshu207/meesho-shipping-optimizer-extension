@@ -172,7 +172,7 @@ Edit `credits` object on app doc:
     "credits_per_image": 2,
     "daily_limit": 20,
     "monthly_limit": 0,
-    "max_batch_size": 4
+    "max_batch_size": 100
   }
 }
 ```
@@ -180,12 +180,12 @@ Edit `credits` object on app doc:
 | Field | Meaning |
 |-------|---------|
 | `enabled` | Master on/off for AI image generation |
-| `credits_per_image` | Credits charged per image (`0` = free; only for credits/hybrid plans) |
-| `daily_limit` | Images/day per license (`0` = unlimited) |
-| `monthly_limit` | Images/month (`0` = unlimited) |
-| `max_batch_size` | Max images per generation run (`0` = unlimited) |
+| `credits_per_image` | Credits charged **per generation run** (`0` = free; only for credits/hybrid plans). One run = one upload → variants (20/50/100 variants still = 1 run; stop mid-run still = 1 run). |
+| `daily_limit` | **Runs**/day per license (`0` = unlimited) |
+| `monthly_limit` | **Runs**/month (`0` = unlimited) |
+| `max_batch_size` | Max **variants** per run (`0` = unlimited) — does not change how runs are counted |
 
-The extension enforces these client-side and writes counters back to each license: `images_generated_total`, `images_generated_today`, `images_generated_today_date`, `images_generated_month`, `images_generated_month_key`. Your **Paid Licenses** view can display these read-only to see usage. Leave the whole `image_generation` object out to keep legacy behavior (1 credit/operation).
+The extension enforces these client-side and writes counters back to each license: `images_generated_total`, `images_generated_today`, `images_generated_today_date`, `images_generated_month`, `images_generated_month_key`. Counter field names say "images" for backward compatibility — they track **generation runs**, not individual variants. Your **Paid Licenses** view should label them "Generations today / this month / total" and display read-only. Leave the whole `image_generation` object out to keep legacy behavior (1 credit/operation).
 
 ---
 

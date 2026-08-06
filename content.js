@@ -188,6 +188,7 @@ class MeeshoShippingOptimizer {
     this._activeRunMeta = null;
     this._imageGenGate = null;
     this._imageGenRecorded = false;
+    this._imageGenRunStarted = false;
     this._navigationGuardWired = false;
     this._borderComposeGen = 0;
     this._staticControlsVariantId = null;
@@ -697,18 +698,17 @@ class MeeshoShippingOptimizer {
     return false;
   }
 
-  /** Record a completed generation once per run (new image-gen billing path). */
-  async recordImageGenerationForRun(producedCount) {
+  /** Record one generation run (upload → variants), even if stopped or zero results. */
+  async recordImageGenerationForRun() {
     if (this._imageGenRecorded) return;
+    if (!this._imageGenRunStarted) return;
     if (!this.requiresLicense()) return;
     const gate = this._imageGenGate;
     // Legacy path already consumed credits at the gate; nothing to record.
     if (!gate || gate.legacy) return;
-    const n = Math.max(0, Number(producedCount) || 0);
-    if (n <= 0) return;
     this._imageGenRecorded = true;
     try {
-      await LicenseManager.recordImageGeneration(n, gate);
+      await LicenseManager.recordImageGeneration(1, gate);
       this.isLicensed = LicenseManager.isLicensed;
     } catch (e) {
       console.warn("Image-gen record failed:", e);
@@ -1558,33 +1558,30 @@ Please share payment details.`;
         return;
       }
 
-      const batch =
-        Number(document.getElementById("max-attempts")?.value, 10) ||
-        LiveSmart.readMainSmartModeSettings().maxAttempts;
       const parts = [];
 
       if (summary.remainingDaily != null) {
         parts.push(
-          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} left`,
+          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
         );
       }
       if (summary.remainingMonthly != null) {
         parts.push(
-          `This month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} left`,
+          `This month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
         );
       }
-      if (summary.costPerImage > 0) {
-        const total = summary.costPerImage * batch;
+      const costPerRun = summary.costPerRun ?? summary.costPerImage ?? 0;
+      if (costPerRun > 0) {
         const bal =
           summary.creditsBalance === Infinity
             ? "∞"
             : summary.creditsBalance;
         parts.push(
-          `Cost: <strong>${summary.costPerImage}</strong> credit${summary.costPerImage === 1 ? "" : "s"} × ${batch} = <strong>${total}</strong> (balance ${bal})`,
+          `Cost: <strong>${costPerRun}</strong> credit${costPerRun === 1 ? "" : "s"} per run (balance ${bal})`,
         );
       }
       if (cfg.max_batch_size > 0) {
-        parts.push(`Max ${cfg.max_batch_size} per generation`);
+        parts.push(`Max ${cfg.max_batch_size} variants per run`);
       }
 
       if (!parts.length) {
@@ -3189,6 +3186,7 @@ Please share payment details.`;
 
     this._runPreviousResults = null;
     this._activeRunMeta = null;
+    void this.recordImageGenerationForRun();
     this.finishOptimizerRun();
   }
 
@@ -3240,6 +3238,7 @@ Please share payment details.`;
     }
     this._imageGenGate = imageGenGate;
     this._imageGenRecorded = false;
+    this._imageGenRunStarted = false;
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.syncFromSession?.();
@@ -3267,6 +3266,7 @@ Please share payment details.`;
     const runId = ++this._generationSeq;
 
     this.isProcessing = true;
+    this._imageGenRunStarted = true;
     this.shouldStop = false;
     this._runFinalizedEarly = false;
     this.clearStopTimers();
@@ -3503,10 +3503,8 @@ Please share payment details.`;
       this._activeRunMeta.attempts = runMeta.attempts;
     }
 
-    // Charge credits + increment image-generation counters for produced images.
-    const producedCount =
-      result.success && Array.isArray(result.results) ? result.results.length : 0;
-    await this.recordImageGenerationForRun(producedCount);
+    // Charge credits + increment generation counters (1 per run, even if stopped).
+    await this.recordImageGenerationForRun();
 
     if (this._runFinalizedEarly && runId === this._generationSeq) {
       this._runFinalizedEarly = false;

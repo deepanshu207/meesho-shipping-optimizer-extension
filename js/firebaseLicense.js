@@ -586,7 +586,7 @@ const FirebaseLicense = {
     return { total, today, todayDate, month, monthKey };
   },
 
-  /** Increment image-generation counters on a license doc. */
+  /** Increment generation-run counters on a license doc (count is runs, not variants). */
   async recordImageGeneration(licenseKey, count) {
     if (!this.isEnabled()) {
       return { ok: false, reason: "Firebase unavailable" };
