@@ -392,16 +392,10 @@ Please share payment details.`;
   }
 
   function bindPlanButtons() {
-    document.querySelectorAll(".plan-buy-btn").forEach((btn) => {
+    document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
       PA.bindTap(btn, () => {
         const planId = btn.dataset.plan;
         if (planId) showPlanDetail(planId);
-      });
-    });
-    document.querySelectorAll(".plan-wa-quick-btn").forEach((btn) => {
-      PA.bindTap(btn, () => {
-        const planId = btn.dataset.plan;
-        if (planId) void openWhatsAppForPlan(planId);
       });
     });
   }

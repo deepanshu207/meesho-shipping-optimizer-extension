@@ -1279,27 +1279,14 @@ class MeeshoShippingOptimizer {
         };
       }
 
-      const openWhatsAppForPlan = (planId) => {
-        const msg = FirebaseLicense.buildPlanPurchaseMessage(
-          planId,
-          productName,
-          this.modal || document,
-        );
-        openWhatsAppChat(msg);
-      };
-
-      if (typeof FirebaseLicense !== "undefined") {
-        FirebaseLicense.wirePlanCardActions(this.modal || document, {
-          onDetail: (planId) => {
-            void showPlanDetail(planId);
-          },
-          onWhatsApp: (planId) => {
-            openWhatsAppForPlan(planId);
-          },
-        });
-      }
-
       document.querySelectorAll(".plan-buy-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const planId = btn.dataset.plan;
+          if (planId) {
+            await showPlanDetail(planId);
+          }
+        };
+
         btn.onmouseenter = () => {
           btn.style.transform = "scale(1.03)";
           btn.style.boxShadow = "0 4px 15px rgba(230,126,34,0.35)";
