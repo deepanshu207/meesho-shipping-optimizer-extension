@@ -1,4 +1,4 @@
-// Shared WhatsApp opener — mobile: app only via page context (never api.whatsapp.com tab)
+// Shared WhatsApp opener — mobile must launch synchronously on user tap (gesture chain)
 
 const WhatsAppLink = {
   normalizeNumber(number) {
@@ -15,34 +15,16 @@ const WhatsAppLink = {
     return /Android/i.test(navigator.userAgent || "");
   },
 
-  isExtensionPopup() {
-    try {
-      return /popup\.html$/i.test(window.location?.pathname || "");
-    } catch (e) {
-      return false;
-    }
-  },
-
-  canUseBackground() {
-    try {
-      return !!(chrome?.runtime?.sendMessage && chrome.runtime.id);
-    } catch (e) {
-      return false;
-    }
-  },
-
   buildUrls(number, message) {
     const phone = this.normalizeNumber(number);
     const text = encodeURIComponent(message || "");
     return {
       phone,
       scheme: `whatsapp://send?phone=${phone}&text=${text}`,
-      api: `https://api.whatsapp.com/send?phone=${phone}&text=${text}`,
       waMe: `https://wa.me/${phone}?text=${text}`,
     };
   },
 
-  /** Deep link for mobile app — intent on Android (page click), scheme on iOS. */
   buildMobileDeepLink(number, message) {
     const phone = this.normalizeNumber(number);
     const text = encodeURIComponent(message || "");
@@ -52,18 +34,22 @@ const WhatsAppLink = {
     return `whatsapp://send?phone=${phone}&text=${text}`;
   },
 
-  tabsQuery(queryInfo) {
+  canMessageBackground() {
+    try {
+      return !!(chrome?.runtime?.sendMessage && chrome.runtime.id);
+    } catch (e) {
+      return false;
+    }
+  },
+
+  sendBackground(type, payload) {
     return new Promise((resolve) => {
       try {
-        if (!chrome?.tabs?.query) {
-          resolve([]);
-          return;
-        }
-        chrome.tabs.query(queryInfo, (tabs) => {
-          resolve(chrome.runtime.lastError ? [] : tabs || []);
+        chrome.runtime.sendMessage({ type, ...payload }, (res) => {
+          resolve(chrome.runtime.lastError ? { ok: false } : res || { ok: false });
         });
       } catch (e) {
-        resolve([]);
+        resolve({ ok: false });
       }
     });
   },
@@ -80,21 +66,18 @@ const WhatsAppLink = {
         }
       } catch (e) {}
       try {
-        const opened = window.open(url, "_blank");
-        resolve(!!opened);
+        resolve(!!window.open(url, "_blank"));
       } catch (e) {
         resolve(false);
       }
     });
   },
 
-  /** Click deep link in DOM without navigating the host page away. */
-  clickDeepLink(scheme) {
-    if (!scheme) return false;
+  clickDeepLink(url) {
+    if (!url) return false;
     try {
       const link = document.createElement("a");
-      link.href = scheme;
-      link.rel = "noopener";
+      link.href = url;
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
@@ -106,105 +89,43 @@ const WhatsAppLink = {
   },
 
   /**
-   * Launch WhatsApp from the active Meesho tab (page context).
-   * Avoids opening api.whatsapp.com in the browser — intent/scheme click opens the app.
+   * Open WhatsApp on mobile — MUST run synchronously inside the user click handler.
+   * Async calls (background messaging) lose the user-gesture chain on Android/Kiwi.
    */
-  async openViaActivePage(deepLink) {
-    if (!chrome?.scripting?.executeScript || !deepLink) return false;
-
-    let tabs = await this.tabsQuery({ active: true, lastFocusedWindow: true });
-    let tab = tabs[0];
-
-    const isMeesho = (url) =>
-      (url || "").includes("supplier.meesho.com");
-
-    if (!tab?.id || !isMeesho(tab.url)) {
-      const meeshoTabs = await this.tabsQuery({
-        url: "*://supplier.meesho.com/*",
-      });
-      tab =
-        meeshoTabs.find((t) => isMeesho(t.url) && t.active) ||
-        meeshoTabs[0] ||
-        tab;
+  openMobileSync(number, message) {
+    const urls = this.buildUrls(number, message);
+    if (this.clickDeepLink(urls.scheme)) return true;
+    if (this.isAndroid() && this.clickDeepLink(this.buildMobileDeepLink(number, message))) {
+      return true;
     }
-
-    if (!tab?.id) return false;
-
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: (url) => {
-          const link = document.createElement("a");
-          link.href = url;
-          link.style.display = "none";
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        },
-        args: [deepLink],
-      });
+      window.location.href = urls.scheme;
       return true;
     } catch (e) {
       return false;
     }
   },
 
-  closePopupIfNeeded() {
-    if (!this.isExtensionPopup()) return;
-    try {
-      window.close();
-    } catch (e) {}
-  },
-
-  /** Desktop only — open wa.me in a new tab. */
-  openViaBackground(phone, message) {
-    return new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage(
-          {
-            type: "OPEN_WHATSAPP",
-            phone,
-            message: message || "",
-          },
-          () => {
-            resolve(!chrome.runtime.lastError);
-          },
-        );
-      } catch (e) {
-        resolve(false);
-      }
-    });
-  },
-
   /**
    * Open WhatsApp chat.
-   * Mobile: deep link from Meesho page (or popup click) — NEVER opens api.whatsapp.com.
+   * Mobile: synchronous deep link (call from click handler).
    * Desktop: wa.me in new tab.
    */
-  async open(number, message) {
+  open(number, message) {
     const urls = this.buildUrls(number, message);
-    const web = urls.waMe || urls.api;
 
     if (this.isMobile()) {
-      const deepLink = this.buildMobileDeepLink(number, message);
-
-      const viaPage = await this.openViaActivePage(deepLink);
-      if (viaPage) {
-        this.closePopupIfNeeded();
-        return true;
-      }
-
-      this.clickDeepLink(deepLink);
-      this.closePopupIfNeeded();
-      return true;
+      return Promise.resolve(this.openMobileSync(number, message));
     }
 
-    if (this.canUseBackground()) {
-      const ok = await this.openViaBackground(urls.phone, message);
-      if (ok) return true;
+    if (this.canMessageBackground()) {
+      return this.sendBackground("OPEN_WHATSAPP", {
+        phone: urls.phone,
+        message: message || "",
+      }).then((res) => !!res?.ok);
     }
 
-    return this.openTab(web);
+    return this.openTab(urls.waMe);
   },
 };
 

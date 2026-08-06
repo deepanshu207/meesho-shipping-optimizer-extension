@@ -53,15 +53,12 @@ const PopupActions = {
 
   openWhatsApp(number, message) {
     if (typeof WhatsAppLink !== "undefined") {
+      if (WhatsAppLink.isMobile()) {
+        return Promise.resolve(WhatsAppLink.openMobileSync(number, message));
+      }
       return WhatsAppLink.open(number, message);
     }
     const urls = this.buildWhatsAppUrls(number, message);
-    if (this.isMobile()) {
-      if (typeof WhatsAppLink !== "undefined") {
-        return WhatsAppLink.openMobileScheme(urls.scheme);
-      }
-      return Promise.resolve(true);
-    }
     return this.openUrl(urls.waMe || urls.api);
   },
 

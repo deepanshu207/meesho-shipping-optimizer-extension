@@ -42,9 +42,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (footerMain) {
       footerMain.classList.toggle("hidden", name !== "main");
     }
-    if (name === "main") {
-      activationSection?.scrollIntoView?.({ block: "nearest" });
-    }
   }
 
   document.querySelectorAll("[data-popup-back]").forEach((btn) => {
@@ -461,11 +458,26 @@ Please share payment details.`;
     bindCreditPackButtons();
   }
 
-  function openWhatsApp(message, number) {
-    PA.openWhatsApp(number || getWhatsAppNumber(), message);
+  async function openWhatsApp(message, number) {
+    const phone = number || getWhatsAppNumber();
+    if (PA.isMobile() && typeof WhatsAppLink !== "undefined") {
+      const ok = WhatsAppLink.openMobileSync(phone, message);
+      if (!ok) {
+        showMessage(
+          "Could not open WhatsApp — install WhatsApp and try again.",
+          "error",
+        );
+      }
+      return ok;
+    }
+    const ok = await PA.openWhatsApp(phone, message);
+    if (!ok) {
+      showMessage("Could not open WhatsApp.", "error");
+    }
+    return ok;
   }
 
-  function openWhatsAppForPlan(planId) {
+  async function openWhatsAppForPlan(planId) {
     let message;
     if (
       planId &&
@@ -480,7 +492,7 @@ Please share payment details.`;
     } else {
       message = getWhatsAppMessage();
     }
-    openWhatsApp(message);
+    await openWhatsApp(message);
   }
 
   async function showPlanDetail(planId) {
@@ -515,7 +527,9 @@ Please share payment details.`;
   function bindPlanDetailBuy(root, planId) {
     const buyBtn = root.querySelector(".plan-detail-buy-btn");
     if (!buyBtn) return;
-    PA.bindTap(buyBtn, () => openWhatsAppForPlan(planId));
+    PA.bindTap(buyBtn, async () => {
+      await openWhatsAppForPlan(planId);
+    });
   }
 
   async function showSupportUsers(page = 1) {
@@ -553,13 +567,13 @@ Please share payment details.`;
 
   function bindSupportUserEvents(root, cfg) {
     root.querySelectorAll(".support-user-row").forEach((row) => {
-      PA.bindTap(row, () => {
+      PA.bindTap(row, async () => {
         const number = row.dataset.supportNumber;
         const custom = row.dataset.supportMessage;
         const message =
           custom ||
           `Hi! I need support for ${productName}.`;
-        openWhatsApp(message, number || getWhatsAppNumber());
+        await openWhatsApp(message, number || getWhatsAppNumber());
       });
     });
 
@@ -694,7 +708,7 @@ Please share payment details.`;
   });
 
   PA.bindTap(document.getElementById("support-whatsapp"), () => {
-    openSupportOrWhatsApp(`Hi! I need support for ${productName}.`);
+    void openWhatsApp(`Hi! I need support for ${productName}.`);
   });
 
   PA.bindTap(openCatalogBtn, handleOpenOptimizer);
