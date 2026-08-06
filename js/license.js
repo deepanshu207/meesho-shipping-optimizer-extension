@@ -1109,7 +1109,10 @@ const LicenseManager = {
       const phone = String(settings.number || CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
       const text = settings.message || "";
       if (typeof WhatsAppLink !== "undefined") {
-        await WhatsAppLink.open(phone, text);
+        const ok = await WhatsAppLink.open(phone, text);
+        if (!ok && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "")) {
+          console.warn("WhatsApp open failed — ensure Meesho tab is open");
+        }
       } else {
         window.open(
           `https://wa.me/${phone}?text=${encodeURIComponent(text)}`,

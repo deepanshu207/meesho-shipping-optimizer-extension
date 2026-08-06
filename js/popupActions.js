@@ -56,12 +56,6 @@ const PopupActions = {
       return WhatsAppLink.open(number, message);
     }
     const urls = this.buildWhatsAppUrls(number, message);
-    if (this.isMobile()) {
-      if (typeof WhatsAppLink !== "undefined") {
-        return WhatsAppLink.openMobileScheme(urls.scheme);
-      }
-      return Promise.resolve(true);
-    }
     return this.openUrl(urls.waMe || urls.api);
   },
 

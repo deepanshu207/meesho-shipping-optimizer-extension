@@ -76,8 +76,14 @@ class BackgroundService {
           sendResponse({ success: true, settings: await this.getSettings() });
           break;
         case "OPEN_WHATSAPP":
-          await this.openWhatsApp(message);
-          sendResponse({ ok: true });
+          sendResponse({
+            ok: await this.openWhatsAppWeb(message),
+          });
+          break;
+        case "OPEN_WHATSAPP_MOBILE":
+          sendResponse({
+            ok: await this.openWhatsAppMobile(message),
+          });
           break;
         default:
           sendResponse({ success: false, error: "Unknown message type" });
@@ -97,8 +103,49 @@ class BackgroundService {
     return digits;
   }
 
-  /** Desktop only — open wa.me in a new tab (never used on mobile). */
-  async openWhatsApp(message) {
+  tabsQuery(queryInfo) {
+    return new Promise((resolve) => {
+      try {
+        chrome.tabs.query(queryInfo, (tabs) => {
+          resolve(chrome.runtime.lastError ? [] : tabs || []);
+        });
+      } catch (e) {
+        resolve([]);
+      }
+    });
+  },
+
+  async focusTab(tab) {
+    if (!tab?.id) return;
+    try {
+      await chrome.tabs.update(tab.id, { active: true });
+      if (tab.windowId != null) {
+        await chrome.windows.update(tab.windowId, { focused: true });
+      }
+    } catch (e) {}
+  },
+
+  async pickMeeshoTab() {
+    const active = await this.tabsQuery({
+      active: true,
+      lastFocusedWindow: true,
+    });
+    const activeTab = active[0];
+    if ((activeTab?.url || "").includes("supplier.meesho.com")) {
+      return activeTab;
+    }
+    const meeshoTabs = await this.tabsQuery({
+      url: "*://supplier.meesho.com/*",
+    });
+    return (
+      meeshoTabs.find((t) => t.active) ||
+      meeshoTabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0] ||
+      null
+    );
+  },
+
+  /** Desktop — wa.me in a new tab. */
+  async openWhatsAppWeb(message) {
     const phone = this.normalizeWhatsAppPhone(message?.phone);
     const text = encodeURIComponent(message?.message || "");
     const web = `https://wa.me/${phone}?text=${text}`;
@@ -112,6 +159,63 @@ class BackgroundService {
         resolve(false);
       }
     });
+  },
+
+  /**
+   * Mobile — inject deep-link click into Meesho page (MAIN world).
+   * Does not open api.whatsapp.com in the browser.
+   */
+  async openWhatsAppMobile(message) {
+    const phone = this.normalizeWhatsAppPhone(message?.phone);
+    const msg = String(message?.message || "");
+    const tab = await this.pickMeeshoTab();
+
+    if (!tab?.id) return false;
+
+    await this.focusTab(tab);
+
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        world: "MAIN",
+        func: (phoneDigits, messageText) => {
+          const text = encodeURIComponent(messageText || "");
+          const phone = String(phoneDigits || "").replace(/\D/g, "");
+          const urls = [`whatsapp://send?phone=${phone}&text=${text}`];
+          if (/Android/i.test(navigator.userAgent || "")) {
+            urls.unshift(
+              `intent://send?phone=${phone}&text=${text}#Intent;scheme=whatsapp;package=com.whatsapp;end`,
+            );
+          }
+          const root = document.body || document.documentElement;
+          if (!root) return { ok: false };
+
+          for (let i = 0; i < urls.length; i++) {
+            try {
+              const link = document.createElement("a");
+              link.href = urls[i];
+              link.style.cssText =
+                "position:fixed;left:-9999px;top:-9999px;opacity:0";
+              root.appendChild(link);
+              link.click();
+              link.remove();
+              return { ok: true, method: i };
+            } catch (e) {}
+          }
+          return { ok: false };
+        },
+        args: [phone, msg],
+      });
+      return results?.[0]?.result?.ok === true;
+    } catch (e) {
+      console.warn("WhatsApp mobile launch failed:", e.message);
+      return false;
+    }
+  },
+
+  /** @deprecated use openWhatsAppWeb */
+  async openWhatsApp(message) {
+    return this.openWhatsAppWeb(message);
   }
 
   async checkShippingCost(imageData) {
