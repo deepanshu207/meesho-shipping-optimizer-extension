@@ -419,18 +419,10 @@ const FirebaseLicense = {
     }
     const duration = this.formatPlanDurationLabel(plan);
     const devices = this.formatPlanDevicesLabel(plan);
-    const features =
-      (plan.features || []).length > 0
-        ? plan.features
-        : this.buildDefaultPlanFeatures(plan);
-    const highlights = [
-      ...(plan.highlights || []),
-      ...(plan.unlimited_time || plan.days === 0 ? ["Never expires"] : []),
-      ...(plan.unlimited_credits ? ["Unlimited credits"] : []),
-      ...(plan.unlimited_devices || plan.max_devices === 0
-        ? ["Unlimited devices"]
-        : []),
-    ].filter((h, i, arr) => arr.indexOf(h) === i);
+    const features = (plan.features || []).length > 0 ? plan.features : [];
+    const highlights = (plan.highlights || []).filter(
+      (h) => h !== duration && h !== devices,
+    );
     const sections = plan.detail_sections || [];
     const addons = this.getPlanCreditAddons(plan);
     const bestTag = plan.best
@@ -439,8 +431,10 @@ const FirebaseLicense = {
     const save = plan.save
       ? `<div class="plan-detail-save">${this.escapeHtml(plan.save)}</div>`
       : "";
+    const cta = plan.cta_text || "Buy via WhatsApp";
 
-    let html = `<div class="plan-detail-header">
+    let html = `<div class="plan-detail-card">
+      <div class="plan-detail-header">
       ${bestTag}
       <h2 class="plan-detail-name">${this.escapeHtml(plan.name)}</h2>
       ${plan.detail_subtitle ? `<p class="plan-detail-subtitle">${this.escapeHtml(plan.detail_subtitle)}</p>` : ""}
@@ -511,16 +505,113 @@ const FirebaseLicense = {
       </div>`;
     }
 
-    const product = options.productName || "Shipping Optimizer";
-    const cta = plan.cta_text || "Buy via WhatsApp";
-    html += `<button type="button" class="btn btn-whatsapp plan-detail-buy-btn" data-plan="${this.escapeAttr(plan.id)}" style="margin-top:14px;">
-      ${this.escapeHtml(cta)}
-    </button>`;
+    html += this.planDetailWhatsAppBtnHtml(
+      cta,
+      `data-plan="${this.escapeAttr(plan.id)}"`,
+    );
     if (plan.detail_footer) {
       html += `<p class="plan-detail-footer">${this.escapeHtml(plan.detail_footer)}</p>`;
     }
+    html += `</div>`;
 
     return html;
+  },
+
+  renderCreditPackDetailHtml(pack, options = {}) {
+    if (!pack) {
+      return '<p style="font-size:12px;color:#6b7280;">Credit pack not found.</p>';
+    }
+    const label = pack.label || `${pack.credits} Credits`;
+    const features = pack.features || [];
+    const highlights = pack.highlights || [];
+    const sections = pack.detail_sections || [];
+    const cta = pack.cta_text || "Buy via WhatsApp";
+    const perCredit =
+      pack.credits > 0
+        ? (Number(pack.price) / Number(pack.credits)).toFixed(1)
+        : "0";
+
+    let html = `<div class="plan-detail-card">
+      <div class="plan-detail-header">
+        <span class="plan-detail-badge" style="background:linear-gradient(135deg,#ffd700,#e67e22);">CREDIT PACK</span>
+        <h2 class="plan-detail-name">${this.escapeHtml(label)}</h2>
+        ${pack.detail_subtitle ? `<p class="plan-detail-subtitle">${this.escapeHtml(pack.detail_subtitle)}</p>` : ""}
+        <div class="plan-detail-price">₹${pack.price}</div>
+        <p class="plan-detail-meta">${pack.credits} credits · ~₹${perCredit}/credit</p>
+      </div>`;
+
+    if (pack.description) {
+      html += `<p class="plan-detail-desc">${this.escapeHtml(pack.description)}</p>`;
+    }
+
+    if (highlights.length) {
+      html += `<div class="plan-detail-highlights">${highlights
+        .map(
+          (h) =>
+            `<span class="plan-detail-pill">${this.escapeHtml(h)}</span>`,
+        )
+        .join("")}</div>`;
+    }
+
+    if (features.length) {
+      html += `<div class="plan-detail-features">${features
+        .map(
+          (f) => `<div class="plan-detail-feature">
+          <span class="plan-detail-feature-icon">${this.escapeHtml(f.icon || "✓")}</span>
+          <div>
+            <div class="plan-detail-feature-title">${this.escapeHtml(f.title)}</div>
+            ${f.text ? `<div class="plan-detail-feature-text">${this.escapeHtml(f.text)}</div>` : ""}
+          </div>
+        </div>`,
+        )
+        .join("")}</div>`;
+    }
+
+    sections.forEach((sec) => {
+      html += `<div class="plan-detail-section">
+        <div class="plan-detail-section-title">${this.escapeHtml(sec.title)}</div>`;
+      if (sec.body) {
+        html += `<p class="plan-detail-section-body">${this.escapeHtml(sec.body)}</p>`;
+      }
+      if (sec.items?.length) {
+        html += `<ul class="plan-detail-list">${sec.items
+          .map((item) => `<li>${this.escapeHtml(item)}</li>`)
+          .join("")}</ul>`;
+      }
+      html += `</div>`;
+    });
+
+    html += this.planDetailWhatsAppBtnHtml(
+      cta,
+      `data-pack="${this.escapeAttr(pack.id)}"`,
+      "credit-pack-detail-buy-btn",
+    );
+    if (pack.detail_footer) {
+      html += `<p class="plan-detail-footer">${this.escapeHtml(pack.detail_footer)}</p>`;
+    }
+    html += `</div>`;
+    return html;
+  },
+
+  async getCreditPackById(packId) {
+    const packs = await this.getCreditPacks(true);
+    const id = this.slugifyPlanId(packId);
+    return packs.find((p) => p.id === id || p.id === packId) || null;
+  },
+
+  buildCreditPackPurchaseMessage(packOrId, productName) {
+    const pack =
+      typeof packOrId === "object" && packOrId
+        ? packOrId
+        : { id: packOrId, label: String(packOrId || "Credits") };
+    const label = pack.label || `${pack.credits || ""} Credits`;
+    return `Hi! I want to buy credits for ${productName || "Shipping Optimizer"}.
+
+⚡ *Credit Pack:* ${label}
+💰 *Price:* ₹${pack.price ?? "—"}
+🎫 *Credits:* ${pack.credits ?? "—"}
+
+Please share payment details.`;
   },
 
   renderSupportUsersHtml(pageData, options = {}) {
@@ -743,6 +834,17 @@ const FirebaseLicense = {
       label: p?.label || p?.name || `${Number(p?.credits) || 10} Credits`,
       active: p?.active !== false,
       order: p?.order != null ? Number(p.order) : index,
+      description: p?.description || p?.note || "",
+      detail_subtitle: p?.detail_subtitle || p?.detailSubtitle || "",
+      detail_footer: p?.detail_footer || p?.detailFooter || "",
+      cta_text: p?.cta_text || p?.ctaText || "Buy via WhatsApp",
+      highlights: this.parsePlanHighlights(p?.highlights),
+      features: this.parsePlanFeatures(p?.features),
+      detail_sections: this.parsePlanDetailSections(
+        p?.detail_sections ?? p?.detailSections,
+      ),
+      show_whatsapp_icon:
+        p?.show_whatsapp_icon !== false && p?.showWhatsappIcon !== false,
     };
   },
 
@@ -1032,9 +1134,31 @@ const FirebaseLicense = {
     if (hint && config?.hint) hint.textContent = config.hint;
   },
 
+  planWhatsAppIconSvg(size = 14) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
+  },
+
   planCardFooterHtml(plan) {
     if (!plan.card_hint) return "";
     return `<div class="plan-card-foot">${this.escapeHtml(plan.card_hint)}</div>`;
+  },
+
+  planCardShell(mainHtml, item, kind = "plan") {
+    if (item.show_whatsapp_icon === false) return mainHtml;
+    const id = kind === "pack" ? item.id : item.id;
+    const dataAttr =
+      kind === "pack"
+        ? `data-pack="${this.escapeAttr(id)}"`
+        : `data-plan="${this.escapeAttr(id)}"`;
+    const waBtn = `<button type="button" class="plan-wa-corner ${kind === "pack" ? "credit-pack-wa-btn" : "plan-wa-corner-btn"}" ${dataAttr} title="Buy on WhatsApp" aria-label="Buy on WhatsApp">${this.planWhatsAppIconSvg(11)}</button>`;
+    return `<div class="plan-card-shell">${mainHtml}${waBtn}</div>`;
+  },
+
+  planDetailWhatsAppBtnHtml(label, dataAttr, extraClass = "") {
+    const cls = `plan-detail-buy-btn${extraClass ? ` ${extraClass}` : ""}`;
+    return `<button type="button" class="${cls}" ${dataAttr} style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:14px;padding:12px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#25d366 0%,#128c7e 100%);color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(37,211,102,0.28);">
+      ${this.planWhatsAppIconSvg(16)}<span>${this.escapeHtml(label)}</span>
+    </button>`;
   },
 
   /** Local-date period keys for daily/monthly counters. */
@@ -1777,14 +1901,14 @@ const FirebaseLicense = {
           const priceStyle = p.best
             ? ' style="color:var(--mso-success);"'
             : "";
-          const btn = `<button type="button" class="plan-btn plan-buy-btn${bestClass}" ${this.planDataAttrs(p, durationLabel)}>
+          const btn = `<button type="button" class="plan-btn plan-buy-btn plan-card-main${bestClass}" ${this.planDataAttrs(p, durationLabel)}>
             ${tag}
             <div class="plan-name"${nameStyle}>${p.name}</div>
             <div class="plan-price"${priceStyle}>₹${p.price}</div>
             ${save}
             ${this.planCardFooterHtml(p)}
           </button>`;
-          return this.planCellWrap(btn, p);
+          return this.planCellWrap(this.planCardShell(btn, p, "plan"), p);
         })
         .join("");
       this.wirePlanAddonSelection(container);
@@ -1808,14 +1932,14 @@ const FirebaseLicense = {
           ? `<div style="font-size:9px;color:#10b981;">${p.save}</div>`
           : subtitle ||
             `<div style="font-size:9px;color:#6b7280;">${durationLabel} · ${devicesLabel}</div>`;
-        const btn = `<button type="button" class="plan-buy-btn" ${this.planDataAttrs(p, durationLabel)} style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
+        const btn = `<button type="button" class="plan-buy-btn plan-card-main" ${this.planDataAttrs(p, durationLabel)} style="${best}border-radius:8px;padding:10px 28px 10px 10px;text-align:center;cursor:pointer;color:#1f2937;width:100%;">
           ${tag}
           <div style="font-size:11px;color:#6b7280;${p.best ? "margin-top:4px;" : ""}">${p.name}</div>
           <div style="font-size:20px;font-weight:700;color:#e67e22;">₹${p.price}</div>
           ${save}
           ${this.planCardFooterHtml(p)}
         </button>`;
-        return this.planCellWrap(btn, p);
+        return this.planCellWrap(this.planCardShell(btn, p, "plan"), p);
       })
       .join("");
 
@@ -1985,27 +2109,27 @@ const FirebaseLicense = {
 
     if (variant === "popup") {
       container.innerHTML = list
-        .map(
-          (p) =>
-            `<button type="button" class="plan-btn credit-pack-btn" data-pack="${p.id}" data-credits="${p.credits}" data-price="${p.price}" data-label="${p.label}">
-            <div class="plan-name">${p.label || p.credits + " Credits"}</div>
+        .map((p) => {
+          const btn = `<button type="button" class="plan-btn credit-pack-open-btn plan-card-main" data-pack="${this.escapeAttr(p.id)}" data-credits="${p.credits}" data-price="${p.price}" data-label="${this.escapeAttr(p.label)}">
+            <div class="plan-name">${this.escapeHtml(p.label || p.credits + " Credits")}</div>
             <div class="plan-price">₹${p.price}</div>
             <div class="plan-note" style="color:var(--mso-muted);">${p.credits} credits</div>
-          </button>`,
-        )
+          </button>`;
+          return this.planCardShell(btn, p, "pack");
+        })
         .join("");
       return;
     }
 
     container.innerHTML = list
-      .map(
-        (p) =>
-          `<button type="button" class="credit-pack-btn" data-pack="${p.id}" data-credits="${p.credits}" data-price="${p.price}" data-label="${p.label}" style="border:1px solid #f0e0c8;background:#fff;border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
-          <div style="font-size:11px;color:#6b7280;">${p.label || p.credits + " Credits"}</div>
+      .map((p) => {
+        const btn = `<button type="button" class="credit-pack-open-btn plan-card-main" data-pack="${this.escapeAttr(p.id)}" data-credits="${p.credits}" data-price="${p.price}" data-label="${this.escapeAttr(p.label)}" style="border:1px solid #f0e0c8;background:#fff;border-radius:8px;padding:10px 28px 10px 10px;text-align:center;cursor:pointer;color:#1f2937;width:100%;">
+          <div style="font-size:11px;color:#6b7280;">${this.escapeHtml(p.label || p.credits + " Credits")}</div>
           <div style="font-size:20px;font-weight:700;color:#e67e22;">₹${p.price}</div>
           <div style="font-size:9px;color:#6b7280;">${p.credits} credits</div>
-        </button>`,
-      )
+        </button>`;
+        return this.planCardShell(btn, p, "pack");
+      })
       .join("");
   },
 

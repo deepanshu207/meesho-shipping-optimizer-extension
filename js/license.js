@@ -186,9 +186,8 @@ const LicenseManager = {
     let unlimited = false;
     (licenses || []).forEach((entry) => {
       const info = entry.licenseInfo || {};
-      const mode = info.billingMode || "subscription";
       if (info.unlimitedCredits) unlimited = true;
-      if (mode === "credits" || mode === "hybrid") {
+      if (this.licenseHasSpendableCredits(info)) {
         total += Number(info.creditsBalance ?? 0) || 0;
       }
     });
@@ -509,12 +508,21 @@ const LicenseManager = {
     return this.licenseInfo;
   },
 
+  /** True when this license has a finite credit balance to spend on image generation. */
+  licenseHasSpendableCredits(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    if (n.unlimitedCredits) return false;
+    const balance = Number(n.creditsBalance ?? 0) || 0;
+    if (balance <= 0) return false;
+    const mode = n.billingMode || "subscription";
+    return mode === "credits" || mode === "hybrid" || mode === "subscription";
+  },
+
   getCreditSources(licenses) {
     return (licenses || [])
       .filter((entry) => {
         if (!this.licenseEntryHasAccess(entry)) return false;
-        const mode = entry.licenseInfo?.billingMode || "subscription";
-        return mode === "credits" || mode === "hybrid";
+        return this.licenseHasSpendableCredits(entry.licenseInfo);
       })
       .sort((a, b) => {
         const aHybrid = a.licenseInfo?.billingMode === "hybrid" ? 0 : 1;
@@ -544,7 +552,7 @@ const LicenseManager = {
       }
       if (info.planType === "demo") continue;
       const mode = info.billingMode || "subscription";
-      if (mode === "subscription") continue;
+      if (mode === "subscription" && !this.licenseHasSpendableCredits(info)) continue;
 
       if (
         CONFIG?.USE_FIREBASE_LICENSE &&
@@ -568,6 +576,24 @@ const LicenseManager = {
     }
 
     return { ok: false, reason: "Credits sync unavailable" };
+  },
+
+  async consumeCreditsWithFallback(amount) {
+    const n = Math.max(1, Number(amount) || 1);
+    const remote = await this.consumeCredits(n);
+    if (remote.ok && !remote.skipped) return remote;
+    if (remote.skipped && remote.unlimited) return remote;
+    if (remote.ok && remote.skipped) {
+      return this.consumeCreditsLocal(n);
+    }
+    if (
+      remote.reason === "Credits sync unavailable" ||
+      remote.reason === "Firebase unavailable" ||
+      remote.reason === "Could not update credits"
+    ) {
+      return this.consumeCreditsLocal(n);
+    }
+    return remote;
   },
 
   async ensureCanOperate(actionLabel) {
@@ -685,17 +711,16 @@ const LicenseManager = {
   },
 
   _hasCreditsBillingLicense(licenses) {
-    return (licenses || []).some((e) => {
-      const mode = e.licenseInfo?.billingMode || "subscription";
-      return mode === "credits" || mode === "hybrid";
-    });
+    return (licenses || []).some(
+      (e) =>
+        this.licenseEntryHasAccess(e) &&
+        this.licenseHasSpendableCredits(e.licenseInfo),
+    );
   },
 
   _imageCreditsApply(licenses, config) {
     if (licenses.some((e) => e.licenseInfo?.unlimitedCredits)) return false;
-    if (!this._hasCreditsBillingLicense(licenses)) return false;
-    if (!config?.configured) return true;
-    return config.credits_per_image > 0;
+    return this._hasCreditsBillingLicense(licenses);
   },
 
   async getOperationCreditCost() {
@@ -720,10 +745,49 @@ const LicenseManager = {
     if (config?.configured && config.credits_per_image > 0) {
       return config.credits_per_image;
     }
-    if (!config?.configured) {
-      return this.getOperationCreditCost();
+    return this.getOperationCreditCost();
+  },
+
+  /** Resolved per-run credit cost for a gate (for UI + charge checks). */
+  async getImageGenRunCost(gate) {
+    const config = gate?.config || (await this.getImageGenConfig());
+    const licenses = await this.getActiveLicenses();
+    let cost = Number(gate?.cost) || 0;
+    if (cost <= 0) {
+      cost = await this.resolveImageGenRunCost(licenses, config);
     }
-    return 0;
+    return cost;
+  },
+
+  async consumeCreditsLocal(amount) {
+    const n = Math.max(1, Number(amount) || 1);
+    const licenses = await this.getActiveLicenses();
+    const sources = this.getCreditSources(licenses).filter((e) =>
+      this.licenseEntryHasAccess(e),
+    );
+    for (const entry of sources) {
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      if (info.unlimitedCredits) {
+        return { ok: true, skipped: true, unlimited: true };
+      }
+      const balance = Number(info.creditsBalance ?? 0);
+      if (balance < n) continue;
+      const newBalance = balance - n;
+      const used = (Number(info.creditsUsed ?? 0) || 0) + n;
+      await this.updateLicenseEntry(entry.key, {
+        creditsBalance: newBalance,
+        creditsUsed: used,
+      });
+      const refreshed = await this.getActiveLicenses();
+      this.licenseInfo = this.pickPrimaryLicense(refreshed)?.licenseInfo;
+      this.isLicensed = refreshed.length > 0 && this.licensesHaveAccess(refreshed);
+      return { ok: true, balance: newBalance, used, deducted: n, local: true };
+    }
+    return {
+      ok: false,
+      reason: "Insufficient credits",
+      needsTopUp: true,
+    };
   },
 
   /**
@@ -868,7 +932,7 @@ const LicenseManager = {
       cost = await this.resolveImageGenRunCost(licenses, config);
     }
     if (cost <= 0) return { ok: true, skipped: true };
-    return this.consumeCredits(cost);
+    return this.consumeCreditsWithFallback(cost);
   },
 
   /** Increment generation-run counters after a run (credits charged separately at run start). */

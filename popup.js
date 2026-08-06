@@ -25,16 +25,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
   let cachedWhatsApp = null;
   let cachedPlans = [];
+  let cachedCreditPacks = [];
   let cachedSupportConfig = null;
   let supportPage = 1;
 
   const viewMain = document.getElementById("popup-view-main");
   const viewPlan = document.getElementById("popup-view-plan");
+  const viewCredit = document.getElementById("popup-view-credit");
   const viewSupport = document.getElementById("popup-view-support");
   const footerMain = document.getElementById("popup-footer-main");
 
   function showPopupView(name) {
-    const views = { main: viewMain, plan: viewPlan, support: viewSupport };
+    const views = {
+      main: viewMain,
+      plan: viewPlan,
+      credit: viewCredit,
+      support: viewSupport,
+    };
     Object.entries(views).forEach(([key, el]) => {
       if (!el) return;
       el.classList.toggle("hidden", key !== name);
@@ -366,20 +373,62 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function bindCreditPackButtons() {
-    document.querySelectorAll(".credit-pack-btn").forEach((btn) => {
-      PA.bindTap(btn, () => {
-        const credits = btn.dataset.credits;
-        const price = btn.dataset.price;
-        const label = btn.dataset.label || `${credits} Credits`;
-        const message = `Hi! I want to buy credits for ${productName}.
-
-⚡ *Credit Pack:* ${label}
-💰 *Price:* ₹${price}
-
-Please share payment details.`;
-        openWhatsApp(message);
+    document.querySelectorAll(".credit-pack-open-btn").forEach((btn) => {
+      PA.bindTap(btn, (e) => {
+        if (e?.target?.closest?.(".plan-wa-corner, .credit-pack-wa-btn")) return;
+        const packId = btn.dataset.pack;
+        if (packId) void showCreditPackDetail(packId);
       });
     });
+    document.querySelectorAll(".credit-pack-wa-btn").forEach((btn) => {
+      PA.bindTap(btn, (e) => {
+        e?.stopPropagation?.();
+        const packId = btn.dataset.pack;
+        if (packId) void openWhatsAppForCreditPack(packId);
+      });
+    });
+  }
+
+  async function openWhatsAppForCreditPack(packId) {
+    let pack =
+      cachedCreditPacks.find((p) => p.id === packId) ||
+      (await FirebaseLicense?.getCreditPackById?.(packId));
+    const message = FirebaseLicense.buildCreditPackPurchaseMessage(
+      pack || { id: packId },
+      productName,
+    );
+    await openWhatsApp(message);
+  }
+
+  async function showCreditPackDetail(packId) {
+    const body = document.getElementById("credit-pack-detail-body");
+    if (!body) return;
+    showPopupView("credit");
+    body.innerHTML =
+      '<p style="font-size:12px;color:var(--mso-muted);">Loading pack…</p>';
+
+    let pack =
+      cachedCreditPacks.find(
+        (p) =>
+          p.id === packId ||
+          FirebaseLicense?.slugifyPlanId?.(packId) === p.id,
+      ) || null;
+    if (!pack && typeof FirebaseLicense !== "undefined") {
+      pack = await FirebaseLicense.getCreditPackById(packId);
+    }
+    if (!pack) {
+      body.innerHTML =
+        '<p style="font-size:12px;color:#dc2626;">Credit pack not found.</p>';
+      return;
+    }
+
+    body.innerHTML = FirebaseLicense.renderCreditPackDetailHtml(pack, {
+      productName,
+    });
+    const buyBtn = body.querySelector(".credit-pack-detail-buy-btn");
+    if (buyBtn) {
+      PA.bindTap(buyBtn, () => openWhatsAppForCreditPack(pack.id));
+    }
   }
 
   function bindPlanAddonButtons() {
@@ -392,10 +441,18 @@ Please share payment details.`;
   }
 
   function bindPlanButtons() {
-    document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
-      PA.bindTap(btn, () => {
+    document.querySelectorAll(".plan-buy-btn.plan-card-main, .plan-btn.plan-buy-btn").forEach((btn) => {
+      PA.bindTap(btn, (e) => {
+        if (e?.target?.closest?.(".plan-wa-corner, .plan-wa-corner-btn")) return;
         const planId = btn.dataset.plan;
         if (planId) showPlanDetail(planId);
+      });
+    });
+    document.querySelectorAll(".plan-wa-corner-btn").forEach((btn) => {
+      PA.bindTap(btn, (e) => {
+        e?.stopPropagation?.();
+        const planId = btn.dataset.plan;
+        if (planId) void openWhatsAppForPlan(planId);
       });
     });
   }
@@ -415,6 +472,7 @@ Please share payment details.`;
         FirebaseLicense.getSupportConfig(true),
       ]);
       cachedPlans = plans;
+      cachedCreditPacks = creditPacks;
       cachedSupportConfig = supportCfg;
       FirebaseLicense.renderPlanButtons(grid, plans, "popup");
       const creditsGrid = document.getElementById("license-credits-grid");
@@ -726,43 +784,43 @@ Please share payment details.`;
     try {
       const summary = await LicenseManager.getImageGenSummary();
       const cfg = summary.config;
-      if (!cfg.configured) {
-        el.style.display = "none";
-        return;
+      const parts = [];
+
+      if (summary.creditsApply) {
+        const bal =
+          summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
+        const cost = summary.costPerRun || 1;
+        parts.push(
+          `💳 <strong>${bal}</strong> credits · <strong>${cost}</strong>/run`,
+        );
       }
-      if (!cfg.enabled) {
+
+      if (cfg.configured && cfg.enabled) {
+        if (summary.remainingDaily != null) {
+          parts.push(
+            `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
+          );
+        }
+        if (summary.remainingMonthly != null) {
+          parts.push(
+            `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
+          );
+        }
+        if (cfg.max_batch_size > 0) {
+          parts.push(`max ${cfg.max_batch_size} variants/run`);
+        }
+      } else if (cfg.configured && !cfg.enabled) {
         el.style.display = "block";
         el.innerHTML = "⚠️ AI image generation is currently disabled.";
         return;
       }
-      const parts = [];
-      if (summary.remainingDaily != null) {
-        parts.push(
-          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
-        );
-      }
-      if (summary.remainingMonthly != null) {
-        parts.push(
-          `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
-        );
-      }
-      const costPerRun = summary.costPerRun ?? summary.costPerImage ?? 0;
-      if (costPerRun > 0) {
-        const bal =
-          summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
-        parts.push(
-          `<strong>${costPerRun}</strong> credit${costPerRun === 1 ? "" : "s"}/run · balance ${bal}`,
-        );
-      }
-      if (cfg.max_batch_size > 0) {
-        parts.push(`max ${cfg.max_batch_size} variants/run`);
-      }
+
       if (!parts.length) {
         el.style.display = "none";
         return;
       }
       el.style.display = "block";
-      el.innerHTML = "🎫 AI images — " + parts.join(" · ");
+      el.innerHTML = parts.join(" · ");
     } catch (e) {
       el.style.display = "none";
     }
