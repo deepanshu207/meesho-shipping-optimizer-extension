@@ -244,28 +244,29 @@
       padding-right: 28px;
     }
 
-    .plan-wa-corner {
+    .plan-detail-corner {
       position: absolute;
       top: 6px;
       right: 6px;
       width: 22px;
       height: 22px;
-      border: none;
+      border: 1px solid var(--mso-border);
       border-radius: 50%;
-      background: #25d366;
-      color: #fff;
+      background: #fff8ee;
+      color: #c45f12;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
       padding: 0;
-      box-shadow: 0 2px 6px rgba(37, 211, 102, 0.35);
+      box-shadow: 0 1px 4px rgba(61, 41, 20, 0.08);
       z-index: 2;
       touch-action: manipulation;
     }
 
-    .plan-wa-corner:hover {
-      background: #1ebe57;
+    .plan-detail-corner:hover {
+      background: #fff;
+      color: #e67e22;
     }
 
     .plan-detail-card {
@@ -742,7 +743,7 @@
     <div id="activation-section" class="hidden">
       <div class="status-card" style="padding:12px;">
         <div style="text-align:center;margin-bottom:10px;">
-          <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap to view details</span>
+          <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap to buy · ℹ️ for details</span>
         </div>
         <div class="plan-grid" id="license-plans-grid">
           <div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--mso-muted);font-size:11px;">Loading plans…</div>
@@ -752,7 +753,7 @@
 
       <div id="popup-credits-section" class="status-card hidden" style="padding:12px;margin-top:10px;">
         <div style="text-align:center;margin-bottom:10px;">
-          <span style="font-size:11px;color:#c45f12;font-weight:700;">⚡ BUY CREDITS — pay as you go (min 10)</span>
+          <span style="font-size:11px;color:#c45f12;font-weight:700;">⚡ BUY CREDITS — tap to buy · ℹ️ for details</span>
         </div>
         <div class="plan-grid" id="license-credits-grid"></div>
         <p class="hint" id="credits-price-hint" style="margin-top:8px;">₹2 per credit · top up when credits run out</p>

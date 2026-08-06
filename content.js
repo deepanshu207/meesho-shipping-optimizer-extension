@@ -1339,9 +1339,17 @@ class MeeshoShippingOptimizer {
 
       document.querySelectorAll(".plan-buy-btn.plan-card-main, .plan-buy-btn").forEach((btn) => {
         btn.onclick = async (e) => {
-          if (e?.target?.closest?.(".plan-wa-corner, .plan-wa-corner-btn")) return;
+          if (e?.target?.closest?.(".plan-detail-corner, .plan-detail-corner-btn")) {
+            return;
+          }
           const planId = btn.dataset.plan;
-          if (planId) await showPlanDetail(planId);
+          if (!planId) return;
+          const msg = FirebaseLicense.buildPlanPurchaseMessage(
+            planId,
+            productName,
+            this.modal || document,
+          );
+          openWhatsAppChat(msg);
         };
 
         btn.onmouseenter = () => {
@@ -1354,39 +1362,44 @@ class MeeshoShippingOptimizer {
         };
       });
 
-      document.querySelectorAll(".plan-wa-corner-btn").forEach((btn) => {
+      document.querySelectorAll(".plan-detail-corner-btn").forEach((btn) => {
         btn.onclick = (e) => {
           e.stopPropagation();
           const planId = btn.dataset.plan;
-          if (!planId) return;
-          const msg = FirebaseLicense.buildPlanPurchaseMessage(
-            planId,
-            productName,
-            this.modal || document,
-          );
-          openWhatsAppChat(msg);
+          if (planId) void showPlanDetail(planId);
         };
       });
 
       document.querySelectorAll(".credit-pack-open-btn").forEach((btn) => {
         btn.onclick = async (e) => {
-          if (e?.target?.closest?.(".plan-wa-corner, .credit-pack-wa-btn")) return;
-          const packId = btn.dataset.pack;
-          if (packId) await showCreditPackDetail(packId);
-        };
-      });
-
-      document.querySelectorAll(".credit-pack-wa-btn").forEach((btn) => {
-        btn.onclick = async (e) => {
-          e.stopPropagation();
+          if (
+            e?.target?.closest?.(
+              ".plan-detail-corner, .credit-pack-detail-corner-btn",
+            )
+          ) {
+            return;
+          }
           const packId = btn.dataset.pack;
           if (!packId) return;
           const pack = await FirebaseLicense.getCreditPackById(packId);
           const msg = FirebaseLicense.buildCreditPackPurchaseMessage(
-            pack || { id: packId },
+            pack || {
+              id: packId,
+              credits: btn.dataset.credits,
+              price: btn.dataset.price,
+              label: btn.dataset.label,
+            },
             productName,
           );
           openWhatsAppChat(msg);
+        };
+      });
+
+      document.querySelectorAll(".credit-pack-detail-corner-btn").forEach((btn) => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const packId = btn.dataset.pack;
+          if (packId) await showCreditPackDetail(packId);
         };
       });
     };
