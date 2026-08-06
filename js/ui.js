@@ -32,6 +32,7 @@ const OptimizerUI = {
                         <div id="smart-mode-hint" style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
                             ⚡ Live Meesho shipping checks — finds the lowest ₹ from generated variants
                         </div>
+                        <div id="image-gen-credits" style="display:none;margin-top:8px;font-size:11px;color:#3d2914;padding:8px 10px;background:#fff;border-radius:8px;border:1px solid #f0e0c8;line-height:1.5;font-weight:600;"></div>
                         <div id="image-gen-quota" style="display:none;margin-top:8px;font-size:10px;color:#c45f12;padding:8px;background:rgba(255,215,0,0.12);border-radius:8px;border:1px solid #f0e0c8;line-height:1.5;"></div>`;
   },
 
@@ -559,6 +560,33 @@ const OptimizerUI = {
                     .opt-modal-ext { max-width: 520px; margin: 0 auto; }
                 }
                 .plan-card-foot { font-size: 8px; color: #9ca3af; margin-top: 4px; line-height: 1.3; }
+                .plan-card-shell { position: relative; }
+                .plan-card-shell .plan-card-main { width: 100%; }
+                .plan-wa-corner {
+                    position: absolute;
+                    top: 6px;
+                    right: 6px;
+                    width: 22px;
+                    height: 22px;
+                    border: none;
+                    border-radius: 50%;
+                    background: #25d366;
+                    color: #fff;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    padding: 0;
+                    box-shadow: 0 2px 6px rgba(37,211,102,0.35);
+                    z-index: 2;
+                }
+                .plan-wa-corner:hover { background: #1ebe57; }
+                .plan-detail-card {
+                    background: #fff;
+                    border: 1px solid #f0e0c8;
+                    border-radius: 12px;
+                    padding: 14px;
+                }
                 .plan-detail-subtitle { font-size: 12px; color: #6b7280; margin: 0 0 6px; }
                 .plan-detail-footer { font-size: 10px; color: #6b7280; text-align: center; margin-top: 10px; }
             </style>
@@ -648,6 +676,11 @@ const OptimizerUI = {
                     <div id="license-credits-section" class="license-credits-section opt-section" style="padding:12px;">
                         <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">⚡ Buy Credits (pay as you go)</div>
                         <div id="license-credits-grid" class="license-credits-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:80px;"></div>
+                    </div>
+
+                    <div id="license-credit-detail-view" style="display:none;padding:12px;">
+                        <button type="button" id="license-credit-back-btn" style="border:1px solid #f0e0c8;background:#fff;color:#3d2914;border-radius:8px;padding:8px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px;">← Back to credits</button>
+                        <div id="license-credit-detail-body"></div>
                     </div>
                     
                     <div class="opt-section" style="padding:12px;">

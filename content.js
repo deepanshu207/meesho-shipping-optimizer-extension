@@ -707,10 +707,15 @@ class MeeshoShippingOptimizer {
     const gate = this._imageGenGate;
     if (!gate) return false;
 
+    const expectedCost = await LicenseManager.getImageGenRunCost(gate);
     const result = await LicenseManager.chargeImageGenerationRun(gate);
-    if (result.ok || result.skipped) {
+    const charged =
+      result.ok &&
+      (!result.skipped || expectedCost <= 0 || result.deducted != null || result.local);
+    if (charged) {
       this._imageGenCreditsCharged = true;
       this.isLicensed = LicenseManager.isLicensed;
+      void this.refreshImageGenQuotaUi();
       return true;
     }
 
@@ -732,8 +737,15 @@ class MeeshoShippingOptimizer {
     this._imageGenRecorded = true;
     try {
       if (!this._imageGenCreditsCharged) {
+        const expectedCost = await LicenseManager.getImageGenRunCost(gate);
         const charge = await LicenseManager.chargeImageGenerationRun(gate);
-        if (charge.ok || charge.skipped) {
+        if (
+          charge.ok &&
+          (!charge.skipped ||
+            expectedCost <= 0 ||
+            charge.deducted != null ||
+            charge.local)
+        ) {
           this._imageGenCreditsCharged = true;
         }
       }
@@ -741,6 +753,7 @@ class MeeshoShippingOptimizer {
         await LicenseManager.recordImageGeneration(1, gate);
       }
       this.isLicensed = LicenseManager.isLicensed;
+      void this.refreshImageGenQuotaUi();
     } catch (e) {
       console.warn("Image-gen record failed:", e);
     }
@@ -1214,6 +1227,11 @@ class MeeshoShippingOptimizer {
       const detailBody = document.getElementById("license-plan-detail-body");
       const backBtn = document.getElementById("license-plan-back-btn");
 
+      const creditsSection = document.getElementById("license-credits-section");
+      const creditDetailView = document.getElementById("license-credit-detail-view");
+      const creditDetailBody = document.getElementById("license-credit-detail-body");
+      const creditBackBtn = document.getElementById("license-credit-back-btn");
+
       const openWhatsAppChat = (message, number) => {
         const defaultPhone = CONFIG?.DEFAULT_WHATSAPP || "919654414891";
         const openWithPhone = (phone) => {
@@ -1254,6 +1272,8 @@ class MeeshoShippingOptimizer {
         }
         if (!plan) return;
         if (plansView) plansView.style.display = "none";
+        if (creditsSection) creditsSection.style.display = "none";
+        if (creditDetailView) creditDetailView.style.display = "none";
         detailView.style.display = "block";
         detailBody.innerHTML = FirebaseLicense.renderPlanDetailHtml(plan, {
           productName,
@@ -1272,19 +1292,56 @@ class MeeshoShippingOptimizer {
         }
       };
 
+      const showCreditPackDetail = async (packId) => {
+        if (!creditDetailView || !creditDetailBody) return;
+        let pack = null;
+        if (typeof FirebaseLicense !== "undefined") {
+          pack = await FirebaseLicense.getCreditPackById(packId);
+        }
+        if (!pack) return;
+        if (plansView) plansView.style.display = "none";
+        if (detailView) detailView.style.display = "none";
+        if (creditsSection) creditsSection.style.display = "none";
+        creditDetailView.style.display = "block";
+        creditDetailBody.innerHTML = FirebaseLicense.renderCreditPackDetailHtml(
+          pack,
+          { productName },
+        );
+        const buyBtn = creditDetailBody.querySelector(
+          ".credit-pack-detail-buy-btn",
+        );
+        if (buyBtn) {
+          buyBtn.onclick = () => {
+            const msg = FirebaseLicense.buildCreditPackPurchaseMessage(
+              pack,
+              productName,
+            );
+            openWhatsAppChat(msg);
+          };
+        }
+      };
+
       if (backBtn) {
         backBtn.onclick = () => {
           if (detailView) detailView.style.display = "none";
           if (plansView) plansView.style.display = "block";
+          if (creditsSection) creditsSection.style.display = "block";
         };
       }
 
-      document.querySelectorAll(".plan-buy-btn").forEach((btn) => {
-        btn.onclick = async () => {
+      if (creditBackBtn) {
+        creditBackBtn.onclick = () => {
+          if (creditDetailView) creditDetailView.style.display = "none";
+          if (creditsSection) creditsSection.style.display = "block";
+          if (plansView) plansView.style.display = "block";
+        };
+      }
+
+      document.querySelectorAll(".plan-buy-btn.plan-card-main, .plan-buy-btn").forEach((btn) => {
+        btn.onclick = async (e) => {
+          if (e?.target?.closest?.(".plan-wa-corner, .plan-wa-corner-btn")) return;
           const planId = btn.dataset.plan;
-          if (planId) {
-            await showPlanDetail(planId);
-          }
+          if (planId) await showPlanDetail(planId);
         };
 
         btn.onmouseenter = () => {
@@ -1297,18 +1354,39 @@ class MeeshoShippingOptimizer {
         };
       });
 
-      document.querySelectorAll(".credit-pack-btn").forEach((btn) => {
-        btn.onclick = async () => {
-          const credits = btn.dataset.credits;
-          const price = btn.dataset.price;
-          const label = btn.dataset.label || `${credits} Credits`;
-          const message = `Hi! I want to buy credits for ${productName}.
+      document.querySelectorAll(".plan-wa-corner-btn").forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const planId = btn.dataset.plan;
+          if (!planId) return;
+          const msg = FirebaseLicense.buildPlanPurchaseMessage(
+            planId,
+            productName,
+            this.modal || document,
+          );
+          openWhatsAppChat(msg);
+        };
+      });
 
-⚡ *Credit Pack:* ${label}
-💰 *Price:* ₹${price}
+      document.querySelectorAll(".credit-pack-open-btn").forEach((btn) => {
+        btn.onclick = async (e) => {
+          if (e?.target?.closest?.(".plan-wa-corner, .credit-pack-wa-btn")) return;
+          const packId = btn.dataset.pack;
+          if (packId) await showCreditPackDetail(packId);
+        };
+      });
 
-Please share payment details.`;
-          openWhatsAppChat(message);
+      document.querySelectorAll(".credit-pack-wa-btn").forEach((btn) => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          const packId = btn.dataset.pack;
+          if (!packId) return;
+          const pack = await FirebaseLicense.getCreditPackById(packId);
+          const msg = FirebaseLicense.buildCreditPackPurchaseMessage(
+            pack || { id: packId },
+            productName,
+          );
+          openWhatsAppChat(msg);
         };
       });
     };
@@ -1627,58 +1705,57 @@ Please share payment details.`;
     }
   }
 
-  /** Show remaining daily/monthly quota + per-generation credit cost. */
+  /** Show credits balance + generation limits on the optimizer screen. */
   async refreshImageGenQuotaUi() {
-    const el = document.getElementById("image-gen-quota");
-    if (!el || !this.requiresLicense()) return;
-    if (typeof LicenseManager === "undefined") return;
+    const creditsEl = document.getElementById("image-gen-credits");
+    const quotaEl = document.getElementById("image-gen-quota");
+    if (!this.requiresLicense() || typeof LicenseManager === "undefined") return;
     try {
+      await LicenseManager.checkLicense();
       const summary = await LicenseManager.getImageGenSummary();
       const cfg = summary.config;
-      if (!cfg.configured || !cfg.enabled) {
-        if (cfg.configured && !cfg.enabled) {
-          el.style.display = "block";
-          el.innerHTML = "⚠️ AI image generation is currently disabled.";
+      const bal =
+        summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
+
+      if (creditsEl) {
+        if (summary.creditsApply) {
+          const cost = summary.costPerRun || 1;
+          creditsEl.style.display = "block";
+          creditsEl.innerHTML = `💳 Credits: <strong>${bal}</strong> left · <strong>${cost}</strong> per generation run`;
         } else {
-          el.style.display = "none";
+          creditsEl.style.display = "none";
         }
-        return;
       }
+
+      if (!quotaEl) return;
 
       const parts = [];
-
-      if (summary.remainingDaily != null) {
-        parts.push(
-          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
-        );
-      }
-      if (summary.remainingMonthly != null) {
-        parts.push(
-          `This month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
-        );
-      }
-      const costPerRun = summary.costPerRun ?? summary.costPerImage ?? 0;
-      if (costPerRun > 0) {
-        const bal =
-          summary.creditsBalance === Infinity
-            ? "∞"
-            : summary.creditsBalance;
-        parts.push(
-          `Cost: <strong>${costPerRun}</strong> credit${costPerRun === 1 ? "" : "s"} per run (balance ${bal})`,
-        );
-      }
-      if (cfg.max_batch_size > 0) {
-        parts.push(`Max ${cfg.max_batch_size} variants per run`);
+      if (cfg.configured && cfg.enabled) {
+        if (summary.remainingDaily != null) {
+          parts.push(
+            `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
+          );
+        }
+        if (summary.remainingMonthly != null) {
+          parts.push(
+            `This month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
+          );
+        }
+        if (cfg.max_batch_size > 0) {
+          parts.push(`Max ${cfg.max_batch_size} variants per run`);
+        }
       }
 
       if (!parts.length) {
-        el.style.display = "none";
+        quotaEl.style.display = "none";
+        quotaEl.innerHTML = "";
         return;
       }
-      el.style.display = "block";
-      el.innerHTML = "🎫 " + parts.join(" · ");
+      quotaEl.style.display = "block";
+      quotaEl.innerHTML = "🎫 " + parts.join(" · ");
     } catch (e) {
-      el.style.display = "none";
+      if (creditsEl) creditsEl.style.display = "none";
+      if (quotaEl) quotaEl.style.display = "none";
     }
   }
 

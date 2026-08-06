@@ -246,6 +246,23 @@ Edit `credits` object on app doc:
 **Custom pack example:** `{ "id": "pack_250", "credits": 250, "price": 400, "label": "250 Credits" }`
 **Custom amount:** show `price_per_credit` × amount (min `min_purchase`) for WhatsApp quote.
 
+**Credit pack detail screen fields** (same pattern as subscription plans — extension opens a detail view with ← Back):
+
+| Field | Purpose |
+|-------|---------|
+| `description` | Short paragraph on detail screen |
+| `detail_subtitle` | Subtitle under pack name |
+| `highlights` | Pill chips (e.g. `["Instant delivery", "No expiry"]`) |
+| `features` | `[{ "icon": "⚡", "title": "10 credits", "text": "..." }]` |
+| `detail_sections` | `[{ "title": "...", "body": "...", "items": ["..."] }]` |
+| `cta_text` | WhatsApp button label (default: "Buy via WhatsApp") |
+| `detail_footer` | Small footer note |
+| `show_whatsapp_icon` | `false` to hide corner WhatsApp icon on pack card |
+
+**Plan / pack card UI:** Each plan and credit pack card shows a **small green WhatsApp icon in the top-right corner** for quick purchase. Tapping the card body opens the detail screen; tapping the corner icon opens WhatsApp directly.
+
+**Subscription plans with included credits:** A plan can keep `billing_mode: "subscription"` but set `included_credits: 1` (or more). On activation the extension grants `credits_balance` and **deducts credits on each image generation run** until balance is 0. Use `billing_mode: "hybrid"` when time + credits both gate access.
+
 **AI image generation limits** — add an editor for `credits.image_generation`:
 
 ```json
@@ -263,7 +280,7 @@ Edit `credits` object on app doc:
 | Field | Meaning |
 |-------|---------|
 | `enabled` | Master on/off for AI image generation |
-| `credits_per_image` | Credits charged **per generation run** (`0` = free; only for credits/hybrid plans). One run = one upload → variants (20/50/100 variants still = 1 run; stop mid-run still = 1 run). |
+| `credits_per_image` | Credits charged **per generation run** (`0` = use legacy `cost_per_operation` for credits/hybrid/spendable-balance licenses). One run = one upload → variants (20/50/100 variants still = 1 run; stop mid-run still = 1 run). |
 | `daily_limit` | **Runs**/day per license (`0` = unlimited) |
 | `monthly_limit` | **Runs**/month (`0` = unlimited) |
 | `max_batch_size` | Max **variants** per run (`0` = unlimited) — does not change how runs are counted |
