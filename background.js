@@ -75,6 +75,10 @@ class BackgroundService {
         case "GET_SETTINGS":
           sendResponse({ success: true, settings: await this.getSettings() });
           break;
+        case "OPEN_WHATSAPP":
+          await this.openWhatsApp(message);
+          sendResponse({ ok: true });
+          break;
         default:
           sendResponse({ success: false, error: "Unknown message type" });
       }
@@ -85,6 +89,29 @@ class BackgroundService {
 
   async processImageVariations(imageData) {
     return [{ name: "Original", data: imageData, modifications: [] }];
+  }
+
+  normalizeWhatsAppPhone(number) {
+    let digits = String(number || "").replace(/\D/g, "");
+    if (digits.length === 10) digits = "91" + digits;
+    return digits;
+  }
+
+  /** Desktop only — open wa.me in a new tab (never used on mobile). */
+  async openWhatsApp(message) {
+    const phone = this.normalizeWhatsAppPhone(message?.phone);
+    const text = encodeURIComponent(message?.message || "");
+    const web = `https://wa.me/${phone}?text=${text}`;
+
+    return new Promise((resolve) => {
+      try {
+        chrome.tabs.create({ url: web, active: true }, () => {
+          resolve(!chrome.runtime.lastError);
+        });
+      } catch (e) {
+        resolve(false);
+      }
+    });
   }
 
   async checkShippingCost(imageData) {
