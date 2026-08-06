@@ -259,7 +259,7 @@ Edit `credits` object on app doc:
 | `detail_footer` | Small footer note |
 | `show_whatsapp_icon` | `false` to hide corner WhatsApp icon on pack card |
 
-**Plan / pack card UI:** Each plan and credit pack card shows a **small green WhatsApp icon in the top-right corner** for quick purchase. Tapping the card body opens the detail screen; tapping the corner icon opens WhatsApp directly.
+**Plan / pack card UI:** Each plan and credit pack card has a small **details (ℹ️) icon in the top-right corner** — tap it to open that plan/pack detail screen. **Tap the card body** to open WhatsApp with the purchase message. Set `show_details_icon: false` to hide the corner icon.
 
 **Subscription plans with included credits:** A plan can keep `billing_mode: "subscription"` but set `included_credits: 1` (or more). On activation the extension grants `credits_balance` and **deducts credits on each image generation run** until balance is 0. Use `billing_mode: "hybrid"` when time + credits both gate access.
 

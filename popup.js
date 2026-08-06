@@ -375,24 +375,38 @@ document.addEventListener("DOMContentLoaded", async () => {
   function bindCreditPackButtons() {
     document.querySelectorAll(".credit-pack-open-btn").forEach((btn) => {
       PA.bindTap(btn, (e) => {
-        if (e?.target?.closest?.(".plan-wa-corner, .credit-pack-wa-btn")) return;
+        if (
+          e?.target?.closest?.(
+            ".plan-detail-corner, .credit-pack-detail-corner-btn",
+          )
+        ) {
+          return;
+        }
+        const packId = btn.dataset.pack;
+        if (packId) void openWhatsAppForCreditPack(packId, btn);
+      });
+    });
+    document.querySelectorAll(".credit-pack-detail-corner-btn").forEach((btn) => {
+      PA.bindTap(btn, (e) => {
+        e?.stopPropagation?.();
         const packId = btn.dataset.pack;
         if (packId) void showCreditPackDetail(packId);
       });
     });
-    document.querySelectorAll(".credit-pack-wa-btn").forEach((btn) => {
-      PA.bindTap(btn, (e) => {
-        e?.stopPropagation?.();
-        const packId = btn.dataset.pack;
-        if (packId) void openWhatsAppForCreditPack(packId);
-      });
-    });
   }
 
-  async function openWhatsAppForCreditPack(packId) {
+  async function openWhatsAppForCreditPack(packId, sourceBtn) {
     let pack =
       cachedCreditPacks.find((p) => p.id === packId) ||
       (await FirebaseLicense?.getCreditPackById?.(packId));
+    if (!pack && sourceBtn?.dataset) {
+      pack = {
+        id: packId,
+        credits: sourceBtn.dataset.credits,
+        price: sourceBtn.dataset.price,
+        label: sourceBtn.dataset.label,
+      };
+    }
     const message = FirebaseLicense.buildCreditPackPurchaseMessage(
       pack || { id: packId },
       productName,
@@ -443,16 +457,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   function bindPlanButtons() {
     document.querySelectorAll(".plan-buy-btn.plan-card-main, .plan-btn.plan-buy-btn").forEach((btn) => {
       PA.bindTap(btn, (e) => {
-        if (e?.target?.closest?.(".plan-wa-corner, .plan-wa-corner-btn")) return;
+        if (e?.target?.closest?.(".plan-detail-corner, .plan-detail-corner-btn")) {
+          return;
+        }
         const planId = btn.dataset.plan;
-        if (planId) showPlanDetail(planId);
+        if (planId) void openWhatsAppForPlan(planId);
       });
     });
-    document.querySelectorAll(".plan-wa-corner-btn").forEach((btn) => {
+    document.querySelectorAll(".plan-detail-corner-btn").forEach((btn) => {
       PA.bindTap(btn, (e) => {
         e?.stopPropagation?.();
         const planId = btn.dataset.plan;
-        if (planId) void openWhatsAppForPlan(planId);
+        if (planId) showPlanDetail(planId);
       });
     });
   }

@@ -562,25 +562,25 @@ const OptimizerUI = {
                 .plan-card-foot { font-size: 8px; color: #9ca3af; margin-top: 4px; line-height: 1.3; }
                 .plan-card-shell { position: relative; }
                 .plan-card-shell .plan-card-main { width: 100%; }
-                .plan-wa-corner {
+                .plan-detail-corner {
                     position: absolute;
                     top: 6px;
                     right: 6px;
                     width: 22px;
                     height: 22px;
-                    border: none;
+                    border: 1px solid #f0e0c8;
                     border-radius: 50%;
-                    background: #25d366;
-                    color: #fff;
+                    background: #fff8ee;
+                    color: #c45f12;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     cursor: pointer;
                     padding: 0;
-                    box-shadow: 0 2px 6px rgba(37,211,102,0.35);
+                    box-shadow: 0 1px 4px rgba(61,41,20,0.08);
                     z-index: 2;
                 }
-                .plan-wa-corner:hover { background: #1ebe57; }
+                .plan-detail-corner:hover { background: #fff; color: #e67e22; }
                 .plan-detail-card {
                     background: #fff;
                     border: 1px solid #f0e0c8;
@@ -660,7 +660,7 @@ const OptimizerUI = {
                     <!-- Pricing Plans (loaded from Firebase) -->
                     <div id="license-plans-view">
                     <div class="opt-section" style="padding:12px;">
-                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Click Plan to View Details</div>
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Tap plan to buy on WhatsApp · ℹ️ for details</div>
                         <div id="license-plans-grid" class="license-plans-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px;">
                             <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
@@ -674,7 +674,7 @@ const OptimizerUI = {
                     </div>
 
                     <div id="license-credits-section" class="license-credits-section opt-section" style="padding:12px;">
-                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">⚡ Buy Credits (pay as you go)</div>
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">⚡ Tap pack to buy on WhatsApp · ℹ️ for details</div>
                         <div id="license-credits-grid" class="license-credits-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:80px;"></div>
                     </div>
 
