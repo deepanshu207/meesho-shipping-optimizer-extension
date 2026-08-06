@@ -392,14 +392,16 @@ Please share payment details.`;
   }
 
   function bindPlanButtons() {
-    document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
+    document.querySelectorAll(".plan-buy-btn").forEach((btn) => {
       PA.bindTap(btn, () => {
         const planId = btn.dataset.plan;
-        if (planId) {
-          showPlanDetail(planId);
-          return;
-        }
-        openWhatsAppForPlan(planId);
+        if (planId) showPlanDetail(planId);
+      });
+    });
+    document.querySelectorAll(".plan-wa-quick-btn").forEach((btn) => {
+      PA.bindTap(btn, () => {
+        const planId = btn.dataset.plan;
+        if (planId) void openWhatsAppForPlan(planId);
       });
     });
   }
@@ -431,11 +433,10 @@ Please share payment details.`;
           priceHint.textContent = `₹${creditsCfg.price_per_credit} per credit · minimum ${creditsCfg.min_purchase} credits · top up when credits run out`;
         }
       }
-      const hint = document.getElementById("license-demo-hint");
-      if (hint) {
-        const demoKeys = await FirebaseLicense.getDemoKeysMap();
-        const sample = Object.keys(demoKeys)[0] || "MEESHO-DEMOFREE";
-        hint.innerHTML = `1 device default · Family/Friends for more · Demo: <strong>${sample}</strong>`;
+      const deviceHint = document.getElementById("license-device-hint");
+      if (deviceHint) {
+        deviceHint.textContent =
+          "1 device default · Family/Friends for more devices";
       }
       const ann = await FirebaseLicense.getAnnouncement();
       const annCard = document.getElementById("firebase-announcement");

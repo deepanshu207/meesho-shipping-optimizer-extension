@@ -228,6 +228,64 @@
     .plan-price { font-size: 18px; font-weight: 800; color: var(--mso-orange); margin: 2px 0; }
     .plan-note { font-size: 9px; color: var(--mso-success); }
 
+    .plan-card-row {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+    }
+
+    .plan-card-row .plan-btn,
+    .plan-card-row .plan-buy-btn {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .plan-wa-quick-btn {
+      flex-shrink: 0;
+      width: 40px;
+      border: 1px solid #25d366;
+      background: #25d366;
+      color: #fff;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .plan-wa-quick-btn:hover {
+      background: #1ebe57;
+      border-color: #1ebe57;
+    }
+
+    .plan-wa-icon { display: block; }
+
+    .plan-card-hint {
+      font-size: 9px;
+      color: var(--mso-muted);
+      text-align: center;
+      margin-top: 4px;
+      line-height: 1.3;
+    }
+
+    .plan-detail-subtitle {
+      font-size: 12px;
+      color: var(--mso-muted);
+      margin: 0 0 6px;
+      line-height: 1.4;
+    }
+
+    .plan-detail-footer {
+      font-size: 10px;
+      color: var(--mso-muted);
+      text-align: center;
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+
     .input-group { margin-bottom: 10px; }
 
     .input-label {
@@ -640,7 +698,7 @@
 </head>
 <body class="popup-booting">
   <div class="header">
-    <span class="version-badge" id="version-badge">v1.5.8</span>
+    <span class="version-badge" id="version-badge">v1.5.9</span>
     <div class="brand-row">
       <img class="brand-logo" src="icons/icon48.png" width="48" height="48" alt="">
       <div class="brand">
@@ -680,12 +738,12 @@
     <div id="activation-section" class="hidden">
       <div class="status-card" style="padding:12px;">
         <div style="text-align:center;margin-bottom:10px;">
-          <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap to buy via WhatsApp</span>
+          <span style="font-size:11px;color:#c45f12;font-weight:700;">💎 SUBSCRIPTION PLANS — tap for details · WhatsApp icon to buy</span>
         </div>
         <div class="plan-grid" id="license-plans-grid">
           <div style="grid-column:1/-1;text-align:center;padding:12px;color:var(--mso-muted);font-size:11px;">Loading plans…</div>
         </div>
-        <p class="hint" id="license-demo-hint">1 device per license · Family/Friends for more devices · Demo: <strong>MEESHO-DEMOFREE</strong></p>
+        <p class="hint" id="license-device-hint">1 device per license · Family/Friends for more devices</p>
       </div>
 
       <div id="popup-credits-section" class="status-card hidden" style="padding:12px;margin-top:10px;">

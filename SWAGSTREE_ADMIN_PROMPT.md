@@ -292,6 +292,52 @@ Show on each license row / detail drawer:
 
 Optional admin action: **Reset today's runs** (sets `images_generated_today` to `0` and updates `images_generated_today_date` to today) — for support only, with confirm dialog.
 
+**Smart Mode variant options** — add an editor for `smart_mode` on `shipping_optimizer_config/app` (extension v1.5.9+):
+
+```json
+{
+  "smart_mode": {
+    "variant_options": [
+      { "value": 20, "label": "20 variants", "active": true, "order": 0 },
+      { "value": 50, "label": "50 variants", "active": true, "order": 1 },
+      { "value": 100, "label": "100 variants", "active": true, "order": 2 },
+      { "value": 200, "label": "200 variants", "active": true, "order": 3 }
+    ],
+    "default_variant": 20,
+    "max_variants_cap": 200,
+    "label": "Max Variants",
+    "hint": "Live Meesho shipping checks — finds the lowest ₹ from generated variants"
+  }
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `variant_options[]` | Dropdown choices in the extension Smart Mode selector. Each item: `value` (number), `label` (display), `active` (show/hide), `order` (sort). Plain numbers `[20,50,100]` also work. |
+| `default_variant` | Pre-selected option when modal opens |
+| `max_variants_cap` | Hard cap for API/results (extension raises internal limit) |
+| `label` | Field label above the dropdown |
+| `hint` | Help text under the dropdown |
+
+Admin UI: **add / delete / reorder / edit** variant options dynamically. Options above `credits.image_generation.max_batch_size` are hidden automatically when batch limit is set.
+
+**Plan detail & card fields** (per plan in `plans[]`, extension v1.5.9+):
+
+| Field | Where shown |
+|-------|-------------|
+| `description` | Plan detail body |
+| `detail_subtitle` | Under plan name on detail screen |
+| `highlights[]` | Pills on detail screen |
+| `features[]` | Feature list (`{ icon, title, text }` or string) |
+| `detail_sections[]` | Extra blocks (`{ title, body, items[] }`) |
+| `detail_footer` | Small text under WhatsApp button |
+| `cta_text` | WhatsApp button label (default "Buy via WhatsApp") |
+| `card_subtitle` | Subtitle on plan card (else duration · devices) |
+| `card_hint` | Hint under card: "Tap for details · WhatsApp to buy" |
+| `show_whatsapp_icon` | `false` hides green WhatsApp quick button on card |
+
+Extension UX: tap plan card → detail screen (all Firebase fields). Green WhatsApp icon on card → direct purchase message. **Do not show demo key names in license activation UI** (demo keys still work when entered manually).
+
 ---
 
 ## TAB 3: Demo / Promo Keys

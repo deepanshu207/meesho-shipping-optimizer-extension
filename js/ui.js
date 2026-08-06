@@ -23,17 +23,13 @@ const OptimizerUI = {
                         <input type="hidden" id="target-shipping" value="100">
                         <div class="opt-row" style="margin-bottom:10px;">
                             <div style="grid-column:1 / -1;">
-                                <label class="opt-label">Max Variants</label>
+                                <label class="opt-label" for="max-attempts">Max Variants</label>
                                 <select id="max-attempts" class="opt-select">
-                                    <option value="10">10</option>
                                     <option value="20" selected>20</option>
-                                    <option value="50">50</option>
-                                    <option value="80">80</option>
-                                    <option value="100">100</option>
                                 </select>
                             </div>
                         </div>
-                        <div style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
+                        <div id="smart-mode-hint" style="font-size:10px;color:#6b7280;padding:8px;background:#fff8ee;border-radius:8px;border:1px solid #f0e0c8;">
                             ⚡ Live Meesho shipping checks — finds the lowest ₹ from generated variants
                         </div>
                         <div id="image-gen-quota" style="display:none;margin-top:8px;font-size:10px;color:#c45f12;padding:8px;background:rgba(255,215,0,0.12);border-radius:8px;border:1px solid #f0e0c8;line-height:1.5;"></div>`;
@@ -562,6 +558,25 @@ const OptimizerUI = {
                 @media (min-width: 900px) {
                     .opt-modal-ext { max-width: 520px; margin: 0 auto; }
                 }
+                .plan-card-row { display: flex; align-items: stretch; gap: 6px; }
+                .plan-card-row .plan-buy-btn { flex: 1; min-width: 0; }
+                .plan-wa-quick-btn {
+                    flex-shrink: 0;
+                    width: 40px;
+                    border: 1px solid #25d366;
+                    background: #25d366;
+                    color: #fff;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    padding: 0;
+                }
+                .plan-wa-quick-btn:hover { background: #1ebe57; }
+                .plan-card-hint { font-size: 9px; color: #6b7280; text-align: center; margin-top: 4px; }
+                .plan-detail-subtitle { font-size: 12px; color: #6b7280; margin: 0 0 6px; }
+                .plan-detail-footer { font-size: 10px; color: #6b7280; text-align: center; margin-top: 10px; }
             </style>
         `;
 
@@ -633,7 +648,7 @@ const OptimizerUI = {
                     <!-- Pricing Plans (loaded from Firebase) -->
                     <div id="license-plans-view">
                     <div class="opt-section" style="padding:12px;">
-                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Click Plan to View Details</div>
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Tap plan for details · WhatsApp icon to buy</div>
                         <div id="license-plans-grid" class="license-plans-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px;">
                             <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
@@ -657,8 +672,8 @@ const OptimizerUI = {
                         <button id="activate-license-btn" class="opt-btn opt-btn-success" style="width:100%;padding:10px;">Activate License</button>
                     </div>
                     
-                    <p id="license-demo-hint" style="margin-top:8px;font-size:10px;color:#0f0f10;text-align:center;">
-                        1 device per license · Family/Friends for more devices · Demo: <strong>MEESHO-DEMOFREE</strong>
+                    <p id="license-device-hint" style="margin-top:8px;font-size:10px;color:#0f0f10;text-align:center;">
+                        1 device per license · Family/Friends for more devices
                     </p>
                 </div>
             </div>
