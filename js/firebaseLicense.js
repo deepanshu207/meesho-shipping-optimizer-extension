@@ -372,7 +372,11 @@ const FirebaseLicense = {
     const out = [];
     const duration = this.formatPlanDurationLabel(plan);
     const devices = this.formatPlanDevicesLabel(plan);
-    if (duration) out.push({ icon: "📅", title: duration, text: "" });
+    if (plan.unlimited_time || plan.days === 0) {
+      out.push({ icon: "♾️", title: "Never expires", text: "Lifetime access" });
+    } else if (duration) {
+      out.push({ icon: "📅", title: duration, text: "" });
+    }
     if (devices) out.push({ icon: "📱", title: devices, text: "" });
     if (plan.included_credits > 0) {
       out.push({
@@ -385,11 +389,17 @@ const FirebaseLicense = {
       out.push({ icon: "∞", title: "Unlimited credits", text: "" });
     }
     const mode = plan.billing_mode || "subscription";
-    if (mode !== "subscription") {
+    if (mode === "hybrid") {
       out.push({
         icon: "💳",
-        title: `${mode} billing`,
-        text: "",
+        title: "Plan + credits",
+        text: "Time-based access with credit balance",
+      });
+    } else if (mode === "credits") {
+      out.push({
+        icon: "💳",
+        title: "Credits only",
+        text: "Pay as you go",
       });
     }
     return out;
@@ -405,7 +415,14 @@ const FirebaseLicense = {
       (plan.features || []).length > 0
         ? plan.features
         : this.buildDefaultPlanFeatures(plan);
-    const highlights = plan.highlights || [];
+    const highlights = [
+      ...(plan.highlights || []),
+      ...(plan.unlimited_time || plan.days === 0 ? ["Never expires"] : []),
+      ...(plan.unlimited_credits ? ["Unlimited credits"] : []),
+      ...(plan.unlimited_devices || plan.max_devices === 0
+        ? ["Unlimited devices"]
+        : []),
+    ].filter((h, i, arr) => arr.indexOf(h) === i);
     const sections = plan.detail_sections || [];
     const addons = this.getPlanCreditAddons(plan);
     const bestTag = plan.best
@@ -979,11 +996,16 @@ const FirebaseLicense = {
       resolvedExpiresAt &&
       new Date() > new Date(resolvedExpiresAt);
 
-    if (mode === "credits") return unlimitedCredits || credits > 0;
+    if (mode === "credits") {
+      return unlimitedCredits || credits > 0;
+    }
     if (mode === "hybrid") {
       if (expired) return false;
       return unlimitedCredits || credits > 0;
     }
+    // subscription — never expires, open-ended, or not past expiry
+    if (unlimitedTime) return true;
+    if (!resolvedExpiresAt) return true;
     if (expired) return false;
     return true;
   },

@@ -200,9 +200,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const primary = LicenseManager.pickPrimaryLicense(licenses);
-        const info = primary?.licenseInfo || {};
+        const info = LicenseManager.normalizeLicenseInfo(
+          primary?.licenseInfo || {},
+        );
         const typeLabel = LicenseManager.formatLicenseTypeLabel(info);
         const totalCredits = LicenseManager.getTotalCreditsBalance(licenses);
+        const validity = LicenseManager.getLicenseValiditySummary(info);
 
         let infoHTML = `<div class="license-type-pill">${LicenseManager.getLicenseRoleLabel(primary)}</div>`;
         infoHTML += `<div style="font-size:14px;font-weight:700;color:var(--mso-ink);margin-bottom:6px;">${typeLabel}</div>`;
@@ -239,9 +242,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         }
         if (info.unlimitedTime) {
-          infoHTML += ` · <strong>Unlimited time</strong>`;
+          infoHTML += ` · <strong>Never expires</strong>`;
         } else if (info.expiresAt) {
-          infoHTML += ` · Expires: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong>`;
+          infoHTML += ` · ${validity.kind === "expired" ? "Expired" : "Expires"}: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong>`;
+        } else {
+          infoHTML += ` · <strong>No expiry</strong>`;
         }
         if (info.activatedAt) {
           infoHTML += ` · Activated: ${formatWhen(info.activatedAt)}`;
@@ -272,32 +277,33 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         if (!LicenseManager.licenseEntryHasAccess(primary)) {
-          statusBadge.textContent = "Expired";
+          statusBadge.textContent = "Inactive";
           statusBadge.className = "status-badge inactive";
           infoHTML += `<div class="expiry-warning"><span>❌</span><span>Primary license inactive — add a new key or sign off</span></div>`;
           activationSection.classList.remove("hidden");
-        } else if (info.expiresAt && !info.unlimitedTime) {
-          const expiresAt = new Date(info.expiresAt);
-          const diffMs = expiresAt - new Date();
-          if (diffMs <= 0) {
-            statusBadge.textContent = "Expired";
-            statusBadge.className = "status-badge inactive";
-            infoHTML += `<div class="expiry-warning"><span>❌</span><span>License expired</span></div>`;
-            activationSection.classList.remove("hidden");
-          } else {
-            const diffDays = Math.floor(diffMs / 86400000);
-            if (diffDays < 7) {
-              const diffHours = Math.floor(diffMs / 3600000);
-              const expiryText =
-                diffHours < 24
-                  ? `${Math.floor(diffMs / 60000)} minutes`
-                  : diffDays < 1
-                    ? `${diffHours} hours`
-                    : `${diffDays} days`;
-              infoHTML += `<div class="expiry-warning"><span>⚠️</span><span>Expires in ${expiryText}</span></div>`;
-            }
-            activationSection.classList.add("hidden");
+        } else if (validity.kind === "unlimited") {
+          statusBadge.textContent = "Lifetime";
+          statusBadge.className = "status-badge active";
+          activationSection.classList.add("hidden");
+        } else if (info.expiresAt && validity.kind === "expired") {
+          statusBadge.textContent = "Expired";
+          statusBadge.className = "status-badge inactive";
+          infoHTML += `<div class="expiry-warning"><span>❌</span><span>License expired</span></div>`;
+          activationSection.classList.remove("hidden");
+        } else if (info.expiresAt && validity.kind === "active") {
+          const diffDays = validity.daysLeft ?? 0;
+          if (diffDays < 7) {
+            const diffMs = new Date(info.expiresAt) - new Date();
+            const diffHours = Math.floor(diffMs / 3600000);
+            const expiryText =
+              diffHours < 24
+                ? `${Math.floor(diffMs / 60000)} minutes`
+                : diffDays < 1
+                  ? `${diffHours} hours`
+                  : `${diffDays} days`;
+            infoHTML += `<div class="expiry-warning"><span>⚠️</span><span>Expires in ${expiryText}</span></div>`;
           }
+          activationSection.classList.add("hidden");
         } else {
           activationSection.classList.add("hidden");
         }

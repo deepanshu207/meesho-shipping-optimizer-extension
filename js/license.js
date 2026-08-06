@@ -18,9 +18,96 @@ const LicenseManager = {
     return {
       key,
       role: entry.role || entry.licenseInfo?.role || null,
-      licenseInfo: { ...(entry.licenseInfo || {}), key },
+      licenseInfo: this.normalizeLicenseInfo({
+        ...(entry.licenseInfo || {}),
+        key,
+      }),
       activatedAt: entry.activatedAt || entry.licenseInfo?.activatedAt || null,
     };
+  },
+
+  /** Normalize unlimited-time / lifetime flags from any stored shape. */
+  normalizeLicenseInfo(info) {
+    if (!info) return info;
+    const planKind = String(info.planKind || info.plan_kind || "").toLowerCase();
+    const unlimitedTime = !!(
+      info.unlimitedTime ||
+      info.unlimited_time ||
+      planKind === "lifetime" ||
+      planKind === "unlimited"
+    );
+    const unlimitedCredits = !!(
+      info.unlimitedCredits || info.unlimited_credits
+    );
+    const unlimitedDevices = !!(
+      info.unlimitedDevices || info.unlimited_devices
+    );
+    return {
+      ...info,
+      planKind: planKind || info.planKind || "subscription",
+      unlimitedTime,
+      unlimitedCredits,
+      unlimitedDevices,
+      expiresAt: unlimitedTime ? null : info.expiresAt || info.expires_at || null,
+      billingMode:
+        info.billingMode || info.billing_mode || "subscription",
+    };
+  },
+
+  isUnlimitedTimeLicense(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    return !!n.unlimitedTime;
+  },
+
+  /** Human-readable validity for UI (never expires, open-ended, dated, expired). */
+  getLicenseValiditySummary(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    if (n.unlimitedTime) {
+      return {
+        kind: "unlimited",
+        label: "Never expires",
+        shortLabel: "Lifetime",
+      };
+    }
+    if (!n.expiresAt) {
+      return {
+        kind: "open",
+        label: "No expiry date",
+        shortLabel: "Active",
+      };
+    }
+    const exp = new Date(n.expiresAt);
+    if (Number.isNaN(exp.getTime())) {
+      return { kind: "open", label: "No expiry date", shortLabel: "Active" };
+    }
+    if (new Date() > exp) {
+      return {
+        kind: "expired",
+        label: `Expired ${exp.toLocaleDateString()}`,
+        shortLabel: "Expired",
+        expiresAt: n.expiresAt,
+      };
+    }
+    const diffMs = exp - new Date();
+    const diffDays = Math.floor(diffMs / 86400000);
+    return {
+      kind: "active",
+      label: `Expires ${exp.toLocaleDateString()}`,
+      shortLabel: diffDays < 7 ? `${diffDays}d left` : exp.toLocaleDateString(),
+      expiresAt: n.expiresAt,
+      daysLeft: diffDays,
+    };
+  },
+
+  /** Whether any *accessible* license still requires credits to operate. */
+  requiresCreditBilling(licenses) {
+    return (licenses || []).some((entry) => {
+      if (!this.licenseEntryHasAccess(entry)) return false;
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      if (info.unlimitedCredits) return false;
+      const mode = info.billingMode || "subscription";
+      return mode === "credits" || mode === "hybrid";
+    });
   },
 
   async getActiveLicenses() {
@@ -109,13 +196,13 @@ const LicenseManager = {
   },
 
   licenseEntryHasAccess(entry) {
-    const info = entry?.licenseInfo || {};
+    const info = this.normalizeLicenseInfo(entry?.licenseInfo || {});
     const mode = info.billingMode || "subscription";
-    const unlimitedTime = !!info.unlimitedTime;
-    const unlimitedCredits = !!info.unlimitedCredits;
+    const unlimitedTime = info.unlimitedTime;
+    const unlimitedCredits = info.unlimitedCredits;
 
     if (info.planType === "demo") {
-      if (info.unlimitedTime) return true;
+      if (unlimitedTime) return true;
       if (!info.expiresAt) return true;
       return new Date() <= new Date(info.expiresAt);
     }
@@ -131,10 +218,10 @@ const LicenseManager = {
       return unlimitedCredits || Number(info.creditsBalance ?? 0) > 0;
     }
 
-    if (!unlimitedTime && info.expiresAt && new Date() > new Date(info.expiresAt)) {
-      return false;
-    }
-    return true;
+    // subscription — unlimited time, open-ended (no expiresAt), or not yet expired
+    if (unlimitedTime) return true;
+    if (!info.expiresAt) return true;
+    return new Date() <= new Date(info.expiresAt);
   },
 
   licensesHaveAccess(licenses) {
@@ -263,9 +350,12 @@ const LicenseManager = {
           }
         }
         if (info.unlimitedTime) {
-          details += `<div>Validity: <strong>Unlimited time</strong></div>`;
+          details += `<div>Validity: <strong>Never expires</strong></div>`;
         } else if (info.expiresAt) {
-          details += `<div>Expires: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong></div>`;
+          const validity = this.getLicenseValiditySummary(info);
+          details += `<div>${validity.kind === "expired" ? "Expired" : "Expires"}: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong></div>`;
+        } else {
+          details += `<div>Validity: <strong>No expiry</strong></div>`;
         }
         if (info.maxDevices != null) {
           const devLabel = info.unlimitedDevices
@@ -346,7 +436,7 @@ const LicenseManager = {
             if (refreshed.valid && refreshed.license) {
               updated.push({
                 ...entry,
-                licenseInfo: refreshed.license,
+                licenseInfo: this.normalizeLicenseInfo(refreshed.license),
               });
             }
           } catch (e) {
@@ -422,6 +512,7 @@ const LicenseManager = {
   getCreditSources(licenses) {
     return (licenses || [])
       .filter((entry) => {
+        if (!this.licenseEntryHasAccess(entry)) return false;
         const mode = entry.licenseInfo?.billingMode || "subscription";
         return mode === "credits" || mode === "hybrid";
       })
@@ -484,29 +575,36 @@ const LicenseManager = {
     if (!this.isLicensed) return { ok: false, reason: "License required" };
 
     const licenses = await this.getActiveLicenses();
-    const needsCredits = licenses.some((e) => {
-      const mode = e.licenseInfo?.billingMode || "subscription";
-      return mode === "credits" || mode === "hybrid";
-    });
+    if (!this.requiresCreditBilling(licenses)) {
+      return { ok: true };
+    }
 
-    if (needsCredits) {
-      const unlimited = licenses.some((e) => e.licenseInfo?.unlimitedCredits);
-      if (!unlimited) {
-        const total = this.getTotalCreditsBalance(licenses);
-        if (total <= 0) {
-          return {
-            ok: false,
-            reason: actionLabel
-              ? `${actionLabel} requires credits — buy a credit pack`
-              : "Insufficient credits",
-            needsTopUp: true,
-          };
-        }
+    const unlimited = licenses.some(
+      (e) =>
+        this.licenseEntryHasAccess(e) &&
+        this.normalizeLicenseInfo(e.licenseInfo).unlimitedCredits,
+    );
+    if (!unlimited) {
+      const sources = this.getCreditSources(licenses).filter((e) =>
+        this.licenseEntryHasAccess(e),
+      );
+      const total = sources.reduce(
+        (sum, e) => sum + (Number(e.licenseInfo?.creditsBalance ?? 0) || 0),
+        0,
+      );
+      if (total <= 0) {
+        return {
+          ok: false,
+          reason: actionLabel
+            ? `${actionLabel} requires credits — buy a credit pack`
+            : "Insufficient credits",
+          needsTopUp: true,
+        };
       }
-      const consumed = await this.consumeCredits();
-      if (!consumed.ok && !consumed.skipped) {
-        return consumed;
-      }
+    }
+    const consumed = await this.consumeCredits();
+    if (!consumed.ok && !consumed.skipped) {
+      return consumed;
     }
     return { ok: true };
   },

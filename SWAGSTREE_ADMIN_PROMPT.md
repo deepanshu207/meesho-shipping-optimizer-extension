@@ -299,6 +299,17 @@ Optional admin action: **Reset today's runs** (sets `images_generated_today` to 
 Collection `shipping_optimizer_demo_keys/{KEY}` — list, add, enable/disable, delete.
 Merged with inline `demo_keys` in config.
 
+| Field | Notes |
+|-------|-------|
+| `days` | Trial length (`30` default). Ignored when `unlimited_time: true` |
+| `label` | Shown in extension |
+| `unlimited_time` | `true` = demo never expires (extension shows **Never expires**) |
+
+```json
+{ "days": 30, "label": "Free trial", "unlimited_time": false }
+{ "days": 0, "label": "Partner unlimited demo", "unlimited_time": true }
+```
+
 ---
 
 ## TAB 4: Paid Licenses
@@ -341,17 +352,69 @@ Merged with inline `demo_keys` in config.
 
 ### License list & actions
 
-Show: key, customer, plan, billing_mode, devices (2/3 or Unlimited), credits, expiry (or "Unlimited"), status.
+Show: key, customer, plan, billing_mode, devices (2/3 or Unlimited), credits, **validity** (Never expires / No expiry / date / Expired), status.
+
+**Validity column rules (match extension):**
+| Display | When |
+|---------|------|
+| **Never expires** | `unlimited_time: true` OR `plan_kind: lifetime` OR plan `days: 0` |
+| **No expiry** | `expiresAt` empty and not unlimited (open-ended admin grant) |
+| **Expires {date}** | Future `expiresAt` |
+| **Expired** | Past `expiresAt` and not unlimited |
 
 | Action | Effect |
-|--------|--------|
+|-------|--------|
 | Revoke/Activate | Toggle `active` |
 | Reset devices | Clear `device_ids[]`, `machineId`, `activatedAt` |
 | Add credits | `credits_balance += N` (top-up after pack purchase) |
 | Edit overrides | Change unlimited flags, max_devices, billing_mode per customer |
+| **Grant lifetime** | Set `unlimited_time: true`, clear `expiresAt` |
+| **Clear expiry** | Set `expiresAt: ""` for open-ended access |
 | Delete | Confirm + type DELETE |
 
 Search: key, phone, planId, machineId, device_ids.
+
+### License flexibility matrix (admin must support all)
+
+The extension treats these as **never expiring** (no expiry countdown, badge **Lifetime** / **Never expires**):
+
+| Trigger | Where set |
+|---------|-----------|
+| `unlimited_time: true` | Plan or license doc |
+| `plan_kind: "lifetime"` or `"unlimited"` | Plan or license doc |
+| `days: 0` on plan | Plan (auto-sets unlimited time on activation) |
+| `expiresAt` empty + `billing_mode: subscription` | License doc (open-ended grant) |
+
+**Unlimited flags (independent — mix freely):**
+
+| Flag | Effect |
+|------|--------|
+| `unlimited_time` | Never expires — ignores `expiresAt` even if set |
+| `unlimited_devices` | No device cap (`device_ids` still tracked) |
+| `unlimited_credits` | Never deduct credits; image-gen free if credits would apply |
+
+**Billing mode × expiry examples (create-license presets):**
+
+| Preset | billing_mode | unlimited_time | unlimited_credits | Typical use |
+|--------|--------------|----------------|-------------------|-------------|
+| Monthly sub | subscription | false | false | `expiresAt` on activation + 30d |
+| **Lifetime** | subscription | **true** | false | Pay once, use forever |
+| **Lifetime Pro** | subscription | **true** | **true** | Everything unlimited |
+| Credits pack | credits | true* | false | Balance-based; no time limit |
+| Hybrid yearly | hybrid | false | false | 1 year + credit pool |
+| **Lifetime hybrid** | hybrid | **true** | false | Never expires; top up credits when empty |
+| Enterprise open | subscription | false | false | Leave `expiresAt` empty = no expiry |
+
+\*Credits-only licenses don't use time expiry; `unlimited_time` optional.
+
+**Admin create-license UI must include:**
+- Checkboxes: **Never expires** (`unlimited_time`), **Unlimited devices**, **Unlimited credits**
+- **Expiry mode:** ( ) Starts on activation  ( ) Fixed date  ( ) Never expires  ( ) No expiry (leave blank)
+- When **Never expires** checked → hide/disable `expiresAt` and `planDays` inputs; force `expiresAt: ""` on save
+- Plan dropdown shows badges: `Lifetime`, `Unlimited credits`, `Hybrid`, etc.
+- License list filter: Active / Expired / **Lifetime** / Credits low
+
+**Stacked licenses:** Lifetime subscription + separate credit top-up key → extension keeps lifetime access even if top-up credits hit 0 (credits only required when an *accessible* hybrid/credits license exists).
 
 ---
 
@@ -370,11 +433,27 @@ Extension generates Device ID per browser profile (e.g. `M1A2B3C4D5E6`). Kiwi An
 
 ## Billing modes
 
-| Mode | Rule |
-|------|------|
-| `subscription` | Valid until `expiresAt` (or forever if `unlimited_time`) |
-| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) |
-| `hybrid` | Not expired AND has credits (unless unlimited flags) |
+| Mode | Access rule |
+|------|-------------|
+| `subscription` | Valid while **not expired** — `unlimited_time` / lifetime / empty `expiresAt` = never expires |
+| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) — time not used |
+| `hybrid` | Valid while **(not expired OR unlimited_time)** AND **(has credits OR unlimited_credits)** |
+
+**Never-expire subscription example (paid license doc):**
+```json
+{
+  "active": true,
+  "planId": "lifetime",
+  "billing_mode": "subscription",
+  "unlimited_time": true,
+  "unlimited_devices": false,
+  "unlimited_credits": false,
+  "expiresAt": "",
+  "planDays": 0
+}
+```
+
+Extension shows: badge **Lifetime**, validity **Never expires**, no expiry warnings.
 
 ### Stacked licenses (plan + credit top-up)
 
@@ -417,6 +496,9 @@ The extension supports **multiple active keys on one device**:
 10. Add 6 support users with `page_size: 5` → extension shows paginated list with Prev/Next
 11. Edit plan `features` / `detail_sections` in Firebase → plan detail screen updates without extension release
 12. Mobile Kiwi: WhatsApp Support opens app directly (not intent:// page)
+13. Create license with `unlimited_time: true` → extension shows **Lifetime** / **Never expires**, no expiry warnings
+14. Lifetime subscription + empty credit top-up → generate still works (subscription not blocked by empty top-up)
+15. Demo key with `unlimited_time: true` → never expires in extension
 
 ---
 

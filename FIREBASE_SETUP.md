@@ -322,11 +322,21 @@ Add to `shipping_optimizer_config/app`:
 
 | Mode | Access rule |
 |------|-------------|
-| `subscription` | Valid until `expiresAt` (default for time-based plans) |
-| `credits` | Valid while `credits_balance` > 0 (no expiry required) |
-| `hybrid` | Valid while not expired **and** `credits_balance` > 0 |
+| `subscription` | Valid while not expired — **never expires** when `unlimited_time: true`, `plan_kind: lifetime`, plan `days: 0`, or `expiresAt` left empty |
+| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) |
+| `hybrid` | Valid while **(not expired OR unlimited_time)** AND **(has credits OR unlimited_credits)** |
 
-When credits run out, user buys a pack via WhatsApp → admin adds to `credits_balance` on their license.
+**Never-expiring licenses** — any of:
+- `unlimited_time: true` on plan or license (clears/ignores `expiresAt`)
+- `plan_kind: "lifetime"` or `"unlimited"`
+- Plan `days: 0`
+- Admin leaves `expiresAt` empty on a subscription license (open-ended)
+
+Extension shows **Never expires** / **Lifetime** badge — no expiry countdown.
+
+**Stacked keys:** A lifetime `subscription` key stays active even if a separate credit top-up key runs out of balance.
+
+When credits run out on a hybrid plan, user buys a pack via WhatsApp → admin adds to `credits_balance` on their license.
 
 ### AI image generation limits (`credits.image_generation`)
 
