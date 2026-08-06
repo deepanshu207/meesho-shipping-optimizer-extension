@@ -97,46 +97,21 @@ class BackgroundService {
     return digits;
   }
 
-  /** Open WhatsApp from background — mobile uses app scheme only (no web fallback timer). */
+  /** Desktop only — open wa.me in a new tab (never used on mobile). */
   async openWhatsApp(message) {
     const phone = this.normalizeWhatsAppPhone(message?.phone);
     const text = encodeURIComponent(message?.message || "");
-    const scheme = `whatsapp://send?phone=${phone}&text=${text}`;
     const web = `https://wa.me/${phone}?text=${text}`;
 
-    const createTab = (url) =>
-      new Promise((resolve) => {
-        try {
-          chrome.tabs.create({ url, active: true }, (tab) => {
-            if (chrome.runtime.lastError) {
-              resolve({ ok: false, tabId: null });
-              return;
-            }
-            resolve({ ok: true, tabId: tab?.id ?? null });
-          });
-        } catch (e) {
-          resolve({ ok: false, tabId: null });
-        }
-      });
-
-    if (message?.mobile) {
-      const { ok, tabId } = await createTab(scheme);
-      if (!ok) {
-        await createTab(web);
-        return;
+    return new Promise((resolve) => {
+      try {
+        chrome.tabs.create({ url: web, active: true }, () => {
+          resolve(!chrome.runtime.lastError);
+        });
+      } catch (e) {
+        resolve(false);
       }
-      // App handoff — remove the intermediate scheme tab so the user stays on Meesho.
-      if (tabId != null) {
-        setTimeout(() => {
-          try {
-            chrome.tabs.remove(tabId);
-          } catch (e) {}
-        }, 2500);
-      }
-      return;
-    }
-
-    await createTab(web);
+    });
   }
 
   async checkShippingCost(imageData) {
