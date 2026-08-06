@@ -684,13 +684,46 @@ const LicenseManager = {
     };
   },
 
-  _imageCreditsApply(licenses, config) {
-    if (!config || config.credits_per_image <= 0) return false;
-    if (licenses.some((e) => e.licenseInfo?.unlimitedCredits)) return false;
-    return licenses.some((e) => {
+  _hasCreditsBillingLicense(licenses) {
+    return (licenses || []).some((e) => {
       const mode = e.licenseInfo?.billingMode || "subscription";
       return mode === "credits" || mode === "hybrid";
     });
+  },
+
+  _imageCreditsApply(licenses, config) {
+    if (licenses.some((e) => e.licenseInfo?.unlimitedCredits)) return false;
+    if (!this._hasCreditsBillingLicense(licenses)) return false;
+    if (!config?.configured) return true;
+    return config.credits_per_image > 0;
+  },
+
+  async getOperationCreditCost() {
+    if (
+      CONFIG?.USE_FIREBASE_LICENSE &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        const cfg = await FirebaseLicense.getCreditsConfig();
+        return Math.max(1, Number(cfg.cost_per_operation) || 1);
+      } catch (e) {
+        console.warn("Credits config load failed:", e.message);
+      }
+    }
+    return 1;
+  },
+
+  /** Credits charged per generation run for credits/hybrid licenses. */
+  async resolveImageGenRunCost(licenses, config) {
+    if (!this._imageCreditsApply(licenses, config)) return 0;
+    if (config?.configured && config.credits_per_image > 0) {
+      return config.credits_per_image;
+    }
+    if (!config?.configured) {
+      return this.getOperationCreditCost();
+    }
+    return 0;
   },
 
   /**
@@ -703,8 +736,27 @@ const LicenseManager = {
     const variants = Math.max(1, Number(variantCount) || 1);
     const runs = 1;
 
+    const licenses = await this.getActiveLicenses();
+
     if (!config.configured) {
-      return { ok: true, legacy: true, config, cost: 0 };
+      const creditsApply = this._imageCreditsApply(licenses, config);
+      let cost = 0;
+      if (creditsApply) {
+        cost = await this.resolveImageGenRunCost(licenses, config);
+        const balance = this.getTotalCreditsBalance(licenses);
+        if (balance !== Infinity && balance < cost) {
+          return {
+            ok: false,
+            reason: `Need ${cost} credit${cost === 1 ? "" : "s"}, you have ${balance}. Buy a credit pack to continue.`,
+            needsTopUp: true,
+            config,
+            cost,
+            legacy: true,
+            creditsApply,
+          };
+        }
+      }
+      return { ok: true, legacy: true, config, cost, creditsApply };
     }
     if (!config.enabled) {
       return {
@@ -773,20 +825,20 @@ const LicenseManager = {
       }
     }
 
-    const licenses = await this.getActiveLicenses();
     const creditsApply = this._imageCreditsApply(licenses, config);
     let cost = 0;
     if (creditsApply) {
-      cost = config.credits_per_image * runs;
+      cost = (await this.resolveImageGenRunCost(licenses, config)) * runs;
       const balance = this.getTotalCreditsBalance(licenses);
       if (balance !== Infinity && balance < cost) {
         return {
           ok: false,
-          reason: `Need ${cost} credits, you have ${balance}. Buy a credit pack to continue.`,
+          reason: `Need ${cost} credit${cost === 1 ? "" : "s"}, you have ${balance}. Buy a credit pack to continue.`,
           needsTopUp: true,
           config,
           counters,
           cost,
+          creditsApply,
         };
       }
     }
@@ -804,34 +856,27 @@ const LicenseManager = {
         openModal: true,
       };
     }
-    const gate = await this.canGenerateImages(batchCount);
-    if (!gate.ok) return gate;
-
-    if (gate.legacy) {
-      const consumed = await this.ensureCanOperate("Generate");
-      if (!consumed.ok) {
-        return {
-          ok: false,
-          reason: consumed.reason,
-          needsTopUp: consumed.needsTopUp,
-        };
-      }
-      return { ok: true, legacy: true };
-    }
-    return gate;
+    return this.canGenerateImages(batchCount);
   },
 
-  /** Deduct credits + increment counters after a generation run (always 1 per run). */
+  /** Deduct credits when a generation run starts (1 per run, including stopped runs). */
+  async chargeImageGenerationRun(gate) {
+    const config = gate?.config || (await this.getImageGenConfig());
+    const licenses = await this.getActiveLicenses();
+    let cost = Number(gate?.cost) || 0;
+    if (cost <= 0) {
+      cost = await this.resolveImageGenRunCost(licenses, config);
+    }
+    if (cost <= 0) return { ok: true, skipped: true };
+    return this.consumeCredits(cost);
+  },
+
+  /** Increment generation-run counters after a run (credits charged separately at run start). */
   async recordImageGeneration(count, gate) {
     const n = Math.max(1, Number(count) || 1);
 
     const config = gate?.config || (await this.getImageGenConfig());
     if (!config.configured) return { ok: true, skipped: true };
-
-    const cost = Number(gate?.cost) || 0;
-    if (cost > 0) {
-      await this.consumeCredits(cost);
-    }
 
     const licenses = await this.getActiveLicenses();
     const primary = this.pickPrimaryLicense(licenses);
@@ -885,6 +930,9 @@ const LicenseManager = {
     const counters = await this.getImageGenCounters();
     const licenses = await this.getActiveLicenses();
     const creditsApply = this._imageCreditsApply(licenses, config);
+    const costPerRun = creditsApply
+      ? await this.resolveImageGenRunCost(licenses, config)
+      : 0;
     const balance = this.getTotalCreditsBalance(licenses);
     const remainingDaily =
       config.daily_limit > 0
@@ -899,9 +947,9 @@ const LicenseManager = {
       counters,
       creditsApply,
       creditsBalance: balance,
-      costPerRun: creditsApply ? config.credits_per_image : 0,
+      costPerRun,
       /** @deprecated use costPerRun — kept for older callers */
-      costPerImage: creditsApply ? config.credits_per_image : 0,
+      costPerImage: costPerRun,
       remainingDaily,
       remainingMonthly,
     };
