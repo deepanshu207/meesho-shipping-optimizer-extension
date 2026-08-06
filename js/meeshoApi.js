@@ -44,7 +44,16 @@ function describeFetchError(err) {
 }
 
 const MeeshoAPI = {
-  MAX_RESULT_VARIANTS: 100,
+  MAX_RESULT_VARIANTS: 200,
+
+  setMaxResultVariants(cap) {
+    const n = Math.max(1, Number(cap) || 200);
+    this.MAX_RESULT_VARIANTS = n;
+  },
+
+  getMaxResultVariants() {
+    return this.MAX_RESULT_VARIANTS;
+  },
   // Borders outward around full-size product — profiles tuned toward ₹49 (38–48KB slabs)
   LOW_SHIPPING_FRAMED_PROFILES: [
     // Original set (often lands ₹63–65 — kept for comparison)

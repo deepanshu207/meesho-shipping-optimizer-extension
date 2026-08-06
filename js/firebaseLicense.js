@@ -239,6 +239,14 @@ const FirebaseLicense = {
         p?.detail_sections ?? p?.detailSections,
       ),
       highlights: this.parsePlanHighlights(p?.highlights),
+      card_hint: p?.card_hint || p?.cardHint || "",
+      card_subtitle: p?.card_subtitle || p?.cardSubtitle || "",
+      cta_text: p?.cta_text || p?.ctaText || "Buy via WhatsApp",
+      detail_subtitle: p?.detail_subtitle || p?.detailSubtitle || "",
+      detail_footer: p?.detail_footer || p?.detailFooter || "",
+      show_whatsapp_icon:
+        p?.show_whatsapp_icon !== false && p?.showWhatsappIcon !== false,
+      card_icon: p?.card_icon || p?.cardIcon || "",
     };
   },
 
@@ -435,6 +443,7 @@ const FirebaseLicense = {
     let html = `<div class="plan-detail-header">
       ${bestTag}
       <h2 class="plan-detail-name">${this.escapeHtml(plan.name)}</h2>
+      ${plan.detail_subtitle ? `<p class="plan-detail-subtitle">${this.escapeHtml(plan.detail_subtitle)}</p>` : ""}
       <div class="plan-detail-price">₹${plan.price}</div>
       ${save}
       <p class="plan-detail-meta">${this.escapeHtml(duration)} · ${this.escapeHtml(devices)}</p>
@@ -503,9 +512,13 @@ const FirebaseLicense = {
     }
 
     const product = options.productName || "Shipping Optimizer";
+    const cta = plan.cta_text || "Buy via WhatsApp";
     html += `<button type="button" class="btn btn-whatsapp plan-detail-buy-btn" data-plan="${this.escapeAttr(plan.id)}" style="margin-top:14px;">
-      Buy via WhatsApp
+      ${this.escapeHtml(cta)}
     </button>`;
+    if (plan.detail_footer) {
+      html += `<p class="plan-detail-footer">${this.escapeHtml(plan.detail_footer)}</p>`;
+    }
 
     return html;
   },
@@ -865,6 +878,203 @@ const FirebaseLicense = {
   async getImageGenerationConfig(forceFresh = false) {
     const credits = await this.getCreditsConfig(forceFresh);
     return this.getImageGenConfig(credits);
+  },
+
+  defaultSmartModeConfig() {
+    const values = [20, 50, 100, 200];
+    return {
+      configured: false,
+      variant_options: values.map((value, order) => ({
+        value,
+        label: String(value),
+        active: true,
+        order,
+      })),
+      default_variant: 20,
+      max_variants_cap: 200,
+      label: "Max Variants",
+      hint: "⚡ Live Meesho shipping checks — finds the lowest ₹ from generated variants",
+    };
+  },
+
+  normalizeVariantOption(raw, index) {
+    if (typeof raw === "number" || typeof raw === "string") {
+      const value = Math.max(1, Number(raw) || 0);
+      if (!value) return null;
+      return { value, label: String(value), active: true, order: index };
+    }
+    if (!raw || typeof raw !== "object") return null;
+    const value = Math.max(
+      1,
+      Number(raw.value ?? raw.variants ?? raw.count ?? raw.max) || 0,
+    );
+    if (!value) return null;
+    return {
+      value,
+      label: String(raw.label || raw.name || value),
+      active: raw.active !== false,
+      order: raw.order != null ? Number(raw.order) : index,
+    };
+  },
+
+  parseVariantOptions(raw) {
+    if (!Array.isArray(raw)) return null;
+    return raw
+      .map((item, i) => this.normalizeVariantOption(item, i))
+      .filter(Boolean)
+      .filter((o) => o.active)
+      .sort((a, b) => a.order - b.order || a.value - b.value);
+  },
+
+  normalizeSmartModeConfig(raw) {
+    const configured = !!raw && typeof raw === "object";
+    const defaults = this.defaultSmartModeConfig();
+    const r = configured ? raw : {};
+    const parsed =
+      this.parseVariantOptions(
+        r.variant_options ?? r.variantOptions ?? r.options,
+      ) || defaults.variant_options;
+    const maxCap = Math.max(
+      1,
+      Number(
+        r.max_variants_cap ?? r.maxVariantsCap ?? defaults.max_variants_cap,
+      ) || defaults.max_variants_cap,
+    );
+    let options = parsed.filter((o) => o.value <= maxCap);
+    if (!options.length) {
+      options = defaults.variant_options.filter((o) => o.value <= maxCap);
+    }
+    const requestedDefault = Math.max(
+      1,
+      Number(r.default_variant ?? r.defaultVariant ?? defaults.default_variant) ||
+        defaults.default_variant,
+    );
+    const defaultVariant =
+      options.find((o) => o.value === requestedDefault)?.value ||
+      options[0]?.value ||
+      Math.min(requestedDefault, maxCap);
+    return {
+      configured,
+      variant_options: options,
+      default_variant: defaultVariant,
+      max_variants_cap: maxCap,
+      label: r.label || r.variant_label || defaults.label,
+      hint: r.hint || r.help_text || r.helpText || defaults.hint,
+    };
+  },
+
+  async getSmartModeConfig(forceFresh = false) {
+    const app = await this.getAppConfig(forceFresh);
+    const raw =
+      app?.smart_mode ??
+      app?.smartMode ??
+      app?.credits?.smart_mode ??
+      app?.credits?.smartMode;
+    return this.normalizeSmartModeConfig(raw);
+  },
+
+  applySmartModeRuntime(config, imageGenConfig) {
+    const cfg = config || this.defaultSmartModeConfig();
+    let options = [...(cfg.variant_options || [])];
+    const batchMax = Number(imageGenConfig?.max_batch_size) || 0;
+    if (batchMax > 0) {
+      options = options.filter((o) => o.value <= batchMax);
+    }
+    if (!options.length) {
+      options = this.defaultSmartModeConfig().variant_options.filter(
+        (o) => !batchMax || o.value <= batchMax,
+      );
+    }
+    let defaultVariant = cfg.default_variant;
+    if (!options.some((o) => o.value === defaultVariant)) {
+      defaultVariant = options[0]?.value || defaultVariant;
+    }
+    const resolved = {
+      ...cfg,
+      variant_options: options,
+      default_variant: defaultVariant,
+      max_variants_cap: Math.max(
+        cfg.max_variants_cap,
+        ...options.map((o) => o.value),
+        defaultVariant,
+      ),
+    };
+    if (typeof MeeshoAPI !== "undefined" && MeeshoAPI.setMaxResultVariants) {
+      MeeshoAPI.setMaxResultVariants(resolved.max_variants_cap);
+    }
+    if (typeof globalThis !== "undefined") {
+      globalThis.__smartModeConfig = resolved;
+    }
+    return resolved;
+  },
+
+  fillMaxAttemptsSelect(selectEl, config) {
+    if (!selectEl || !config) return;
+    const options = config.variant_options || [];
+    if (!options.length) return;
+    const prev = Number(selectEl.value);
+    const hasPrev = options.some((o) => o.value === prev);
+    const selectedValue = hasPrev ? prev : config.default_variant;
+    selectEl.innerHTML = options
+      .map((o) => {
+        const selected = o.value === selectedValue;
+        return `<option value="${o.value}"${selected ? " selected" : ""}>${this.escapeHtml(o.label)}</option>`;
+      })
+      .join("");
+    selectEl.value = String(selectedValue);
+  },
+
+  updateSmartModeLabels(root, config) {
+    const scope = root || document;
+    const label = scope.querySelector('label[for="max-attempts"]');
+    if (label && config?.label) label.textContent = config.label;
+    const hint = scope.querySelector("#smart-mode-hint");
+    if (hint && config?.hint) hint.textContent = config.hint;
+  },
+
+  planWhatsAppIconHtml() {
+    return `<svg class="plan-wa-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`;
+  },
+
+  planCardRowHtml(mainBtnHtml, plan) {
+    if (plan.show_whatsapp_icon === false) return mainBtnHtml;
+    const hint = plan.card_hint
+      ? `<div class="plan-card-hint">${this.escapeHtml(plan.card_hint)}</div>`
+      : "";
+    return `<div class="plan-card-row">
+      ${mainBtnHtml}
+      <button type="button" class="plan-wa-quick-btn" data-plan="${this.escapeAttr(plan.id)}" title="Buy on WhatsApp" aria-label="Buy ${this.escapeAttr(plan.name)} on WhatsApp">
+        ${this.planWhatsAppIconHtml()}
+      </button>
+    </div>${hint}`;
+  },
+
+  wirePlanCardActions(root, handlers = {}) {
+    if (!root) return;
+    const onDetail =
+      typeof handlers.onDetail === "function" ? handlers.onDetail : null;
+    const onWhatsApp =
+      typeof handlers.onWhatsApp === "function" ? handlers.onWhatsApp : null;
+    root.querySelectorAll(".plan-buy-btn").forEach((btn) => {
+      if (btn.dataset.planWired === "1") return;
+      btn.dataset.planWired = "1";
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const planId = btn.dataset.plan;
+        if (planId && onDetail) onDetail(planId, btn);
+      });
+    });
+    root.querySelectorAll(".plan-wa-quick-btn").forEach((btn) => {
+      if (btn.dataset.planWired === "1") return;
+      btn.dataset.planWired = "1";
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const planId = btn.dataset.plan;
+        if (planId && onWhatsApp) onWhatsApp(planId, btn);
+      });
+    });
   },
 
   /** Local-date period keys for daily/monthly counters. */
@@ -1596,9 +1806,13 @@ const FirebaseLicense = {
             : "";
           const durationLabel = this.formatPlanDurationLabel(p);
           const devicesLabel = this.formatPlanDevicesLabel(p);
+          const subtitle = p.card_subtitle
+            ? `<div class="plan-note" style="color:var(--mso-muted);">${this.escapeHtml(p.card_subtitle)}</div>`
+            : "";
           const save = p.save
             ? `<div class="plan-note">${p.save}</div>`
-            : `<div class="plan-note" style="color:var(--mso-muted);">${durationLabel} · ${devicesLabel}</div>`;
+            : subtitle ||
+              `<div class="plan-note" style="color:var(--mso-muted);">${durationLabel} · ${devicesLabel}</div>`;
           const nameStyle = p.best ? ' style="margin-top:4px;"' : "";
           const priceStyle = p.best
             ? ' style="color:var(--mso-success);"'
@@ -1609,7 +1823,7 @@ const FirebaseLicense = {
             <div class="plan-price"${priceStyle}>₹${p.price}</div>
             ${save}
           </button>`;
-          return this.planCellWrap(btn, p);
+          return this.planCellWrap(this.planCardRowHtml(btn, p), p);
         })
         .join("");
       this.wirePlanAddonSelection(container);
@@ -1626,16 +1840,20 @@ const FirebaseLicense = {
           : "";
         const durationLabel = this.formatPlanDurationLabel(p);
         const devicesLabel = this.formatPlanDevicesLabel(p);
+        const subtitle = p.card_subtitle
+          ? `<div style="font-size:9px;color:#6b7280;">${this.escapeHtml(p.card_subtitle)}</div>`
+          : "";
         const save = p.save
           ? `<div style="font-size:9px;color:#10b981;">${p.save}</div>`
-          : `<div style="font-size:9px;color:#6b7280;">${durationLabel} · ${devicesLabel}</div>`;
-        const btn = `<button type="button" class="plan-buy-btn" ${this.planDataAttrs(p, durationLabel)} style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;">
+          : subtitle ||
+            `<div style="font-size:9px;color:#6b7280;">${durationLabel} · ${devicesLabel}</div>`;
+        const btn = `<button type="button" class="plan-buy-btn" ${this.planDataAttrs(p, durationLabel)} style="${best}border-radius:8px;padding:10px;text-align:center;cursor:pointer;color:#1f2937;flex:1;min-width:0;">
           ${tag}
           <div style="font-size:11px;color:#6b7280;${p.best ? "margin-top:4px;" : ""}">${p.name}</div>
           <div style="font-size:20px;font-weight:700;color:#e67e22;">₹${p.price}</div>
           ${save}
         </button>`;
-        return this.planCellWrap(btn, p);
+        return this.planCellWrap(this.planCardRowHtml(btn, p), p);
       })
       .join("");
 
@@ -1840,13 +2058,14 @@ const FirebaseLicense = {
     const creditsSection =
       root.querySelector("#license-credits-section") ||
       root.querySelector(".license-credits-section");
-    const hint = root.querySelector("#license-demo-hint");
+    const hint =
+      root.querySelector("#license-device-hint") ||
+      root.querySelector("#license-demo-hint");
 
-    const [plans, creditPacks, creditsCfg, demoKeys, wa] = await Promise.all([
+    const [plans, creditPacks, creditsCfg, wa] = await Promise.all([
       this.getPricingPlans(true),
       this.getCreditPacks(true),
       this.getCreditsConfig(true),
-      this.getDemoKeysMap(),
       this.getWhatsAppSettings(),
     ]);
 
@@ -1858,8 +2077,8 @@ const FirebaseLicense = {
       this.renderCreditPacks(creditsGrid, creditPacks, "modal");
     }
     if (hint) {
-      const sample = Object.keys(demoKeys)[0] || "MEESHO-DEMOFREE";
-      hint.innerHTML = `1 device per license by default · Family/Friends plans allow more · Demo: <strong>${sample}</strong>`;
+      hint.textContent =
+        "1 device per license by default · Family/Friends plans allow more devices";
     }
 
     const announcementEl =
@@ -1876,7 +2095,7 @@ const FirebaseLicense = {
       }
     }
 
-    return { plans, creditPacks, creditsConfig: creditsCfg, demoKeys, whatsapp: wa, announcement };
+    return { plans, creditPacks, creditsConfig: creditsCfg, whatsapp: wa, announcement };
   },
 };
 

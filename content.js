@@ -24,7 +24,7 @@ function pickLiveStrategy(prices) {
 const LIVE_SMART_DEFAULTS = {
   targetShipping: 100,
   maxAttempts: 20,
-  maxVariantsCap: 100,
+  maxVariantsCap: 200,
 };
 
 const STOP_FORCE_MS = 1200;
@@ -1279,16 +1279,27 @@ class MeeshoShippingOptimizer {
         };
       }
 
-      const planBtns = document.querySelectorAll(".plan-buy-btn");
-      planBtns.forEach((btn) => {
-        btn.onclick = async () => {
-          const planId = btn.dataset.plan;
-          if (planId) {
-            await showPlanDetail(planId);
-            return;
-          }
-        };
+      const openWhatsAppForPlan = (planId) => {
+        const msg = FirebaseLicense.buildPlanPurchaseMessage(
+          planId,
+          productName,
+          this.modal || document,
+        );
+        openWhatsAppChat(msg);
+      };
 
+      if (typeof FirebaseLicense !== "undefined") {
+        FirebaseLicense.wirePlanCardActions(this.modal || document, {
+          onDetail: (planId) => {
+            void showPlanDetail(planId);
+          },
+          onWhatsApp: (planId) => {
+            openWhatsAppForPlan(planId);
+          },
+        });
+      }
+
+      document.querySelectorAll(".plan-buy-btn").forEach((btn) => {
         btn.onmouseenter = () => {
           btn.style.transform = "scale(1.03)";
           btn.style.boxShadow = "0 4px 15px rgba(230,126,34,0.35)";
@@ -1596,6 +1607,37 @@ Please share payment details.`;
       );
     }
     void this.refreshImageGenQuotaUi();
+    void this.hydrateSmartModeSettings();
+  }
+
+  async hydrateSmartModeSettings(root) {
+    const scope = root || this.modal || document;
+    let smartCfg = null;
+    let imageGenCfg = null;
+    if (
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.isEnabled()
+    ) {
+      try {
+        [smartCfg, imageGenCfg] = await Promise.all([
+          FirebaseLicense.getSmartModeConfig(true),
+          FirebaseLicense.getImageGenerationConfig(true),
+        ]);
+      } catch (e) {
+        console.warn("Smart mode config load failed:", e.message);
+      }
+    }
+    if (!smartCfg && typeof FirebaseLicense !== "undefined") {
+      smartCfg = FirebaseLicense.defaultSmartModeConfig();
+    }
+    if (smartCfg) {
+      smartCfg = FirebaseLicense.applySmartModeRuntime(smartCfg, imageGenCfg);
+      LIVE_SMART_DEFAULTS.maxAttempts = smartCfg.default_variant;
+      LIVE_SMART_DEFAULTS.maxVariantsCap = smartCfg.max_variants_cap;
+      const select = scope.querySelector("#max-attempts");
+      FirebaseLicense.fillMaxAttemptsSelect(select, smartCfg);
+      FirebaseLicense.updateSmartModeLabels(scope, smartCfg);
+    }
   }
 
   /** Show remaining daily/monthly quota + per-generation credit cost. */
