@@ -39,66 +39,39 @@ const PopupActions = {
   },
 
   buildWhatsAppUrls(number, message) {
+    if (typeof WhatsAppLink !== "undefined") {
+      return WhatsAppLink.buildUrls(number, message);
+    }
     const phone = this.normalizeWhatsAppNumber(number);
     const text = encodeURIComponent(message || "");
     return {
       api: `https://api.whatsapp.com/send?phone=${phone}&text=${text}`,
       waMe: `https://wa.me/${phone}?text=${text}`,
-      intent: `intent://send?phone=${phone}&text=${text}#Intent;scheme=whatsapp;package=com.whatsapp;end`,
       scheme: `whatsapp://send?phone=${phone}&text=${text}`,
     };
   },
 
   openWhatsApp(number, message) {
+    if (typeof WhatsAppLink !== "undefined") {
+      return WhatsAppLink.open(number, message);
+    }
     const urls = this.buildWhatsAppUrls(number, message);
     if (this.isMobile()) {
-      return this.openWhatsAppApp(urls);
+      try {
+        window.location.href = urls.scheme;
+      } catch (e) {}
+      setTimeout(() => this.openUrl(urls.api || urls.waMe), 800);
+      return Promise.resolve(true);
     }
     return this.openUrl(urls.waMe || urls.api);
   },
 
-  /** Mobile: prefer WhatsApp app (intent/scheme), then web fallback. */
+  /** @deprecated use openWhatsApp */
   openWhatsAppApp(urls) {
-    const candidates = this.isAndroid()
-      ? [urls.intent, urls.scheme, urls.api]
-      : [urls.scheme, urls.waMe || urls.api];
-
-    return new Promise((resolve) => {
-      const tryAt = (index) => {
-        if (index >= candidates.length) {
-          resolve(false);
-          return;
-        }
-        const url = candidates[index];
-        const isLast = index >= candidates.length - 1;
-
-        if (chrome?.tabs?.create) {
-          chrome.tabs.create({ url }, () => {
-            const err = chrome.runtime.lastError;
-            if (!err || isLast) {
-              resolve(true);
-              return;
-            }
-            setTimeout(() => tryAt(index + 1), 350);
-          });
-          return;
-        }
-
-        try {
-          const link = document.createElement("a");
-          link.href = url;
-          link.rel = "noopener";
-          link.style.display = "none";
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          resolve(true);
-        } catch (e) {
-          tryAt(index + 1);
-        }
-      };
-      tryAt(0);
-    });
+    return this.openWhatsApp(
+      (urls?.scheme || "").match(/phone=([^&]+)/)?.[1],
+      decodeURIComponent((urls?.scheme || "").match(/text=([^#]+)/)?.[1] || ""),
+    );
   },
 
   openUrl(url) {
@@ -216,6 +189,7 @@ const PopupActions = {
             "js/firebaseLicense.js",
             "js/machineId.js",
             "js/utils.js",
+            "js/whatsappLink.js",
             "js/license.js",
             "js/meeshoCategories.js",
             "js/meeshoApi.js",

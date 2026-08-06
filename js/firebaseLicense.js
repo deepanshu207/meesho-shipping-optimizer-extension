@@ -234,7 +234,306 @@ const FirebaseLicense = {
       credit_addons: this.parseCreditAddons(
         p?.credit_addons ?? p?.creditAddons,
       ),
+      features: this.parsePlanFeatures(p?.features ?? p?.plan_features),
+      detail_sections: this.parsePlanDetailSections(
+        p?.detail_sections ?? p?.detailSections,
+      ),
+      highlights: this.parsePlanHighlights(p?.highlights),
     };
+  },
+
+  normalizePlanFeature(item, index) {
+    if (typeof item === "string") {
+      return { icon: "✓", title: item, text: "" };
+    }
+    if (!item || typeof item !== "object") return null;
+    const title = item.title || item.label || item.name || item.text || "";
+    if (!title) return null;
+    return {
+      icon: item.icon || item.emoji || "✓",
+      title,
+      text: item.text || item.description || item.detail || "",
+    };
+  },
+
+  parsePlanFeatures(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((f, i) => this.normalizePlanFeature(f, i))
+      .filter(Boolean);
+  },
+
+  parsePlanDetailSections(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((s, i) => {
+        if (!s || typeof s !== "object") return null;
+        const title = s.title || s.heading || s.label || "";
+        const body = s.body || s.text || s.content || "";
+        const items = Array.isArray(s.items)
+          ? s.items.map((x) => String(x)).filter(Boolean)
+          : [];
+        if (!title && !body && !items.length) return null;
+        return {
+          title: title || `Details ${i + 1}`,
+          body,
+          items,
+        };
+      })
+      .filter(Boolean);
+  },
+
+  parsePlanHighlights(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw.map((h) => String(h)).filter(Boolean);
+  },
+
+  normalizeSupportUser(u, idFallback, index) {
+    if (!u || typeof u !== "object") return null;
+    const id = this.slugifyPlanId(u.id || idFallback || `user_${index}`);
+    const number =
+      u.whatsapp_number ||
+      u.whatsappNumber ||
+      u.phone ||
+      u.mobile ||
+      "";
+    if (!number && !u.name) return null;
+    return {
+      id: id || `user_${index}`,
+      name: u.name || u.title || "Support",
+      role: u.role || u.department || "",
+      label: u.label || u.topic || u.description || "",
+      whatsapp_number: this.normalizeWhatsAppNumber(number),
+      whatsapp_message: u.whatsapp_message || u.whatsappMessage || "",
+      active: u.active !== false,
+      order: u.order != null ? Number(u.order) : index,
+    };
+  },
+
+  normalizeWhatsAppNumber(number) {
+    let digits = String(number || "").replace(/\D/g, "");
+    if (digits.length === 10) digits = "91" + digits;
+    return digits;
+  },
+
+  parseSupportConfig(app) {
+    const raw =
+      app?.support ||
+      app?.support_users ||
+      app?.supportUsers ||
+      {};
+    const usersRaw =
+      raw.users ||
+      raw.contacts ||
+      raw.list ||
+      (Array.isArray(raw) ? raw : null);
+    let users = [];
+    if (Array.isArray(usersRaw)) {
+      users = usersRaw
+        .map((u, i) => this.normalizeSupportUser(u, u?.id || `user_${i}`, i))
+        .filter(Boolean);
+    } else if (usersRaw && typeof usersRaw === "object") {
+      users = Object.entries(usersRaw)
+        .map(([id, u]) => this.normalizeSupportUser({ ...u, id }, id, 0))
+        .filter(Boolean);
+    }
+    users = this.sortPlans(users);
+    return {
+      enabled: raw.enabled !== false,
+      title: raw.title || "Support team",
+      page_size: Math.max(1, Number(raw.page_size ?? raw.pageSize ?? 5) || 5),
+      users,
+    };
+  },
+
+  async getSupportConfig(forceFresh = false) {
+    const app = await this.getAppConfig(forceFresh);
+    return this.parseSupportConfig(app || {});
+  },
+
+  getSupportUsersPage(config, page) {
+    const users = (config?.users || []).filter((u) => u.active !== false);
+    const pageSize = Math.max(1, Number(config?.page_size) || 5);
+    const totalPages = Math.max(1, Math.ceil(users.length / pageSize) || 1);
+    const p = Math.min(Math.max(1, Number(page) || 1), totalPages);
+    const start = (p - 1) * pageSize;
+    return {
+      users: users.slice(start, start + pageSize),
+      page: p,
+      totalPages,
+      total: users.length,
+      pageSize,
+      hasPrev: p > 1,
+      hasNext: p < totalPages,
+    };
+  },
+
+  buildDefaultPlanFeatures(plan) {
+    const out = [];
+    const duration = this.formatPlanDurationLabel(plan);
+    const devices = this.formatPlanDevicesLabel(plan);
+    if (duration) out.push({ icon: "📅", title: duration, text: "" });
+    if (devices) out.push({ icon: "📱", title: devices, text: "" });
+    if (plan.included_credits > 0) {
+      out.push({
+        icon: "⚡",
+        title: `${plan.included_credits} credits included`,
+        text: "",
+      });
+    }
+    if (plan.unlimited_credits) {
+      out.push({ icon: "∞", title: "Unlimited credits", text: "" });
+    }
+    const mode = plan.billing_mode || "subscription";
+    if (mode !== "subscription") {
+      out.push({
+        icon: "💳",
+        title: `${mode} billing`,
+        text: "",
+      });
+    }
+    return out;
+  },
+
+  renderPlanDetailHtml(plan, options = {}) {
+    if (!plan) {
+      return '<p style="font-size:12px;color:#6b7280;">Plan not found.</p>';
+    }
+    const duration = this.formatPlanDurationLabel(plan);
+    const devices = this.formatPlanDevicesLabel(plan);
+    const features =
+      (plan.features || []).length > 0
+        ? plan.features
+        : this.buildDefaultPlanFeatures(plan);
+    const highlights = plan.highlights || [];
+    const sections = plan.detail_sections || [];
+    const addons = this.getPlanCreditAddons(plan);
+    const bestTag = plan.best
+      ? '<span class="plan-detail-badge">BEST VALUE</span>'
+      : "";
+    const save = plan.save
+      ? `<div class="plan-detail-save">${this.escapeHtml(plan.save)}</div>`
+      : "";
+
+    let html = `<div class="plan-detail-header">
+      ${bestTag}
+      <h2 class="plan-detail-name">${this.escapeHtml(plan.name)}</h2>
+      <div class="plan-detail-price">₹${plan.price}</div>
+      ${save}
+      <p class="plan-detail-meta">${this.escapeHtml(duration)} · ${this.escapeHtml(devices)}</p>
+    </div>`;
+
+    if (plan.description) {
+      html += `<p class="plan-detail-desc">${this.escapeHtml(plan.description)}</p>`;
+    }
+
+    if (highlights.length) {
+      html += `<div class="plan-detail-highlights">${highlights
+        .map(
+          (h) =>
+            `<span class="plan-detail-pill">${this.escapeHtml(h)}</span>`,
+        )
+        .join("")}</div>`;
+    }
+
+    if (features.length) {
+      html += `<div class="plan-detail-features">${features
+        .map(
+          (f) => `<div class="plan-detail-feature">
+          <span class="plan-detail-feature-icon">${this.escapeHtml(f.icon || "✓")}</span>
+          <div>
+            <div class="plan-detail-feature-title">${this.escapeHtml(f.title)}</div>
+            ${f.text ? `<div class="plan-detail-feature-text">${this.escapeHtml(f.text)}</div>` : ""}
+          </div>
+        </div>`,
+        )
+        .join("")}</div>`;
+    }
+
+    sections.forEach((sec) => {
+      html += `<div class="plan-detail-section">
+        <div class="plan-detail-section-title">${this.escapeHtml(sec.title)}</div>`;
+      if (sec.body) {
+        html += `<p class="plan-detail-section-body">${this.escapeHtml(sec.body)}</p>`;
+      }
+      if (sec.items?.length) {
+        html += `<ul class="plan-detail-list">${sec.items
+          .map((item) => `<li>${this.escapeHtml(item)}</li>`)
+          .join("")}</ul>`;
+      }
+      html += `</div>`;
+    });
+
+    if (addons.length) {
+      const max = Number(plan.max_addon_selections) || 0;
+      const hint =
+        max === 1
+          ? "Pick one add-on"
+          : max > 1
+            ? `Pick up to ${max}`
+            : "Optional credit add-ons";
+      html += `<div class="plan-detail-addons" data-plan="${this.escapeAttr(plan.id)}">
+        <div class="plan-detail-section-title">⚡ ${hint}</div>
+        <div class="plan-addons-chips" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px;">
+          ${addons
+            .map((a) => {
+              const sel = !!a.default_selected;
+              return `<button type="button" class="plan-addon-btn" data-plan="${this.escapeAttr(plan.id)}" data-addon-id="${this.escapeAttr(a.id)}" data-addon-credits="${a.credits}" data-addon-price="${a.price}" data-addon-label="${this.escapeAttr(a.label)}" data-addon-max="${max}" aria-pressed="${sel ? "true" : "false"}" style="font-size:10px;padding:6px 10px;border-radius:8px;cursor:pointer;background:${sel ? "linear-gradient(135deg,#ffd700,#e67e22)" : "#fff"};color:${sel ? "#3d2914" : "#c45f12"};border:1px solid ${sel ? "#e67e22" : "#f0e0c8"};font-weight:${sel ? "700" : "600"};">+${a.credits} credits · ₹${a.price}</button>`;
+            })
+            .join("")}
+        </div>
+      </div>`;
+    }
+
+    const product = options.productName || "Shipping Optimizer";
+    html += `<button type="button" class="btn btn-whatsapp plan-detail-buy-btn" data-plan="${this.escapeAttr(plan.id)}" style="margin-top:14px;">
+      Buy via WhatsApp
+    </button>`;
+
+    return html;
+  },
+
+  renderSupportUsersHtml(pageData, options = {}) {
+    const { users, page, totalPages, total, hasPrev, hasNext } =
+      pageData || {};
+    const title = options.title || "Support team";
+    if (!users?.length) {
+      return `<p style="font-size:12px;color:#6b7280;text-align:center;padding:16px 0;">No support contacts configured.</p>`;
+    }
+    const rows = users
+      .map((u) => {
+        const role = u.role
+          ? `<div class="support-user-role">${this.escapeHtml(u.role)}</div>`
+          : "";
+        const label = u.label
+          ? `<div class="support-user-label">${this.escapeHtml(u.label)}</div>`
+          : "";
+        return `<button type="button" class="support-user-row" data-support-id="${this.escapeAttr(u.id)}" data-support-number="${this.escapeAttr(u.whatsapp_number)}" data-support-message="${this.escapeAttr(u.whatsapp_message || options.defaultMessage || "")}">
+          <div class="support-user-avatar">💬</div>
+          <div class="support-user-info">
+            <div class="support-user-name">${this.escapeHtml(u.name)}</div>
+            ${role}
+            ${label}
+          </div>
+          <span class="support-user-chevron">›</span>
+        </button>`;
+      })
+      .join("");
+
+    const pager =
+      totalPages > 1
+        ? `<div class="support-pager">
+          <button type="button" class="support-page-btn" data-support-page="${page - 1}" ${hasPrev ? "" : "disabled"}>← Prev</button>
+          <span class="support-page-label">Page ${page} / ${totalPages} · ${total} contacts</span>
+          <button type="button" class="support-page-btn" data-support-page="${page + 1}" ${hasNext ? "" : "disabled"}>Next →</button>
+        </div>`
+        : `<div class="support-page-label" style="text-align:center;margin-top:8px;">${total} contact${total === 1 ? "" : "s"}</div>`;
+
+    return `<div class="support-users-wrap">
+      <p class="support-users-intro">${this.escapeHtml(title)} — tap to chat on WhatsApp</p>
+      <div class="support-users-list">${rows}</div>
+      ${pager}
+    </div>`;
   },
 
   normalizeCreditAddon(a, idFallback, index) {

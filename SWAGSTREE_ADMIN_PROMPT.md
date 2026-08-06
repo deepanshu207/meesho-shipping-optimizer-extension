@@ -71,7 +71,87 @@ Save to `shipping_optimizer_config/app`:
   "min_extension_version": "1.2.0",
   "announcement": "",
   "plans": [],
+  "support": {
+    "enabled": true,
+    "title": "Support team",
+    "page_size": 5,
+    "users": [
+      {
+        "id": "sales",
+        "name": "Deepanshu",
+        "role": "Sales & licenses",
+        "label": "New plans, upgrades, payments",
+        "whatsapp_number": "919654414891",
+        "whatsapp_message": "Hi! I need help with Shipping Optimizer.",
+        "active": true,
+        "order": 0
+      }
+    ]
+  },
   "demo_keys": { "MEESHO-DEMOFREE": { "days": 30, "label": "Free trial" } }
+}
+```
+
+**Plan detail screen (extension):** Tapping a plan opens a dedicated screen (popup + Meesho modal) with name, price, description, highlights, features, detail sections, add-ons, and **Buy via WhatsApp**. All fields above are read from Firebase — no extension update needed when you edit plans.
+
+**Support team list (extension):** Footer **WhatsApp Support** and **Upgrade / WhatsApp** open a paginated contact list when `support.users` is configured. Each row opens WhatsApp to that person's number (mobile opens app directly; desktop opens wa.me). Admin controls `page_size` (default 5) for easy pagination.
+
+### Support team editor (`support` on app doc)
+
+| Field | Notes |
+|-------|-------|
+| `enabled` | `false` hides list — extension falls back to default `whatsapp_number` |
+| `title` | Screen title e.g. "Support team" |
+| `page_size` | Contacts per page in extension (`5` default) |
+| `users[]` | Contact rows (see below) |
+
+**User row fields:** `id`, `name`, `role`, `label` (subtitle), `whatsapp_number`, `whatsapp_message` (optional prefill), `active`, `order`
+
+**Editor UI:** + Add contact, ▲/▼ reorder, Show toggle, ✕ remove. Preview pagination: "Page 1 of N". Extension shows ← Prev / Next → when more than `page_size` contacts.
+
+```json
+{
+  "id": "billing",
+  "name": "Billing",
+  "role": "Payments",
+  "label": "Invoices, UPI, credit top-ups",
+  "whatsapp_number": "919654414891",
+  "whatsapp_message": "Hi! I need billing help for Shipping Optimizer.",
+  "active": true,
+  "order": 1
+}
+```
+
+**Example plan with detail fields:**
+
+```json
+{
+  "id": "yearly",
+  "name": "Yearly Hybrid",
+  "price": 3099,
+  "days": 365,
+  "description": "Best for serious sellers — 1 year access plus credits for AI image runs.",
+  "highlights": ["Live Meesho shipping", "Family device option"],
+  "features": [
+    { "icon": "📅", "title": "1 year access", "text": "Renews annually" },
+    { "icon": "⚡", "title": "100 credits included", "text": "For AI generation runs" },
+    "Unlimited variant previews"
+  ],
+  "detail_sections": [
+    {
+      "title": "What's included",
+      "items": ["Smart mode up to 100 variants", "Apply best image to catalog", "Credit top-ups available"]
+    }
+  ],
+  "billing_mode": "hybrid",
+  "included_credits": 100,
+  "allow_credit_addons": true,
+  "credit_addons": [
+    { "id": "addon_25", "credits": 25, "price": 40, "label": "+25 credits", "active": true, "order": 0 }
+  ],
+  "active": true,
+  "order": 3,
+  "best": true
 }
 ```
 
@@ -101,7 +181,10 @@ Save to `shipping_optimizer_config/app`:
 | `allow_credit_addons` | No | `true` = show per-plan credit add-on chips |
 | `max_addon_selections` | No | `1` = pick one; `0` = unlimited multi-select |
 | `credit_addons` | No | Array: `{ id, credits, price, label, active, default_selected, order }` |
-| `description` | No | Admin note |
+| `description` | No | Short text on plan detail screen |
+| `highlights` | No | String array — pills on plan detail (e.g. `["Live shipping", "Unlimited variants"]`) |
+| `features` | No | Array of `{ icon, title, text }` or plain strings — shown on plan detail screen |
+| `detail_sections` | No | Array of `{ title, body, items[] }` — extra flexible blocks on plan detail |
 
 **Editor actions:** + Add Plan, ▲/▼ reorder, Show (active), ✕ remove, validate unique IDs.
 
@@ -186,6 +269,28 @@ Edit `credits` object on app doc:
 | `max_batch_size` | Max **variants** per run (`0` = unlimited) — does not change how runs are counted |
 
 The extension enforces these client-side and writes counters back to each license: `images_generated_total`, `images_generated_today`, `images_generated_today_date`, `images_generated_month`, `images_generated_month_key`. Counter field names say "images" for backward compatibility — they track **generation runs**, not individual variants. Your **Paid Licenses** view should label them "Generations today / this month / total" and display read-only. Leave the whole `image_generation` object out to keep legacy behavior (1 credit/operation).
+
+**Admin UI for image generation limits (Credits & Packs tab):**
+
+1. **Section title:** "AI image generation limits"
+2. **Help text (always visible):** "One generation run = one upload in the extension, regardless of how many variants (20/50/100) are requested. Stopping mid-run still counts as 1 run. Daily/monthly limits count runs, not variants."
+3. **Fields:**
+   - `enabled` — toggle
+   - `credits_per_image` — number input, label **"Credits per run"** (helper: "Charged once per upload/generation flow; field key stays `credits_per_image` for extension compatibility")
+   - `daily_limit` — number input, label **"Daily run limit"** (`0` = unlimited)
+   - `monthly_limit` — number input, label **"Monthly run limit"** (`0` = unlimited)
+   - `max_batch_size` — number input, label **"Max variants per run"** (`0` = unlimited; blocks runs that request more variants than this)
+4. **Preview card** under the form showing example: "Customer uploads 1 image, selects 50 variants → counts as **1 run**, costs **{credits_per_image}** credits (if credits plan), uses **1** from daily limit."
+5. Save nested under `credits.image_generation` on `shipping_optimizer_config/app`.
+
+**Paid Licenses tab — generation usage (read-only):**
+
+Show on each license row / detail drawer:
+- `images_generated_today` / `images_generated_today_date` → label **"Runs today"**
+- `images_generated_month` / `images_generated_month_key` → label **"Runs this month"**
+- `images_generated_total` → label **"Total runs"**
+
+Optional admin action: **Reset today's runs** (sets `images_generated_today` to `0` and updates `images_generated_today_date` to today) — for support only, with confirm dialog.
 
 ---
 
@@ -307,6 +412,11 @@ The extension supports **multiple active keys on one device**:
 5. Unlimited plan → no expiry, no device cap, no credit deduction
 6. Kiwi mobile activation → device ID appears in `device_ids[]`
 7. Sign-off in extension → device removed from `device_ids[]` for that key
+8. Set `daily_limit: 2` → customer can run generation twice (any variant count) → 3rd upload blocked until tomorrow
+9. Customer stops a run at 5/50 variants → still counts as 1 run toward daily limit and credits
+10. Add 6 support users with `page_size: 5` → extension shows paginated list with Prev/Next
+11. Edit plan `features` / `detail_sections` in Firebase → plan detail screen updates without extension release
+12. Mobile Kiwi: WhatsApp Support opens app directly (not intent:// page)
 
 ---
 

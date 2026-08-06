@@ -111,7 +111,38 @@ Plans live in the `plans` array on `shipping_optimizer_config/app`. The extensio
 | `allow_credit_addons` | No | `true` = show per-plan credit add-on chips under the plan |
 | `max_addon_selections` | No | Max add-ons a customer can pick (`1` = radio/pick one, `0` = unlimited multi-select) |
 | `credit_addons` | No | Array of add-on objects (see below) |
-| `description` | No | Extra note shown in admin (optional) |
+| `description` | No | Short text on plan detail screen |
+| `highlights` | No | String array — pills on plan detail |
+| `features` | No | Array of `{ icon, title, text }` or strings |
+| `detail_sections` | No | Array of `{ title, body, items[] }` for extra blocks |
+
+**Plan detail screen:** Tapping a plan in the popup or license modal opens a detail view (with ← Back) showing all fields above plus add-ons and **Buy via WhatsApp**.
+
+### Support team list (`support` on app doc)
+
+Paginated contact list for WhatsApp support/upgrade:
+
+```json
+"support": {
+  "enabled": true,
+  "title": "Support team",
+  "page_size": 5,
+  "users": [
+    {
+      "id": "sales",
+      "name": "Deepanshu",
+      "role": "Sales",
+      "label": "Plans & upgrades",
+      "whatsapp_number": "919654414891",
+      "whatsapp_message": "Hi! I need help with Shipping Optimizer.",
+      "active": true,
+      "order": 0
+    }
+  ]
+}
+```
+
+When `support.users` is configured, **WhatsApp Support** and **Upgrade** open this list with Prev/Next pagination. Each row opens WhatsApp (mobile: app via `whatsapp://`; desktop: `wa.me`).
 
 ### Per-plan credit add-ons
 

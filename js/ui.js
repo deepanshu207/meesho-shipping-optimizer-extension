@@ -631,12 +631,19 @@ const OptimizerUI = {
                     </div>
                     
                     <!-- Pricing Plans (loaded from Firebase) -->
+                    <div id="license-plans-view">
                     <div class="opt-section" style="padding:12px;">
-                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Click Plan to Buy</div>
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Click Plan to View Details</div>
                         <div id="license-plans-grid" class="license-plans-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px;">
                             <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
                         <div id="license-announcement" class="license-announcement" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(255,215,0,0.15);border:1px solid rgba(230,126,34,0.35);border-radius:8px;font-size:11px;color:#c45f12;text-align:center;"></div>
+                    </div>
+                    </div>
+
+                    <div id="license-plan-detail-view" style="display:none;padding:12px;">
+                        <button type="button" id="license-plan-back-btn" style="border:1px solid #f0e0c8;background:#fff;color:#3d2914;border-radius:8px;padding:8px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px;">← Back to plans</button>
+                        <div id="license-plan-detail-body"></div>
                     </div>
 
                     <div id="license-credits-section" class="license-credits-section opt-section" style="padding:12px;">

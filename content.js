@@ -1177,46 +1177,72 @@ class MeeshoShippingOptimizer {
       ) {
         FirebaseLicense.wirePlanAddonSelection(this.modal || document);
       }
-      const planBtns = document.querySelectorAll(".plan-buy-btn");
       const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
-      planBtns.forEach((btn) => {
-        btn.onclick = async () => {
-          const price = btn.dataset.price;
-          const duration = btn.dataset.duration;
-          const planId = btn.dataset.plan;
-          const buildMsg = () => {
-            if (
-              planId &&
-              typeof FirebaseLicense !== "undefined" &&
-              FirebaseLicense.buildPlanPurchaseMessage
-            ) {
-              return FirebaseLicense.buildPlanPurchaseMessage(
-                planId,
-                productName,
-                this.modal || document,
-              );
-            }
-            return `Hi! I want to purchase ${productName}.
+      const plansView = document.getElementById("license-plans-view");
+      const detailView = document.getElementById("license-plan-detail-view");
+      const detailBody = document.getElementById("license-plan-detail-body");
+      const backBtn = document.getElementById("license-plan-back-btn");
 
-📦 *Plan Selected:* ${duration}
-💰 *Price:* ₹${price}
-
-Please share payment details and license key.`;
-          };
-
+      const openWhatsAppChat = async (message, number) => {
+        let phone = number;
+        if (!phone) {
           try {
             const settings = await LicenseManager.getWhatsAppSettings();
-            window.open(
-              `https://wa.me/${settings.number}?text=${encodeURIComponent(
-                buildMsg(),
-              )}`,
-              "_blank",
+            phone = settings.number;
+          } catch (_) {
+            phone = CONFIG?.DEFAULT_WHATSAPP || "919654414891";
+          }
+        }
+        if (typeof WhatsAppLink !== "undefined") {
+          WhatsAppLink.open(phone, message);
+          return;
+        }
+        window.open(
+          `https://wa.me/${String(phone).replace(/\D/g, "")}?text=${encodeURIComponent(message)}`,
+          "_blank",
+        );
+      };
+
+      const showPlanDetail = async (planId) => {
+        if (!detailView || !detailBody) return;
+        let plan = null;
+        if (typeof FirebaseLicense !== "undefined") {
+          plan = await FirebaseLicense.getPlanById(planId);
+        }
+        if (!plan) return;
+        if (plansView) plansView.style.display = "none";
+        detailView.style.display = "block";
+        detailBody.innerHTML = FirebaseLicense.renderPlanDetailHtml(plan, {
+          productName,
+        });
+        FirebaseLicense.wirePlanAddonSelection(detailBody);
+        const buyBtn = detailBody.querySelector(".plan-detail-buy-btn");
+        if (buyBtn) {
+          buyBtn.onclick = () => {
+            const msg = FirebaseLicense.buildPlanPurchaseMessage(
+              plan.id,
+              productName,
+              this.modal || document,
             );
-          } catch (error) {
-            window.open(
-              `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent(buildMsg())}`,
-              "_blank",
-            );
+            openWhatsAppChat(msg);
+          };
+        }
+      };
+
+      if (backBtn) {
+        backBtn.onclick = () => {
+          if (detailView) detailView.style.display = "none";
+          if (plansView) plansView.style.display = "block";
+        };
+      }
+
+      const planBtns = document.querySelectorAll(".plan-buy-btn");
+      planBtns.forEach((btn) => {
+        btn.onclick = async () => {
+          const planId = btn.dataset.plan;
+          if (planId) {
+            await showPlanDetail(planId);
+            return;
           }
         };
 
@@ -1235,24 +1261,13 @@ Please share payment details and license key.`;
           const credits = btn.dataset.credits;
           const price = btn.dataset.price;
           const label = btn.dataset.label || `${credits} Credits`;
-          try {
-            const settings = await LicenseManager.getWhatsAppSettings();
-            const message = `Hi! I want to buy credits for ${CONFIG?.EXTENSION_NAME || "Shipping Optimizer"}.
+          const message = `Hi! I want to buy credits for ${productName}.
 
 ⚡ *Credit Pack:* ${label}
 💰 *Price:* ₹${price}
 
 Please share payment details.`;
-            window.open(
-              `https://wa.me/${settings.number}?text=${encodeURIComponent(message)}`,
-              "_blank",
-            );
-          } catch (error) {
-            window.open(
-              `https://wa.me/${CONFIG?.DEFAULT_WHATSAPP || "919654414891"}?text=${encodeURIComponent("Hi! I want to buy credits for Shipping Optimizer.")}`,
-              "_blank",
-            );
-          }
+          openWhatsAppChat(message);
         };
       });
     };

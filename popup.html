@@ -509,11 +509,138 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
+
+    .popup-view { display: block; }
+    .popup-view.hidden { display: none !important; }
+
+    .popup-subheader {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: -4px 0 12px;
+    }
+
+    .popup-back-btn {
+      border: 1px solid var(--mso-border);
+      background: var(--mso-surface);
+      color: var(--mso-ink);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      touch-action: manipulation;
+    }
+
+    .popup-subtitle-text {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--mso-ink);
+      flex: 1;
+    }
+
+    .plan-detail-header { text-align: center; margin-bottom: 12px; }
+    .plan-detail-badge {
+      display: inline-block;
+      background: var(--mso-grad);
+      color: var(--mso-ink);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .plan-detail-name { font-size: 20px; font-weight: 800; color: var(--mso-ink); margin: 0 0 4px; }
+    .plan-detail-price { font-size: 28px; font-weight: 800; color: var(--mso-orange); }
+    .plan-detail-save { font-size: 11px; color: var(--mso-success); font-weight: 700; margin-top: 4px; }
+    .plan-detail-meta { font-size: 11px; color: var(--mso-muted); margin-top: 6px; }
+    .plan-detail-desc { font-size: 12px; color: var(--mso-text); line-height: 1.5; margin-bottom: 12px; }
+    .plan-detail-highlights { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; justify-content: center; }
+    .plan-detail-pill {
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255, 215, 0, 0.18);
+      border: 1px solid var(--mso-border);
+      color: #c45f12;
+      font-weight: 600;
+    }
+    .plan-detail-features { display: grid; gap: 8px; margin-bottom: 12px; }
+    .plan-detail-feature {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 10px;
+      background: var(--mso-surface);
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+    }
+    .plan-detail-feature-icon { font-size: 16px; line-height: 1; }
+    .plan-detail-feature-title { font-size: 12px; font-weight: 700; color: var(--mso-ink); }
+    .plan-detail-feature-text { font-size: 11px; color: var(--mso-muted); margin-top: 2px; line-height: 1.4; }
+    .plan-detail-section { margin-bottom: 12px; }
+    .plan-detail-section-title { font-size: 11px; font-weight: 700; color: #c45f12; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .plan-detail-section-body { font-size: 12px; color: var(--mso-text); line-height: 1.5; }
+    .plan-detail-list { margin: 6px 0 0 18px; font-size: 12px; color: var(--mso-text); line-height: 1.5; }
+
+    .support-users-intro { font-size: 11px; color: var(--mso-muted); text-align: center; margin-bottom: 10px; }
+    .support-users-list { display: grid; gap: 8px; }
+    .support-user-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--mso-border);
+      border-radius: 10px;
+      background: var(--mso-surface);
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      touch-action: manipulation;
+    }
+    .support-user-row:active { background: #fff3df; }
+    .support-user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--mso-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .support-user-info { flex: 1; min-width: 0; }
+    .support-user-name { font-size: 13px; font-weight: 700; color: var(--mso-ink); }
+    .support-user-role { font-size: 10px; color: #c45f12; font-weight: 600; margin-top: 2px; }
+    .support-user-label { font-size: 10px; color: var(--mso-muted); margin-top: 2px; line-height: 1.35; }
+    .support-user-chevron { color: var(--mso-muted); font-size: 18px; }
+    .support-pager {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .support-page-btn {
+      border: 1px solid var(--mso-border);
+      background: #fff;
+      color: var(--mso-ink);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .support-page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .support-page-label { font-size: 10px; color: var(--mso-muted); text-align: center; }
   </style>
 </head>
 <body class="popup-booting">
   <div class="header">
-    <span class="version-badge" id="version-badge">v1.5.1</span>
+    <span class="version-badge" id="version-badge">v1.5.2</span>
     <div class="brand-row">
       <img class="brand-logo" src="icons/icon48.png" width="48" height="48" alt="">
       <div class="brand">
@@ -524,7 +651,7 @@
     <p class="subtitle">Smart variants · live shipping · one-click apply</p>
   </div>
 
-  <div class="content">
+  <div class="content" id="popup-view-main">
     <div id="firebase-announcement" class="status-card" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(255,215,0,0.12);border-color:#f0e0c8;">
       <p id="firebase-announcement-text" style="font-size:12px;color:#c45f12;margin:0;text-align:center;"></p>
     </div>
@@ -608,7 +735,27 @@
     <button type="button" class="btn btn-secondary" id="open-meesho">Open Meesho Catalog</button>
   </div>
 
-  <div class="footer">
+  <div class="content popup-view hidden" id="popup-view-plan">
+    <div class="popup-subheader">
+      <button type="button" class="popup-back-btn" data-popup-back="main">← Back</button>
+      <span class="popup-subtitle-text">Plan details</span>
+    </div>
+    <div class="status-card" id="plan-detail-body" style="padding:14px;">
+      <p style="font-size:12px;color:var(--mso-muted);">Loading plan…</p>
+    </div>
+  </div>
+
+  <div class="content popup-view hidden" id="popup-view-support">
+    <div class="popup-subheader">
+      <button type="button" class="popup-back-btn" data-popup-back="main">← Back</button>
+      <span class="popup-subtitle-text" id="support-view-title">Support</span>
+    </div>
+    <div class="status-card" id="support-users-body" style="padding:14px;">
+      <p style="font-size:12px;color:var(--mso-muted);">Loading contacts…</p>
+    </div>
+  </div>
+
+  <div class="footer" id="popup-footer-main">
     <button type="button" id="support-whatsapp">WhatsApp Support · 9654414891</button>
   </div>
 
@@ -616,6 +763,7 @@
   <script src="js/firebaseLicense.js"></script>
   <script src="js/machineId.js"></script>
   <script src="js/license.js"></script>
+  <script src="js/whatsappLink.js"></script>
   <script src="js/popupActions.js"></script>
   <script src="popup.js"></script>
 </body>
