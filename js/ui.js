@@ -558,23 +558,7 @@ const OptimizerUI = {
                 @media (min-width: 900px) {
                     .opt-modal-ext { max-width: 520px; margin: 0 auto; }
                 }
-                .plan-card-row { display: flex; align-items: stretch; gap: 6px; }
-                .plan-card-row .plan-buy-btn { flex: 1; min-width: 0; }
-                .plan-wa-quick-btn {
-                    flex-shrink: 0;
-                    width: 40px;
-                    border: 1px solid #25d366;
-                    background: #25d366;
-                    color: #fff;
-                    border-radius: 8px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    cursor: pointer;
-                    padding: 0;
-                }
-                .plan-wa-quick-btn:hover { background: #1ebe57; }
-                .plan-card-hint { font-size: 9px; color: #6b7280; text-align: center; margin-top: 4px; }
+                .plan-card-foot { font-size: 8px; color: #9ca3af; margin-top: 4px; line-height: 1.3; }
                 .plan-detail-subtitle { font-size: 12px; color: #6b7280; margin: 0 0 6px; }
                 .plan-detail-footer { font-size: 10px; color: #6b7280; text-align: center; margin-top: 10px; }
             </style>
@@ -648,7 +632,7 @@ const OptimizerUI = {
                     <!-- Pricing Plans (loaded from Firebase) -->
                     <div id="license-plans-view">
                     <div class="opt-section" style="padding:12px;">
-                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Tap plan for details · WhatsApp icon to buy</div>
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:12px;">💎 Click Plan to View Details</div>
                         <div id="license-plans-grid" class="license-plans-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:120px;">
                             <div style="grid-column:1/-1;text-align:center;padding:16px;color:#9ca3af;font-size:11px;">Loading plans…</div>
                         </div>
