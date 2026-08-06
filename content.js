@@ -1183,24 +1183,36 @@ class MeeshoShippingOptimizer {
       const detailBody = document.getElementById("license-plan-detail-body");
       const backBtn = document.getElementById("license-plan-back-btn");
 
-      const openWhatsAppChat = async (message, number) => {
-        let phone = number;
-        if (!phone) {
-          try {
-            const settings = await LicenseManager.getWhatsAppSettings();
-            phone = settings.number;
-          } catch (_) {
-            phone = CONFIG?.DEFAULT_WHATSAPP || "919654414891";
+      const openWhatsAppChat = (message, number) => {
+        const defaultPhone = CONFIG?.DEFAULT_WHATSAPP || "919654414891";
+        const openWithPhone = (phone) => {
+          if (typeof WhatsAppLink !== "undefined") {
+            if (WhatsAppLink.isMobile()) {
+              WhatsAppLink.openMobileSync(phone, message);
+            } else {
+              void WhatsAppLink.open(phone, message);
+            }
+            return;
           }
-        }
-        if (typeof WhatsAppLink !== "undefined") {
-          WhatsAppLink.open(phone, message);
+          window.open(
+            `https://wa.me/${String(phone).replace(/\D/g, "")}?text=${encodeURIComponent(message)}`,
+            "_blank",
+          );
+        };
+
+        if (number) {
+          openWithPhone(number);
           return;
         }
-        window.open(
-          `https://wa.me/${String(phone).replace(/\D/g, "")}?text=${encodeURIComponent(message)}`,
-          "_blank",
-        );
+
+        if (typeof WhatsAppLink !== "undefined" && WhatsAppLink.isMobile()) {
+          openWithPhone(defaultPhone);
+          return;
+        }
+
+        LicenseManager.getWhatsAppSettings()
+          .then((settings) => openWithPhone(settings.number || defaultPhone))
+          .catch(() => openWithPhone(defaultPhone));
       };
 
       const showPlanDetail = async (planId) => {

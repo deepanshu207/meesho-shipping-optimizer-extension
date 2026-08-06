@@ -10,7 +10,7 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.5.6",
+  VERSION: "1.5.7",
 
   /** Default Meesho single-catalog add page (supplier panel). */
   MEESHO_CATALOG_URL:

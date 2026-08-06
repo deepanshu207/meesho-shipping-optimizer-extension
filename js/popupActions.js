@@ -53,6 +53,9 @@ const PopupActions = {
 
   openWhatsApp(number, message) {
     if (typeof WhatsAppLink !== "undefined") {
+      if (WhatsAppLink.isMobile()) {
+        return Promise.resolve(WhatsAppLink.openMobileSync(number, message));
+      }
       return WhatsAppLink.open(number, message);
     }
     const urls = this.buildWhatsAppUrls(number, message);

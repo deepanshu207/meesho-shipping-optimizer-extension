@@ -459,12 +459,20 @@ Please share payment details.`;
   }
 
   async function openWhatsApp(message, number) {
-    const ok = await PA.openWhatsApp(number || getWhatsAppNumber(), message);
-    if (!ok && PA.isMobile()) {
-      showMessage(
-        "Could not open WhatsApp — open a Meesho catalog tab first, then try again.",
-        "error",
-      );
+    const phone = number || getWhatsAppNumber();
+    if (PA.isMobile() && typeof WhatsAppLink !== "undefined") {
+      const ok = WhatsAppLink.openMobileSync(phone, message);
+      if (!ok) {
+        showMessage(
+          "Could not open WhatsApp — install WhatsApp and try again.",
+          "error",
+        );
+      }
+      return ok;
+    }
+    const ok = await PA.openWhatsApp(phone, message);
+    if (!ok) {
+      showMessage("Could not open WhatsApp.", "error");
     }
     return ok;
   }
