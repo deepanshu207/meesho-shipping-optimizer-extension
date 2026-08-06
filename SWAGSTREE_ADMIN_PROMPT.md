@@ -71,7 +71,87 @@ Save to `shipping_optimizer_config/app`:
   "min_extension_version": "1.2.0",
   "announcement": "",
   "plans": [],
+  "support": {
+    "enabled": true,
+    "title": "Support team",
+    "page_size": 5,
+    "users": [
+      {
+        "id": "sales",
+        "name": "Deepanshu",
+        "role": "Sales & licenses",
+        "label": "New plans, upgrades, payments",
+        "whatsapp_number": "919654414891",
+        "whatsapp_message": "Hi! I need help with Shipping Optimizer.",
+        "active": true,
+        "order": 0
+      }
+    ]
+  },
   "demo_keys": { "MEESHO-DEMOFREE": { "days": 30, "label": "Free trial" } }
+}
+```
+
+**Plan detail screen (extension):** Tapping a plan opens a dedicated screen (popup + Meesho modal) with name, price, description, highlights, features, detail sections, add-ons, and **Buy via WhatsApp**. All fields above are read from Firebase — no extension update needed when you edit plans.
+
+**Support team list (extension):** Footer **WhatsApp Support** and **Upgrade / WhatsApp** open a paginated contact list when `support.users` is configured. Each row opens WhatsApp to that person's number (mobile opens app directly; desktop opens wa.me). Admin controls `page_size` (default 5) for easy pagination.
+
+### Support team editor (`support` on app doc)
+
+| Field | Notes |
+|-------|-------|
+| `enabled` | `false` hides list — extension falls back to default `whatsapp_number` |
+| `title` | Screen title e.g. "Support team" |
+| `page_size` | Contacts per page in extension (`5` default) |
+| `users[]` | Contact rows (see below) |
+
+**User row fields:** `id`, `name`, `role`, `label` (subtitle), `whatsapp_number`, `whatsapp_message` (optional prefill), `active`, `order`
+
+**Editor UI:** + Add contact, ▲/▼ reorder, Show toggle, ✕ remove. Preview pagination: "Page 1 of N". Extension shows ← Prev / Next → when more than `page_size` contacts.
+
+```json
+{
+  "id": "billing",
+  "name": "Billing",
+  "role": "Payments",
+  "label": "Invoices, UPI, credit top-ups",
+  "whatsapp_number": "919654414891",
+  "whatsapp_message": "Hi! I need billing help for Shipping Optimizer.",
+  "active": true,
+  "order": 1
+}
+```
+
+**Example plan with detail fields:**
+
+```json
+{
+  "id": "yearly",
+  "name": "Yearly Hybrid",
+  "price": 3099,
+  "days": 365,
+  "description": "Best for serious sellers — 1 year access plus credits for AI image runs.",
+  "highlights": ["Live Meesho shipping", "Family device option"],
+  "features": [
+    { "icon": "📅", "title": "1 year access", "text": "Renews annually" },
+    { "icon": "⚡", "title": "100 credits included", "text": "For AI generation runs" },
+    "Unlimited variant previews"
+  ],
+  "detail_sections": [
+    {
+      "title": "What's included",
+      "items": ["Smart mode up to 100 variants", "Apply best image to catalog", "Credit top-ups available"]
+    }
+  ],
+  "billing_mode": "hybrid",
+  "included_credits": 100,
+  "allow_credit_addons": true,
+  "credit_addons": [
+    { "id": "addon_25", "credits": 25, "price": 40, "label": "+25 credits", "active": true, "order": 0 }
+  ],
+  "active": true,
+  "order": 3,
+  "best": true
 }
 ```
 
@@ -101,7 +181,10 @@ Save to `shipping_optimizer_config/app`:
 | `allow_credit_addons` | No | `true` = show per-plan credit add-on chips |
 | `max_addon_selections` | No | `1` = pick one; `0` = unlimited multi-select |
 | `credit_addons` | No | Array: `{ id, credits, price, label, active, default_selected, order }` |
-| `description` | No | Admin note |
+| `description` | No | Short text on plan detail screen |
+| `highlights` | No | String array — pills on plan detail (e.g. `["Live shipping", "Unlimited variants"]`) |
+| `features` | No | Array of `{ icon, title, text }` or plain strings — shown on plan detail screen |
+| `detail_sections` | No | Array of `{ title, body, items[] }` — extra flexible blocks on plan detail |
 
 **Editor actions:** + Add Plan, ▲/▼ reorder, Show (active), ✕ remove, validate unique IDs.
 
@@ -172,7 +255,7 @@ Edit `credits` object on app doc:
     "credits_per_image": 2,
     "daily_limit": 20,
     "monthly_limit": 0,
-    "max_batch_size": 4
+    "max_batch_size": 100
   }
 }
 ```
@@ -180,12 +263,34 @@ Edit `credits` object on app doc:
 | Field | Meaning |
 |-------|---------|
 | `enabled` | Master on/off for AI image generation |
-| `credits_per_image` | Credits charged per image (`0` = free; only for credits/hybrid plans) |
-| `daily_limit` | Images/day per license (`0` = unlimited) |
-| `monthly_limit` | Images/month (`0` = unlimited) |
-| `max_batch_size` | Max images per generation run (`0` = unlimited) |
+| `credits_per_image` | Credits charged **per generation run** (`0` = free; only for credits/hybrid plans). One run = one upload → variants (20/50/100 variants still = 1 run; stop mid-run still = 1 run). |
+| `daily_limit` | **Runs**/day per license (`0` = unlimited) |
+| `monthly_limit` | **Runs**/month (`0` = unlimited) |
+| `max_batch_size` | Max **variants** per run (`0` = unlimited) — does not change how runs are counted |
 
-The extension enforces these client-side and writes counters back to each license: `images_generated_total`, `images_generated_today`, `images_generated_today_date`, `images_generated_month`, `images_generated_month_key`. Your **Paid Licenses** view can display these read-only to see usage. Leave the whole `image_generation` object out to keep legacy behavior (1 credit/operation).
+The extension enforces these client-side and writes counters back to each license: `images_generated_total`, `images_generated_today`, `images_generated_today_date`, `images_generated_month`, `images_generated_month_key`. Counter field names say "images" for backward compatibility — they track **generation runs**, not individual variants. Your **Paid Licenses** view should label them "Generations today / this month / total" and display read-only. Leave the whole `image_generation` object out to keep legacy behavior (1 credit/operation).
+
+**Admin UI for image generation limits (Credits & Packs tab):**
+
+1. **Section title:** "AI image generation limits"
+2. **Help text (always visible):** "One generation run = one upload in the extension, regardless of how many variants (20/50/100) are requested. Stopping mid-run still counts as 1 run. Daily/monthly limits count runs, not variants."
+3. **Fields:**
+   - `enabled` — toggle
+   - `credits_per_image` — number input, label **"Credits per run"** (helper: "Charged once per upload/generation flow; field key stays `credits_per_image` for extension compatibility")
+   - `daily_limit` — number input, label **"Daily run limit"** (`0` = unlimited)
+   - `monthly_limit` — number input, label **"Monthly run limit"** (`0` = unlimited)
+   - `max_batch_size` — number input, label **"Max variants per run"** (`0` = unlimited; blocks runs that request more variants than this)
+4. **Preview card** under the form showing example: "Customer uploads 1 image, selects 50 variants → counts as **1 run**, costs **{credits_per_image}** credits (if credits plan), uses **1** from daily limit."
+5. Save nested under `credits.image_generation` on `shipping_optimizer_config/app`.
+
+**Paid Licenses tab — generation usage (read-only):**
+
+Show on each license row / detail drawer:
+- `images_generated_today` / `images_generated_today_date` → label **"Runs today"**
+- `images_generated_month` / `images_generated_month_key` → label **"Runs this month"**
+- `images_generated_total` → label **"Total runs"**
+
+Optional admin action: **Reset today's runs** (sets `images_generated_today` to `0` and updates `images_generated_today_date` to today) — for support only, with confirm dialog.
 
 ---
 
@@ -193,6 +298,17 @@ The extension enforces these client-side and writes counters back to each licens
 
 Collection `shipping_optimizer_demo_keys/{KEY}` — list, add, enable/disable, delete.
 Merged with inline `demo_keys` in config.
+
+| Field | Notes |
+|-------|-------|
+| `days` | Trial length (`30` default). Ignored when `unlimited_time: true` |
+| `label` | Shown in extension |
+| `unlimited_time` | `true` = demo never expires (extension shows **Never expires**) |
+
+```json
+{ "days": 30, "label": "Free trial", "unlimited_time": false }
+{ "days": 0, "label": "Partner unlimited demo", "unlimited_time": true }
+```
 
 ---
 
@@ -236,17 +352,69 @@ Merged with inline `demo_keys` in config.
 
 ### License list & actions
 
-Show: key, customer, plan, billing_mode, devices (2/3 or Unlimited), credits, expiry (or "Unlimited"), status.
+Show: key, customer, plan, billing_mode, devices (2/3 or Unlimited), credits, **validity** (Never expires / No expiry / date / Expired), status.
+
+**Validity column rules (match extension):**
+| Display | When |
+|---------|------|
+| **Never expires** | `unlimited_time: true` OR `plan_kind: lifetime` OR plan `days: 0` |
+| **No expiry** | `expiresAt` empty and not unlimited (open-ended admin grant) |
+| **Expires {date}** | Future `expiresAt` |
+| **Expired** | Past `expiresAt` and not unlimited |
 
 | Action | Effect |
-|--------|--------|
+|-------|--------|
 | Revoke/Activate | Toggle `active` |
 | Reset devices | Clear `device_ids[]`, `machineId`, `activatedAt` |
 | Add credits | `credits_balance += N` (top-up after pack purchase) |
 | Edit overrides | Change unlimited flags, max_devices, billing_mode per customer |
+| **Grant lifetime** | Set `unlimited_time: true`, clear `expiresAt` |
+| **Clear expiry** | Set `expiresAt: ""` for open-ended access |
 | Delete | Confirm + type DELETE |
 
 Search: key, phone, planId, machineId, device_ids.
+
+### License flexibility matrix (admin must support all)
+
+The extension treats these as **never expiring** (no expiry countdown, badge **Lifetime** / **Never expires**):
+
+| Trigger | Where set |
+|---------|-----------|
+| `unlimited_time: true` | Plan or license doc |
+| `plan_kind: "lifetime"` or `"unlimited"` | Plan or license doc |
+| `days: 0` on plan | Plan (auto-sets unlimited time on activation) |
+| `expiresAt` empty + `billing_mode: subscription` | License doc (open-ended grant) |
+
+**Unlimited flags (independent — mix freely):**
+
+| Flag | Effect |
+|------|--------|
+| `unlimited_time` | Never expires — ignores `expiresAt` even if set |
+| `unlimited_devices` | No device cap (`device_ids` still tracked) |
+| `unlimited_credits` | Never deduct credits; image-gen free if credits would apply |
+
+**Billing mode × expiry examples (create-license presets):**
+
+| Preset | billing_mode | unlimited_time | unlimited_credits | Typical use |
+|--------|--------------|----------------|-------------------|-------------|
+| Monthly sub | subscription | false | false | `expiresAt` on activation + 30d |
+| **Lifetime** | subscription | **true** | false | Pay once, use forever |
+| **Lifetime Pro** | subscription | **true** | **true** | Everything unlimited |
+| Credits pack | credits | true* | false | Balance-based; no time limit |
+| Hybrid yearly | hybrid | false | false | 1 year + credit pool |
+| **Lifetime hybrid** | hybrid | **true** | false | Never expires; top up credits when empty |
+| Enterprise open | subscription | false | false | Leave `expiresAt` empty = no expiry |
+
+\*Credits-only licenses don't use time expiry; `unlimited_time` optional.
+
+**Admin create-license UI must include:**
+- Checkboxes: **Never expires** (`unlimited_time`), **Unlimited devices**, **Unlimited credits**
+- **Expiry mode:** ( ) Starts on activation  ( ) Fixed date  ( ) Never expires  ( ) No expiry (leave blank)
+- When **Never expires** checked → hide/disable `expiresAt` and `planDays` inputs; force `expiresAt: ""` on save
+- Plan dropdown shows badges: `Lifetime`, `Unlimited credits`, `Hybrid`, etc.
+- License list filter: Active / Expired / **Lifetime** / Credits low
+
+**Stacked licenses:** Lifetime subscription + separate credit top-up key → extension keeps lifetime access even if top-up credits hit 0 (credits only required when an *accessible* hybrid/credits license exists).
 
 ---
 
@@ -265,11 +433,27 @@ Extension generates Device ID per browser profile (e.g. `M1A2B3C4D5E6`). Kiwi An
 
 ## Billing modes
 
-| Mode | Rule |
-|------|------|
-| `subscription` | Valid until `expiresAt` (or forever if `unlimited_time`) |
-| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) |
-| `hybrid` | Not expired AND has credits (unless unlimited flags) |
+| Mode | Access rule |
+|------|-------------|
+| `subscription` | Valid while **not expired** — `unlimited_time` / lifetime / empty `expiresAt` = never expires |
+| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) — time not used |
+| `hybrid` | Valid while **(not expired OR unlimited_time)** AND **(has credits OR unlimited_credits)** |
+
+**Never-expire subscription example (paid license doc):**
+```json
+{
+  "active": true,
+  "planId": "lifetime",
+  "billing_mode": "subscription",
+  "unlimited_time": true,
+  "unlimited_devices": false,
+  "unlimited_credits": false,
+  "expiresAt": "",
+  "planDays": 0
+}
+```
+
+Extension shows: badge **Lifetime**, validity **Never expires**, no expiry warnings.
 
 ### Stacked licenses (plan + credit top-up)
 
@@ -307,6 +491,14 @@ The extension supports **multiple active keys on one device**:
 5. Unlimited plan → no expiry, no device cap, no credit deduction
 6. Kiwi mobile activation → device ID appears in `device_ids[]`
 7. Sign-off in extension → device removed from `device_ids[]` for that key
+8. Set `daily_limit: 2` → customer can run generation twice (any variant count) → 3rd upload blocked until tomorrow
+9. Customer stops a run at 5/50 variants → still counts as 1 run toward daily limit and credits
+10. Add 6 support users with `page_size: 5` → extension shows paginated list with Prev/Next
+11. Edit plan `features` / `detail_sections` in Firebase → plan detail screen updates without extension release
+12. Mobile Kiwi: WhatsApp Support opens app directly (not intent:// page)
+13. Create license with `unlimited_time: true` → extension shows **Lifetime** / **Never expires**, no expiry warnings
+14. Lifetime subscription + empty credit top-up → generate still works (subscription not blocked by empty top-up)
+15. Demo key with `unlimited_time: true` → never expires in extension
 
 ---
 

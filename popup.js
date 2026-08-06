@@ -24,6 +24,35 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const productName = CONFIG?.EXTENSION_NAME || "Shipping Optimizer";
   let cachedWhatsApp = null;
+  let cachedPlans = [];
+  let cachedSupportConfig = null;
+  let supportPage = 1;
+
+  const viewMain = document.getElementById("popup-view-main");
+  const viewPlan = document.getElementById("popup-view-plan");
+  const viewSupport = document.getElementById("popup-view-support");
+  const footerMain = document.getElementById("popup-footer-main");
+
+  function showPopupView(name) {
+    const views = { main: viewMain, plan: viewPlan, support: viewSupport };
+    Object.entries(views).forEach(([key, el]) => {
+      if (!el) return;
+      el.classList.toggle("hidden", key !== name);
+    });
+    if (footerMain) {
+      footerMain.classList.toggle("hidden", name !== "main");
+    }
+    if (name === "main") {
+      activationSection?.scrollIntoView?.({ block: "nearest" });
+    }
+  }
+
+  document.querySelectorAll("[data-popup-back]").forEach((btn) => {
+    PA.bindTap(btn, () => {
+      const target = btn.dataset.popupBack || "main";
+      showPopupView(target);
+    });
+  });
 
   function setStatus(text) {
     if (statusLine) statusLine.textContent = text || "";
@@ -171,9 +200,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         const primary = LicenseManager.pickPrimaryLicense(licenses);
-        const info = primary?.licenseInfo || {};
+        const info = LicenseManager.normalizeLicenseInfo(
+          primary?.licenseInfo || {},
+        );
         const typeLabel = LicenseManager.formatLicenseTypeLabel(info);
         const totalCredits = LicenseManager.getTotalCreditsBalance(licenses);
+        const validity = LicenseManager.getLicenseValiditySummary(info);
 
         let infoHTML = `<div class="license-type-pill">${LicenseManager.getLicenseRoleLabel(primary)}</div>`;
         infoHTML += `<div style="font-size:14px;font-weight:700;color:var(--mso-ink);margin-bottom:6px;">${typeLabel}</div>`;
@@ -210,9 +242,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         }
         if (info.unlimitedTime) {
-          infoHTML += ` · <strong>Unlimited time</strong>`;
+          infoHTML += ` · <strong>Never expires</strong>`;
         } else if (info.expiresAt) {
-          infoHTML += ` · Expires: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong>`;
+          infoHTML += ` · ${validity.kind === "expired" ? "Expired" : "Expires"}: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong>`;
+        } else {
+          infoHTML += ` · <strong>No expiry</strong>`;
         }
         if (info.activatedAt) {
           infoHTML += ` · Activated: ${formatWhen(info.activatedAt)}`;
@@ -243,32 +277,33 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         if (!LicenseManager.licenseEntryHasAccess(primary)) {
-          statusBadge.textContent = "Expired";
+          statusBadge.textContent = "Inactive";
           statusBadge.className = "status-badge inactive";
           infoHTML += `<div class="expiry-warning"><span>❌</span><span>Primary license inactive — add a new key or sign off</span></div>`;
           activationSection.classList.remove("hidden");
-        } else if (info.expiresAt && !info.unlimitedTime) {
-          const expiresAt = new Date(info.expiresAt);
-          const diffMs = expiresAt - new Date();
-          if (diffMs <= 0) {
-            statusBadge.textContent = "Expired";
-            statusBadge.className = "status-badge inactive";
-            infoHTML += `<div class="expiry-warning"><span>❌</span><span>License expired</span></div>`;
-            activationSection.classList.remove("hidden");
-          } else {
-            const diffDays = Math.floor(diffMs / 86400000);
-            if (diffDays < 7) {
-              const diffHours = Math.floor(diffMs / 3600000);
-              const expiryText =
-                diffHours < 24
-                  ? `${Math.floor(diffMs / 60000)} minutes`
-                  : diffDays < 1
-                    ? `${diffHours} hours`
-                    : `${diffDays} days`;
-              infoHTML += `<div class="expiry-warning"><span>⚠️</span><span>Expires in ${expiryText}</span></div>`;
-            }
-            activationSection.classList.add("hidden");
+        } else if (validity.kind === "unlimited") {
+          statusBadge.textContent = "Lifetime";
+          statusBadge.className = "status-badge active";
+          activationSection.classList.add("hidden");
+        } else if (info.expiresAt && validity.kind === "expired") {
+          statusBadge.textContent = "Expired";
+          statusBadge.className = "status-badge inactive";
+          infoHTML += `<div class="expiry-warning"><span>❌</span><span>License expired</span></div>`;
+          activationSection.classList.remove("hidden");
+        } else if (info.expiresAt && validity.kind === "active") {
+          const diffDays = validity.daysLeft ?? 0;
+          if (diffDays < 7) {
+            const diffMs = new Date(info.expiresAt) - new Date();
+            const diffHours = Math.floor(diffMs / 3600000);
+            const expiryText =
+              diffHours < 24
+                ? `${Math.floor(diffMs / 60000)} minutes`
+                : diffDays < 1
+                  ? `${diffHours} hours`
+                  : `${diffDays} days`;
+            infoHTML += `<div class="expiry-warning"><span>⚠️</span><span>Expires in ${expiryText}</span></div>`;
           }
+          activationSection.classList.add("hidden");
         } else {
           activationSection.classList.add("hidden");
         }
@@ -363,28 +398,11 @@ Please share payment details.`;
     document.querySelectorAll(".plan-btn, .plan-buy-btn").forEach((btn) => {
       PA.bindTap(btn, () => {
         const planId = btn.dataset.plan;
-        let message;
-        if (
-          planId &&
-          typeof FirebaseLicense !== "undefined" &&
-          FirebaseLicense.buildPlanPurchaseMessage
-        ) {
-          message = FirebaseLicense.buildPlanPurchaseMessage(
-            planId,
-            productName,
-            document,
-          );
-        } else {
-          const duration = btn.dataset.duration;
-          const price = btn.dataset.price;
-          message = `Hi! I want to purchase ${productName}.
-
-📦 *Plan Selected:* ${duration}
-💰 *Price:* ₹${price}
-
-Please share payment details and license key.`;
+        if (planId) {
+          showPlanDetail(planId);
+          return;
         }
-        openWhatsApp(message);
+        openWhatsAppForPlan(planId);
       });
     });
   }
@@ -397,11 +415,14 @@ Please share payment details and license key.`;
       typeof FirebaseLicense !== "undefined" &&
       FirebaseLicense.isEnabled()
     ) {
-      const [plans, creditPacks, creditsCfg] = await Promise.all([
+      const [plans, creditPacks, creditsCfg, supportCfg] = await Promise.all([
         FirebaseLicense.getPricingPlans(true),
         FirebaseLicense.getCreditPacks(true),
         FirebaseLicense.getCreditsConfig(true),
+        FirebaseLicense.getSupportConfig(true),
       ]);
+      cachedPlans = plans;
+      cachedSupportConfig = supportCfg;
       FirebaseLicense.renderPlanButtons(grid, plans, "popup");
       const creditsGrid = document.getElementById("license-credits-grid");
       const creditsSection = document.getElementById("popup-credits-section");
@@ -440,8 +461,123 @@ Please share payment details and license key.`;
     bindCreditPackButtons();
   }
 
-  function openWhatsApp(message) {
-    PA.openWhatsApp(getWhatsAppNumber(), message);
+  function openWhatsApp(message, number) {
+    PA.openWhatsApp(number || getWhatsAppNumber(), message);
+  }
+
+  function openWhatsAppForPlan(planId) {
+    let message;
+    if (
+      planId &&
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.buildPlanPurchaseMessage
+    ) {
+      message = FirebaseLicense.buildPlanPurchaseMessage(
+        planId,
+        productName,
+        document,
+      );
+    } else {
+      message = getWhatsAppMessage();
+    }
+    openWhatsApp(message);
+  }
+
+  async function showPlanDetail(planId) {
+    const body = document.getElementById("plan-detail-body");
+    if (!body) return;
+    showPopupView("plan");
+    body.innerHTML =
+      '<p style="font-size:12px;color:var(--mso-muted);">Loading plan…</p>';
+
+    let plan =
+      cachedPlans.find(
+        (p) =>
+          p.id === planId ||
+          FirebaseLicense?.slugifyPlanId?.(planId) === p.id,
+      ) || null;
+    if (!plan && typeof FirebaseLicense !== "undefined") {
+      plan = await FirebaseLicense.getPlanById(planId);
+    }
+    if (!plan) {
+      body.innerHTML =
+        '<p style="font-size:12px;color:#dc2626;">Plan not found.</p>';
+      return;
+    }
+
+    body.innerHTML = FirebaseLicense.renderPlanDetailHtml(plan, {
+      productName,
+    });
+    FirebaseLicense.wirePlanAddonSelection(body);
+    bindPlanDetailBuy(body, plan.id);
+  }
+
+  function bindPlanDetailBuy(root, planId) {
+    const buyBtn = root.querySelector(".plan-detail-buy-btn");
+    if (!buyBtn) return;
+    PA.bindTap(buyBtn, () => openWhatsAppForPlan(planId));
+  }
+
+  async function showSupportUsers(page = 1) {
+    const body = document.getElementById("support-users-body");
+    const titleEl = document.getElementById("support-view-title");
+    if (!body) return;
+
+    showPopupView("support");
+    body.innerHTML =
+      '<p style="font-size:12px;color:var(--mso-muted);">Loading contacts…</p>';
+
+    if (!cachedSupportConfig && typeof FirebaseLicense !== "undefined") {
+      cachedSupportConfig = await FirebaseLicense.getSupportConfig(true);
+    }
+    const cfg = cachedSupportConfig || { users: [], page_size: 5, title: "Support" };
+    if (titleEl) titleEl.textContent = cfg.title || "Support";
+
+    if (!cfg.enabled || !cfg.users?.length) {
+      body.innerHTML = `<p style="font-size:12px;color:var(--mso-muted);text-align:center;padding:12px 0;">No support team listed — opening default WhatsApp.</p>
+        <button type="button" class="btn btn-whatsapp" id="support-fallback-btn">Chat on WhatsApp</button>`;
+      PA.bindTap(document.getElementById("support-fallback-btn"), () => {
+        openWhatsApp(`Hi! I need support for ${productName}.`);
+      });
+      return;
+    }
+
+    supportPage = page;
+    const pageData = FirebaseLicense.getSupportUsersPage(cfg, page);
+    body.innerHTML = FirebaseLicense.renderSupportUsersHtml(pageData, {
+      title: cfg.title,
+      defaultMessage: `Hi! I need support for ${productName}.`,
+    });
+    bindSupportUserEvents(body, cfg);
+  }
+
+  function bindSupportUserEvents(root, cfg) {
+    root.querySelectorAll(".support-user-row").forEach((row) => {
+      PA.bindTap(row, () => {
+        const number = row.dataset.supportNumber;
+        const custom = row.dataset.supportMessage;
+        const message =
+          custom ||
+          `Hi! I need support for ${productName}.`;
+        openWhatsApp(message, number || getWhatsAppNumber());
+      });
+    });
+
+    root.querySelectorAll(".support-page-btn").forEach((btn) => {
+      PA.bindTap(btn, () => {
+        if (btn.disabled) return;
+        const nextPage = Number(btn.dataset.supportPage) || 1;
+        showSupportUsers(nextPage);
+      });
+    });
+  }
+
+  function openSupportOrWhatsApp(defaultMessage) {
+    if (cachedSupportConfig?.enabled && cachedSupportConfig.users?.length) {
+      showSupportUsers(1);
+      return;
+    }
+    openWhatsApp(defaultMessage);
   }
 
   function scrollToActivation() {
@@ -554,11 +690,11 @@ Please share payment details and license key.`;
   });
 
   PA.bindTap(document.getElementById("whatsapp-btn"), () => {
-    openWhatsApp(getWhatsAppMessage());
+    openSupportOrWhatsApp(getWhatsAppMessage());
   });
 
   PA.bindTap(document.getElementById("support-whatsapp"), () => {
-    openWhatsApp(`Hi! I need support for ${productName}.`);
+    openSupportOrWhatsApp(`Hi! I need support for ${productName}.`);
   });
 
   PA.bindTap(openCatalogBtn, handleOpenOptimizer);
@@ -570,7 +706,7 @@ Please share payment details and license key.`;
       if (action === "meesho") handleOpenMeesho();
       else if (action === "license") scrollToActivation();
       else if (action === "whatsapp") {
-        openWhatsApp(`Hi! I want to upgrade my ${productName} license.`);
+        openSupportOrWhatsApp(`Hi! I want to upgrade my ${productName} license.`);
       }
     });
   });
@@ -593,23 +729,24 @@ Please share payment details and license key.`;
       const parts = [];
       if (summary.remainingDaily != null) {
         parts.push(
-          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} images left`,
+          `Today: <strong>${summary.remainingDaily}</strong>/${cfg.daily_limit} runs left`,
         );
       }
       if (summary.remainingMonthly != null) {
         parts.push(
-          `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} left`,
+          `Month: <strong>${summary.remainingMonthly}</strong>/${cfg.monthly_limit} runs left`,
         );
       }
-      if (summary.costPerImage > 0) {
+      const costPerRun = summary.costPerRun ?? summary.costPerImage ?? 0;
+      if (costPerRun > 0) {
         const bal =
           summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
         parts.push(
-          `<strong>${summary.costPerImage}</strong> credit${summary.costPerImage === 1 ? "" : "s"}/image · balance ${bal}`,
+          `<strong>${costPerRun}</strong> credit${costPerRun === 1 ? "" : "s"}/run · balance ${bal}`,
         );
       }
       if (cfg.max_batch_size > 0) {
-        parts.push(`max ${cfg.max_batch_size}/generation`);
+        parts.push(`max ${cfg.max_batch_size} variants/run`);
       }
       if (!parts.length) {
         el.style.display = "none";

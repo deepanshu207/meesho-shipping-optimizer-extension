@@ -18,9 +18,96 @@ const LicenseManager = {
     return {
       key,
       role: entry.role || entry.licenseInfo?.role || null,
-      licenseInfo: { ...(entry.licenseInfo || {}), key },
+      licenseInfo: this.normalizeLicenseInfo({
+        ...(entry.licenseInfo || {}),
+        key,
+      }),
       activatedAt: entry.activatedAt || entry.licenseInfo?.activatedAt || null,
     };
+  },
+
+  /** Normalize unlimited-time / lifetime flags from any stored shape. */
+  normalizeLicenseInfo(info) {
+    if (!info) return info;
+    const planKind = String(info.planKind || info.plan_kind || "").toLowerCase();
+    const unlimitedTime = !!(
+      info.unlimitedTime ||
+      info.unlimited_time ||
+      planKind === "lifetime" ||
+      planKind === "unlimited"
+    );
+    const unlimitedCredits = !!(
+      info.unlimitedCredits || info.unlimited_credits
+    );
+    const unlimitedDevices = !!(
+      info.unlimitedDevices || info.unlimited_devices
+    );
+    return {
+      ...info,
+      planKind: planKind || info.planKind || "subscription",
+      unlimitedTime,
+      unlimitedCredits,
+      unlimitedDevices,
+      expiresAt: unlimitedTime ? null : info.expiresAt || info.expires_at || null,
+      billingMode:
+        info.billingMode || info.billing_mode || "subscription",
+    };
+  },
+
+  isUnlimitedTimeLicense(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    return !!n.unlimitedTime;
+  },
+
+  /** Human-readable validity for UI (never expires, open-ended, dated, expired). */
+  getLicenseValiditySummary(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    if (n.unlimitedTime) {
+      return {
+        kind: "unlimited",
+        label: "Never expires",
+        shortLabel: "Lifetime",
+      };
+    }
+    if (!n.expiresAt) {
+      return {
+        kind: "open",
+        label: "No expiry date",
+        shortLabel: "Active",
+      };
+    }
+    const exp = new Date(n.expiresAt);
+    if (Number.isNaN(exp.getTime())) {
+      return { kind: "open", label: "No expiry date", shortLabel: "Active" };
+    }
+    if (new Date() > exp) {
+      return {
+        kind: "expired",
+        label: `Expired ${exp.toLocaleDateString()}`,
+        shortLabel: "Expired",
+        expiresAt: n.expiresAt,
+      };
+    }
+    const diffMs = exp - new Date();
+    const diffDays = Math.floor(diffMs / 86400000);
+    return {
+      kind: "active",
+      label: `Expires ${exp.toLocaleDateString()}`,
+      shortLabel: diffDays < 7 ? `${diffDays}d left` : exp.toLocaleDateString(),
+      expiresAt: n.expiresAt,
+      daysLeft: diffDays,
+    };
+  },
+
+  /** Whether any *accessible* license still requires credits to operate. */
+  requiresCreditBilling(licenses) {
+    return (licenses || []).some((entry) => {
+      if (!this.licenseEntryHasAccess(entry)) return false;
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      if (info.unlimitedCredits) return false;
+      const mode = info.billingMode || "subscription";
+      return mode === "credits" || mode === "hybrid";
+    });
   },
 
   async getActiveLicenses() {
@@ -109,13 +196,13 @@ const LicenseManager = {
   },
 
   licenseEntryHasAccess(entry) {
-    const info = entry?.licenseInfo || {};
+    const info = this.normalizeLicenseInfo(entry?.licenseInfo || {});
     const mode = info.billingMode || "subscription";
-    const unlimitedTime = !!info.unlimitedTime;
-    const unlimitedCredits = !!info.unlimitedCredits;
+    const unlimitedTime = info.unlimitedTime;
+    const unlimitedCredits = info.unlimitedCredits;
 
     if (info.planType === "demo") {
-      if (info.unlimitedTime) return true;
+      if (unlimitedTime) return true;
       if (!info.expiresAt) return true;
       return new Date() <= new Date(info.expiresAt);
     }
@@ -131,10 +218,10 @@ const LicenseManager = {
       return unlimitedCredits || Number(info.creditsBalance ?? 0) > 0;
     }
 
-    if (!unlimitedTime && info.expiresAt && new Date() > new Date(info.expiresAt)) {
-      return false;
-    }
-    return true;
+    // subscription — unlimited time, open-ended (no expiresAt), or not yet expired
+    if (unlimitedTime) return true;
+    if (!info.expiresAt) return true;
+    return new Date() <= new Date(info.expiresAt);
   },
 
   licensesHaveAccess(licenses) {
@@ -263,9 +350,12 @@ const LicenseManager = {
           }
         }
         if (info.unlimitedTime) {
-          details += `<div>Validity: <strong>Unlimited time</strong></div>`;
+          details += `<div>Validity: <strong>Never expires</strong></div>`;
         } else if (info.expiresAt) {
-          details += `<div>Expires: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong></div>`;
+          const validity = this.getLicenseValiditySummary(info);
+          details += `<div>${validity.kind === "expired" ? "Expired" : "Expires"}: <strong>${new Date(info.expiresAt).toLocaleDateString()}</strong></div>`;
+        } else {
+          details += `<div>Validity: <strong>No expiry</strong></div>`;
         }
         if (info.maxDevices != null) {
           const devLabel = info.unlimitedDevices
@@ -346,7 +436,7 @@ const LicenseManager = {
             if (refreshed.valid && refreshed.license) {
               updated.push({
                 ...entry,
-                licenseInfo: refreshed.license,
+                licenseInfo: this.normalizeLicenseInfo(refreshed.license),
               });
             }
           } catch (e) {
@@ -422,6 +512,7 @@ const LicenseManager = {
   getCreditSources(licenses) {
     return (licenses || [])
       .filter((entry) => {
+        if (!this.licenseEntryHasAccess(entry)) return false;
         const mode = entry.licenseInfo?.billingMode || "subscription";
         return mode === "credits" || mode === "hybrid";
       })
@@ -484,29 +575,36 @@ const LicenseManager = {
     if (!this.isLicensed) return { ok: false, reason: "License required" };
 
     const licenses = await this.getActiveLicenses();
-    const needsCredits = licenses.some((e) => {
-      const mode = e.licenseInfo?.billingMode || "subscription";
-      return mode === "credits" || mode === "hybrid";
-    });
+    if (!this.requiresCreditBilling(licenses)) {
+      return { ok: true };
+    }
 
-    if (needsCredits) {
-      const unlimited = licenses.some((e) => e.licenseInfo?.unlimitedCredits);
-      if (!unlimited) {
-        const total = this.getTotalCreditsBalance(licenses);
-        if (total <= 0) {
-          return {
-            ok: false,
-            reason: actionLabel
-              ? `${actionLabel} requires credits — buy a credit pack`
-              : "Insufficient credits",
-            needsTopUp: true,
-          };
-        }
+    const unlimited = licenses.some(
+      (e) =>
+        this.licenseEntryHasAccess(e) &&
+        this.normalizeLicenseInfo(e.licenseInfo).unlimitedCredits,
+    );
+    if (!unlimited) {
+      const sources = this.getCreditSources(licenses).filter((e) =>
+        this.licenseEntryHasAccess(e),
+      );
+      const total = sources.reduce(
+        (sum, e) => sum + (Number(e.licenseInfo?.creditsBalance ?? 0) || 0),
+        0,
+      );
+      if (total <= 0) {
+        return {
+          ok: false,
+          reason: actionLabel
+            ? `${actionLabel} requires credits — buy a credit pack`
+            : "Insufficient credits",
+          needsTopUp: true,
+        };
       }
-      const consumed = await this.consumeCredits();
-      if (!consumed.ok && !consumed.skipped) {
-        return consumed;
-      }
+    }
+    const consumed = await this.consumeCredits();
+    if (!consumed.ok && !consumed.skipped) {
+      return consumed;
     }
     return { ok: true };
   },
@@ -595,10 +693,15 @@ const LicenseManager = {
     });
   },
 
-  /** Check whether a batch of `batchCount` images can be generated now. */
-  async canGenerateImages(batchCount) {
+  /**
+   * Check whether a generation run can start now.
+   * Limits and credits are per run (1 upload → variants), not per variant.
+   * `variantCount` is only used for max_batch_size (max variants per run).
+   */
+  async canGenerateImages(variantCount) {
     const config = await this.getImageGenConfig();
-    const n = Math.max(1, Number(batchCount) || 1);
+    const variants = Math.max(1, Number(variantCount) || 1);
+    const runs = 1;
 
     if (!config.configured) {
       return { ok: true, legacy: true, config, cost: 0 };
@@ -611,10 +714,10 @@ const LicenseManager = {
         cost: 0,
       };
     }
-    if (config.max_batch_size > 0 && n > config.max_batch_size) {
+    if (config.max_batch_size > 0 && variants > config.max_batch_size) {
       return {
         ok: false,
-        reason: `Max ${config.max_batch_size} images per generation — reduce the count and try again.`,
+        reason: `Max ${config.max_batch_size} variants per generation — reduce the count and try again.`,
         config,
         cost: 0,
       };
@@ -633,11 +736,11 @@ const LicenseManager = {
           limitReached: true,
         };
       }
-      if (counters.today + n > config.daily_limit) {
+      if (counters.today + runs > config.daily_limit) {
         const left = Math.max(0, config.daily_limit - counters.today);
         return {
           ok: false,
-          reason: `Only ${left} image${left === 1 ? "" : "s"} left today (limit ${config.daily_limit}/day).`,
+          reason: `Only ${left} generation${left === 1 ? "" : "s"} left today (limit ${config.daily_limit}/day).`,
           config,
           counters,
           cost: 0,
@@ -657,11 +760,11 @@ const LicenseManager = {
           limitReached: true,
         };
       }
-      if (counters.month + n > config.monthly_limit) {
+      if (counters.month + runs > config.monthly_limit) {
         const left = Math.max(0, config.monthly_limit - counters.month);
         return {
           ok: false,
-          reason: `Only ${left} image${left === 1 ? "" : "s"} left this month (limit ${config.monthly_limit}/month).`,
+          reason: `Only ${left} generation${left === 1 ? "" : "s"} left this month (limit ${config.monthly_limit}/month).`,
           config,
           counters,
           cost: 0,
@@ -674,7 +777,7 @@ const LicenseManager = {
     const creditsApply = this._imageCreditsApply(licenses, config);
     let cost = 0;
     if (creditsApply) {
-      cost = config.credits_per_image * n;
+      cost = config.credits_per_image * runs;
       const balance = this.getTotalCreditsBalance(licenses);
       if (balance !== Infinity && balance < cost) {
         return {
@@ -718,10 +821,9 @@ const LicenseManager = {
     return gate;
   },
 
-  /** Deduct credits + increment counters after a successful generation. */
+  /** Deduct credits + increment counters after a generation run (always 1 per run). */
   async recordImageGeneration(count, gate) {
-    const n = Math.max(0, Number(count) || 0);
-    if (n <= 0) return { ok: true, skipped: true };
+    const n = Math.max(1, Number(count) || 1);
 
     const config = gate?.config || (await this.getImageGenConfig());
     if (!config.configured) return { ok: true, skipped: true };
@@ -777,7 +879,7 @@ const LicenseManager = {
     return res;
   },
 
-  /** Summary for UI: config + counters + remaining + per-image cost. */
+  /** Summary for UI: config + counters + remaining + per-run cost. */
   async getImageGenSummary() {
     const config = await this.getImageGenConfig();
     const counters = await this.getImageGenCounters();
@@ -797,6 +899,8 @@ const LicenseManager = {
       counters,
       creditsApply,
       creditsBalance: balance,
+      costPerRun: creditsApply ? config.credits_per_image : 0,
+      /** @deprecated use costPerRun — kept for older callers */
       costPerImage: creditsApply ? config.credits_per_image : 0,
       remainingDaily,
       remainingMonthly,
@@ -1003,18 +1107,19 @@ const LicenseManager = {
       }
 
       const phone = String(settings.number || CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");
-      const text = encodeURIComponent(settings.message || "");
-      const isAndroid = /Android/i.test(navigator.userAgent || "");
-      if (isAndroid) {
-        window.location.href = `whatsapp://send?phone=${phone}&text=${text}`;
+      const text = settings.message || "";
+      if (typeof WhatsAppLink !== "undefined") {
+        WhatsAppLink.open(phone, text);
+      } else if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "")) {
+        window.location.href = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`;
         setTimeout(() => {
           window.open(
-            `https://api.whatsapp.com/send?phone=${phone}&text=${text}`,
+            `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`,
             "_blank",
           );
         }, 600);
       } else {
-        window.open(`https://wa.me/${phone}?text=${text}`, "_blank");
+        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank");
       }
     } catch (error) {
       const phone = String(CONFIG.DEFAULT_WHATSAPP || "919654414891").replace(/\D/g, "");

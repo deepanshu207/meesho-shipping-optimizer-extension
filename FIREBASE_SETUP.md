@@ -111,7 +111,38 @@ Plans live in the `plans` array on `shipping_optimizer_config/app`. The extensio
 | `allow_credit_addons` | No | `true` = show per-plan credit add-on chips under the plan |
 | `max_addon_selections` | No | Max add-ons a customer can pick (`1` = radio/pick one, `0` = unlimited multi-select) |
 | `credit_addons` | No | Array of add-on objects (see below) |
-| `description` | No | Extra note shown in admin (optional) |
+| `description` | No | Short text on plan detail screen |
+| `highlights` | No | String array — pills on plan detail |
+| `features` | No | Array of `{ icon, title, text }` or strings |
+| `detail_sections` | No | Array of `{ title, body, items[] }` for extra blocks |
+
+**Plan detail screen:** Tapping a plan in the popup or license modal opens a detail view (with ← Back) showing all fields above plus add-ons and **Buy via WhatsApp**.
+
+### Support team list (`support` on app doc)
+
+Paginated contact list for WhatsApp support/upgrade:
+
+```json
+"support": {
+  "enabled": true,
+  "title": "Support team",
+  "page_size": 5,
+  "users": [
+    {
+      "id": "sales",
+      "name": "Deepanshu",
+      "role": "Sales",
+      "label": "Plans & upgrades",
+      "whatsapp_number": "919654414891",
+      "whatsapp_message": "Hi! I need help with Shipping Optimizer.",
+      "active": true,
+      "order": 0
+    }
+  ]
+}
+```
+
+When `support.users` is configured, **WhatsApp Support** and **Upgrade** open this list with Prev/Next pagination. Each row opens WhatsApp (mobile: app via `whatsapp://`; desktop: `wa.me`).
 
 ### Per-plan credit add-ons
 
@@ -291,15 +322,27 @@ Add to `shipping_optimizer_config/app`:
 
 | Mode | Access rule |
 |------|-------------|
-| `subscription` | Valid until `expiresAt` (default for time-based plans) |
-| `credits` | Valid while `credits_balance` > 0 (no expiry required) |
-| `hybrid` | Valid while not expired **and** `credits_balance` > 0 |
+| `subscription` | Valid while not expired — **never expires** when `unlimited_time: true`, `plan_kind: lifetime`, plan `days: 0`, or `expiresAt` left empty |
+| `credits` | Valid while `credits_balance` > 0 (or `unlimited_credits`) |
+| `hybrid` | Valid while **(not expired OR unlimited_time)** AND **(has credits OR unlimited_credits)** |
 
-When credits run out, user buys a pack via WhatsApp → admin adds to `credits_balance` on their license.
+**Never-expiring licenses** — any of:
+- `unlimited_time: true` on plan or license (clears/ignores `expiresAt`)
+- `plan_kind: "lifetime"` or `"unlimited"`
+- Plan `days: 0`
+- Admin leaves `expiresAt` empty on a subscription license (open-ended)
+
+Extension shows **Never expires** / **Lifetime** badge — no expiry countdown.
+
+**Stacked keys:** A lifetime `subscription` key stays active even if a separate credit top-up key runs out of balance.
+
+When credits run out on a hybrid plan, user buys a pack via WhatsApp → admin adds to `credits_balance` on their license.
 
 ### AI image generation limits (`credits.image_generation`)
 
-Control how many images users can generate and whether each image costs credits. Add an `image_generation` object inside `credits` on `shipping_optimizer_config/app`:
+Control how many **generation runs** users can start and whether each run costs credits. One run = one upload → variant generation (20, 50, or 100 variants still count as **1** run; stopping mid-run also counts as **1**).
+
+Add an `image_generation` object inside `credits` on `shipping_optimizer_config/app`:
 
 ```json
 {
@@ -310,7 +353,7 @@ Control how many images users can generate and whether each image costs credits.
       "credits_per_image": 2,
       "daily_limit": 20,
       "monthly_limit": 0,
-      "max_batch_size": 4
+      "max_batch_size": 100
     }
   }
 }
@@ -319,28 +362,28 @@ Control how many images users can generate and whether each image costs credits.
 | Field | Description |
 |-------|-------------|
 | `enabled` | `false` blocks all AI image generation with a message. Default `true`. |
-| `credits_per_image` | Credits charged per generated image (`0` = free). Only applies to `credits`/`hybrid` licenses — subscription/unlimited plans generate free. |
-| `daily_limit` | Max images per day per license (`0` = unlimited). Resets at local midnight. |
-| `monthly_limit` | Max images per calendar month (`0` = unlimited). Resets on the 1st. |
-| `max_batch_size` | Max images in a single generation run (`0` = unlimited). |
+| `credits_per_image` | Credits charged **per generation run** (`0` = free). Only applies to `credits`/`hybrid` licenses — subscription/unlimited plans generate free. Field name kept for compatibility. |
+| `daily_limit` | Max **runs** per day per license (`0` = unlimited). Resets at local midnight. |
+| `monthly_limit` | Max **runs** per calendar month (`0` = unlimited). Resets on the 1st. |
+| `max_batch_size` | Max **variants** allowed in a single run (`0` = unlimited). Does not affect how runs are counted. |
 
 **Behavior & flexibility:**
 - If the whole `image_generation` object is **absent**, nothing changes — the extension keeps its existing behavior (1 credit per operation for credit plans).
-- Once present, the extension enforces these limits client-side **before** generating and persists counters **after** each run.
+- Once present, the extension enforces these limits client-side **before** generating and persists counters **after** each run starts (including stopped runs with zero results).
 - Fully flexible: set every value to `0` (and `enabled: true`) for unlimited free generation; tighten any field to throttle.
-- `unlimited_credits` licenses never pay per image (add-on/limit checks still apply).
+- `unlimited_credits` licenses never pay per run (quota/limit checks still apply).
 
-**Counters written to the license doc** (`shipping_optimizer_licenses/{key}`) on each generation:
+**Counters written to the license doc** (`shipping_optimizer_licenses/{key}`) after each run:
 
 | Field | Description |
 |-------|-------------|
-| `images_generated_total` | Lifetime images generated |
-| `images_generated_today` | Images generated today (reset when the date changes) |
+| `images_generated_total` | Lifetime generation runs (field name kept for compatibility) |
+| `images_generated_today` | Runs today (reset when the date changes) |
 | `images_generated_today_date` | `YYYY-MM-DD` of the current day counter |
-| `images_generated_month` | Images generated this month (reset when the month changes) |
+| `images_generated_month` | Runs this month (reset when the month changes) |
 | `images_generated_month_key` | `YYYY-MM` of the current month counter |
 
-Credits are deducted from `credits_balance` (→ `credits_used`) at `credits_per_image × images`. The extension shows remaining quota and the credit cost before generating, and blocks with a clear message when a limit is hit or credits are insufficient.
+Credits are deducted from `credits_balance` (→ `credits_used`) at `credits_per_image` **per run** (not per variant). The extension shows remaining quota and the credit cost before generating, and blocks with a clear message when a limit is hit or credits are insufficient.
 
 ## 2. Demo / promo keys (`shipping_optimizer_demo_keys/{KEY}`)
 
