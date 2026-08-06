@@ -641,6 +641,10 @@ const FirebaseLicense = {
       .replace(/>/g, "&gt;");
   },
 
+  escapeHtml(value) {
+    return this.escapeAttr(value);
+  },
+
   parsePlansRaw(raw) {
     if (!raw) return null;
     if (Array.isArray(raw)) {
