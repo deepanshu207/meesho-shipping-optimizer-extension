@@ -12,13 +12,14 @@ Build a **Shipping Optimizer Extension** admin panel in Swagstree **Superadmin**
 
 **Access:** `superadmin@swagstree.com` only — use existing `isSuperAdmin` gating.
 
-**UI:** Superadmin → **Shipping Optimizer Extension** → 4 sub-tabs:
+**UI:** Superadmin → **Shipping Optimizer Extension** → 5 sub-tabs:
 1. Config & Pricing
 2. Credits & Packs
 3. Demo / Promo Keys
 4. Paid Licenses
+5. **Google Free Trial**
 
-Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` → `FIREBASE_SETUP.md`, `ACTIVATION_GUIDE.md`
+Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` → `FIREBASE_SETUP.md`, `ACTIVATION_GUIDE.md`, `functions/` (Cloud Function `claimGoogleTrial`)
 
 ---
 
@@ -26,9 +27,10 @@ Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` →
 
 | Collection | Doc ID | Purpose |
 |------------|--------|---------|
-| `shipping_optimizer_config` | `app` | WhatsApp, plans[], credits{}, demo_keys{}, announcement |
+| `shipping_optimizer_config` | `app` | WhatsApp, plans[], credits{}, demo_keys{}, announcement, **google_trial{}** |
 | `shipping_optimizer_demo_keys` | `{KEY}` | Extra promo codes |
-| `shipping_optimizer_licenses` | `{LICENSE_KEY}` | Paid licenses |
+| `shipping_optimizer_licenses` | `{LICENSE_KEY}` | Paid + Google trial licenses |
+| `shipping_optimizer_google_trials` | `{firebase_auth_uid}` | One trial per Google account (written by Cloud Function) |
 
 ### Firestore rules (merge)
 
@@ -54,6 +56,10 @@ match /shipping_optimizer_licenses/{key} {
       'activatedAt', 'lastVerifiedAt', 'expiresAt',
       'credits_balance', 'credits_used'
     ]);
+}
+match /shipping_optimizer_google_trials/{uid} {
+  allow read: if isShippingOptimizerSuperAdmin();
+  allow write: if false;
 }
 ```
 
@@ -553,6 +559,72 @@ The extension supports **multiple active keys on one device**:
 3. Extension shows both licenses and combined credit balance.
 
 **Sign-off:** Customer can remove a key from the device in popup/modal — extension unbinds their device ID from that license doc (`device_ids[]`).
+
+---
+
+## TAB 5: Google Free Trial
+
+Manage secure Gmail-based free trials (extension v1.6+). Trials are **not** shareable demo keys — one per Google account, provisioned by Cloud Function `claimGoogleTrial` (see extension repo `functions/`).
+
+### Config editor (`google_trial` on `shipping_optimizer_config/app`)
+
+| Field | UI | Notes |
+|-------|-----|-------|
+| `enabled` | Toggle | Shows/hides "Continue with Google" in extension |
+| `days` | Number input | Trial length (e.g. 7, 14, 30) — enforced server-side |
+| `credits` | Number input | Image-gen credits included at claim |
+| `max_devices` | Number input | Default `1` |
+| `label` | Text | Shown in extension license type |
+| `oauth_client_id` | Text | Google OAuth Web client ID (Chrome extension redirect) |
+| `function_url` | Text (read-only hint) | `https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial` |
+
+```json
+{
+  "google_trial": {
+    "enabled": true,
+    "days": 7,
+    "credits": 30,
+    "max_devices": 1,
+    "label": "Google free trial",
+    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com",
+    "function_url": "https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial"
+  }
+}
+```
+
+### Trials list (`shipping_optimizer_google_trials`)
+
+Read-only table for superadmin:
+
+| Column | Source |
+|--------|--------|
+| Email | `email` |
+| Google UID | doc id |
+| License key | `license_key` |
+| Created | `created_at` |
+| Expires | `expires_at` |
+| Days / credits granted | `days_granted`, `credits_granted` |
+| Devices | `machine_ids[]` length |
+
+**Actions:** Link to paid license doc · Revoke trial (set license `active: false` + note in `support_notes`).
+
+### Setup checklist (show in admin UI)
+
+1. Firebase Console → Authentication → Google → Enable
+2. Google Cloud → OAuth Web client → redirect `https://<extension-id>.chromiumapp.org/`
+3. Deploy `claimGoogleTrial` function: `firebase deploy --only functions:claimGoogleTrial --project extension-e6e32`
+4. Paste `oauth_client_id` above · set `enabled: true`
+
+### Firestore rules addition
+
+```javascript
+match /shipping_optimizer_google_trials/{uid} {
+  allow read: if isShippingOptimizerSuperAdmin();
+  allow write: if false;
+}
+```
+
+Trial **license** docs use `plan_type: google_trial` in `shipping_optimizer_licenses` — filter in Paid Licenses tab.
 
 ---
 

@@ -2298,6 +2298,170 @@ Please share payment details.`;
 
     return { plans, creditPacks, creditsConfig: creditsCfg, whatsapp: wa, announcement };
   },
+
+  normalizeGoogleTrialConfig(raw) {
+    const src = raw && typeof raw === "object" ? raw : {};
+    const enabled = src.enabled !== false && src.enabled !== "false";
+    const days = Math.max(1, Number(src.days) || 7);
+    const credits = Math.max(0, Number(src.credits) || 0);
+    const maxDevices = Math.max(1, Number(src.max_devices ?? src.maxDevices) || 1);
+    return {
+      enabled,
+      days,
+      credits,
+      max_devices: maxDevices,
+      label: src.label || src.name || "Google free trial",
+      oauth_client_id:
+        src.oauth_client_id || src.oauthClientId || CONFIG?.FIREBASE?.oauthClientId || "",
+      function_url:
+        src.function_url ||
+        src.functionUrl ||
+        CONFIG?.GOOGLE_TRIAL_FUNCTION_URL ||
+        "",
+    };
+  },
+
+  async getGoogleTrialPublicConfig(force = false) {
+    const app = await this.getAppConfig(force);
+    const trial = this.normalizeGoogleTrialConfig(
+      app?.google_trial || app?.googleTrial || {},
+    );
+    return {
+      ...trial,
+      oauth_client_id:
+        trial.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId || "",
+      function_url:
+        trial.function_url || CONFIG?.GOOGLE_TRIAL_FUNCTION_URL || "",
+    };
+  },
+
+  async isGoogleTrialEnabled() {
+    const cfg = await this.getGoogleTrialPublicConfig();
+    return !!(cfg.enabled && (cfg.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId));
+  },
+
+  formatGoogleTrialHint(cfg) {
+    const c = cfg || {};
+    const parts = [];
+    if (c.days) parts.push(`${c.days}-day trial`);
+    if (c.credits > 0) parts.push(`${c.credits} credits`);
+    if (!parts.length) return "One free trial per Google account";
+    return `${parts.join(" · ")} · one per Google account`;
+  },
+
+  async claimGoogleFreeTrial(machineId, idToken) {
+    const cfg = await this.getGoogleTrialPublicConfig(true);
+    if (!cfg.enabled) {
+      return { success: false, reason: "Google free trial is not available right now." };
+    }
+    const functionUrl = (cfg.function_url || "").trim();
+    if (!functionUrl) {
+      return {
+        success: false,
+        reason:
+          "Trial service is not deployed yet. Contact support or use a license key.",
+      };
+    }
+    if (!idToken) {
+      return { success: false, reason: "Please sign in with Google first." };
+    }
+
+    try {
+      const res = await fetch(functionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ machineId: machineId || "" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          success: false,
+          reason:
+            data?.error ||
+            data?.message ||
+            data?.reason ||
+            "Could not start free trial.",
+          code: data?.code || null,
+          trialExpired: !!data?.trialExpired,
+        };
+      }
+
+      const licenseKey = data.licenseKey || data.license_key;
+      if (!licenseKey) {
+        return { success: false, reason: "Trial service did not return a license." };
+      }
+
+      const verify = await this.verifyPaidLicense(licenseKey, machineId);
+      if (!verify.valid && !verify.license) {
+        return {
+          success: false,
+          reason: verify.reason || "Trial license could not be activated.",
+        };
+      }
+
+      return {
+        success: true,
+        existing: !!data.existing,
+        licenseKey,
+        license: verify.license,
+        message: data.existing
+          ? "Welcome back — your Google trial license is active."
+          : `Free trial activated (${cfg.days} days).`,
+      };
+    } catch (e) {
+      return {
+        success: false,
+        reason: e.message || "Network error while claiming trial.",
+      };
+    }
+  },
+
+  async hydrateGoogleTrialUi(root, handlers = {}) {
+    const section =
+      root?.querySelector?.("#google-trial-section") ||
+      root?.querySelector?.(".google-trial-section");
+    const btn =
+      root?.querySelector?.("#google-trial-btn") ||
+      root?.querySelector?.(".google-trial-btn");
+    const hint =
+      root?.querySelector?.("#google-trial-hint") ||
+      root?.querySelector?.(".google-trial-hint");
+    const userEl =
+      root?.querySelector?.("#google-trial-user") ||
+      root?.querySelector?.(".google-trial-user");
+
+    if (!section) return { enabled: false };
+
+    const cfg = await this.getGoogleTrialPublicConfig();
+    const enabled = cfg.enabled && !!cfg.oauth_client_id;
+    section.style.display = enabled ? "block" : "none";
+    if (!enabled) return { enabled: false, config: cfg };
+
+    if (hint) hint.textContent = this.formatGoogleTrialHint(cfg);
+
+    let user = null;
+    if (typeof FirebaseAuth !== "undefined") {
+      user = await FirebaseAuth.getCurrentUser();
+    }
+    if (userEl) {
+      userEl.style.display = user?.email ? "block" : "none";
+      userEl.textContent = user?.email ? `Signed in as ${user.email}` : "";
+    }
+    if (btn) {
+      btn.textContent = user?.email
+        ? "Start free trial with Google"
+        : "Continue with Google";
+      if (handlers.onClick && !btn.dataset.googleTrialBound) {
+        btn.dataset.googleTrialBound = "1";
+        btn.addEventListener("click", handlers.onClick);
+      }
+    }
+
+    return { enabled: true, config: cfg, user };
+  },
 };
 
 if (typeof globalThis !== "undefined") {

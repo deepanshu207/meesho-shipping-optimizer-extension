@@ -355,6 +355,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         const creditsSection = document.getElementById("popup-credits-section");
         if (creditsSection) creditsSection.classList.remove("hidden");
+        await setupGoogleTrialUi();
       }
     } catch (error) {
       console.error("Error loading license:", error);
@@ -709,6 +710,42 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (e) {}
   }
 
+  async function setupGoogleTrialUi() {
+    if (typeof FirebaseLicense === "undefined") return;
+    const btn = document.getElementById("google-trial-btn");
+    if (!btn || btn.dataset.boundGoogleTrial) return;
+    btn.dataset.boundGoogleTrial = "1";
+
+    const runTrial = async () => {
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = "Signing in…";
+      showMessage("", "");
+      try {
+        const result = await LicenseManager.activateGoogleFreeTrial();
+        if (result.success) {
+          showMessage(result.message || "Free trial activated!", "success");
+          await loadLicenseStatus();
+          await FirebaseLicense.hydrateGoogleTrialUi(document, {
+            onClick: runTrial,
+          });
+        } else {
+          showMessage(
+            result.message || "Could not start free trial.",
+            result.trialExpired ? "error" : "error",
+          );
+        }
+      } catch (e) {
+        showMessage(e.message || "Google sign-in failed.", "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev || "Continue with Google";
+      }
+    };
+
+    await FirebaseLicense.hydrateGoogleTrialUi(document, { onClick: runTrial });
+  }
+
   PA.bindTap(activateBtn, async () => {
     const key = licenseInput?.value?.trim();
     if (!key) {
@@ -873,6 +910,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadFirebaseSettings();
   await hydratePopupPlans();
   await loadLicenseStatus();
+  await setupGoogleTrialUi();
   await refreshImageGenQuota();
   setStatus(
     PA.isMobile()

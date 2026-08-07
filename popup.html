@@ -367,6 +367,36 @@
       gap: 8px;
     }
 
+    .btn-google {
+      background: #fff;
+      color: #1f2937;
+      border: 1px solid #dadce0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 700;
+    }
+
+    .btn-google:hover:not(:disabled) {
+      background: #f8f9fa;
+      border-color: #c6c9cc;
+    }
+
+    .btn-google::before {
+      content: "G";
+      display: inline-flex;
+      width: 18px;
+      height: 18px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4285f4, #34a853, #fbbc05, #ea4335);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
     .divider {
       display: flex;
       align-items: center;
@@ -761,6 +791,19 @@
 
       <div id="popup-message" class="message"></div>
 
+      <div id="google-trial-section" class="status-card google-trial-section" style="display:none;padding:12px;margin-bottom:10px;">
+        <div style="text-align:center;margin-bottom:8px;">
+          <span style="font-size:11px;color:#c45f12;font-weight:700;">🎁 FREE TRIAL — sign in with Google</span>
+        </div>
+        <p id="google-trial-hint" class="hint" style="margin-bottom:10px;text-align:center;">One free trial per Google account</p>
+        <p id="google-trial-user" class="google-trial-user" style="display:none;font-size:11px;color:var(--mso-muted);text-align:center;margin-bottom:8px;"></p>
+        <button type="button" class="btn btn-google" id="google-trial-btn" style="width:100%;margin-bottom:0;">
+          Continue with Google
+        </button>
+      </div>
+
+      <div class="divider"><span>OR USE LICENSE KEY</span></div>
+
       <div class="input-group">
         <label class="input-label" for="license-input">Enter License Key</label>
         <input type="text" class="input-field" id="license-input" placeholder="Enter your license key" autocomplete="off">
@@ -834,6 +877,7 @@
 
   <script src="config.js"></script>
   <script src="js/firebaseLicense.js"></script>
+  <script src="js/firebaseAuth.js"></script>
   <script src="js/machineId.js"></script>
   <script src="js/license.js"></script>
   <script src="js/whatsappLink.js"></script>

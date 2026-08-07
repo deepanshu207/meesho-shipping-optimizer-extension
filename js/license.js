@@ -165,12 +165,14 @@ const LicenseManager = {
       return "Lifetime plan";
     }
     if (entry?.licenseInfo?.planType === "demo") return "Demo";
+    if (entry?.licenseInfo?.planType === "google_trial") return "Google trial";
     return "Primary plan";
   },
 
   formatLicenseTypeLabel(info) {
     if (!info) return "Unknown";
     if (info.planType === "demo") return "Demo license";
+    if (info.planType === "google_trial") return "Google free trial";
     const planName =
       info.planName ||
       info.planId ||
@@ -1337,6 +1339,111 @@ const LicenseManager = {
       success: false,
       message: "License service unavailable. Enable Firebase in config.",
     };
+  },
+
+  async activateGoogleFreeTrial() {
+    const isExtensionPage =
+      typeof location !== "undefined" &&
+      String(location.protocol || "").startsWith("chrome-extension");
+
+    if (
+      !isExtensionPage &&
+      typeof chrome !== "undefined" &&
+      chrome.runtime?.sendMessage
+    ) {
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: "ACTIVATE_GOOGLE_TRIAL",
+        });
+        if (response?.success) {
+          const licenses = await this.getActiveLicenses();
+          this.isLicensed = this.licensesHaveAccess(licenses);
+          this.licenseKey = this.pickPrimaryLicense(licenses)?.key || null;
+          this.licenseInfo =
+            this.pickPrimaryLicense(licenses)?.licenseInfo || null;
+        }
+        return (
+          response || {
+            success: false,
+            message: "Could not reach extension background.",
+          }
+        );
+      } catch (e) {
+        return { success: false, message: e.message || "Google trial failed." };
+      }
+    }
+
+    if (
+      typeof FirebaseAuth === "undefined" ||
+      typeof FirebaseLicense === "undefined" ||
+      !FirebaseLicense.isEnabled()
+    ) {
+      return {
+        success: false,
+        message: "Google sign-in is not available in this build.",
+      };
+    }
+
+    try {
+      let user = await FirebaseAuth.getCurrentUser();
+      if (!user) {
+        await FirebaseAuth.signInWithGoogle();
+        user = await FirebaseAuth.getCurrentUser();
+      }
+      if (!user?.uid) {
+        return { success: false, message: "Google sign-in was cancelled." };
+      }
+
+      const idToken = await FirebaseAuth.getIdToken(true);
+      const machineId = await this.getMachineId();
+      const claim = await FirebaseLicense.claimGoogleFreeTrial(
+        machineId,
+        idToken,
+      );
+
+      if (!claim.success) {
+        return {
+          success: false,
+          message: claim.reason || "Could not start free trial.",
+          trialExpired: claim.trialExpired,
+          code: claim.code,
+        };
+      }
+
+      const licenseKey = claim.licenseKey;
+      const licenseInfo = this.normalizeLicenseInfo({
+        ...(claim.license || {}),
+        key: licenseKey,
+        planType: "google_trial",
+        planName: claim.license?.planName || "Google free trial",
+        googleUid: user.uid,
+        customerEmail: user.email,
+      });
+
+      const entry = {
+        key: licenseKey,
+        licenseInfo,
+        activatedAt: licenseInfo.activatedAt || new Date().toISOString(),
+      };
+      const existing = await this.getActiveLicenses();
+      const merged = this.mergeLicenseEntry(existing, entry);
+      await this.saveActiveLicenses(merged);
+      this.isLicensed = this.licensesHaveAccess(merged);
+      this.licenseKey = this.pickPrimaryLicense(merged)?.key || licenseKey;
+      this.licenseInfo = licenseInfo;
+
+      return {
+        success: true,
+        existing: claim.existing,
+        message: claim.message || "Free trial activated!",
+        licenseKey,
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e.message || "Google sign-in failed.",
+      };
+    }
   },
 
   async signOffLicense(key) {

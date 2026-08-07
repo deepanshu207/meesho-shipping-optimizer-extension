@@ -725,6 +725,13 @@ const OptimizerUI = {
                         <button type="button" id="license-credit-back-btn" style="border:1px solid #f0e0c8;background:#fff;color:#3d2914;border-radius:8px;padding:8px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px;">← Back to credits</button>
                         <div id="license-credit-detail-body"></div>
                     </div>
+
+                    <div id="google-trial-section" class="google-trial-section opt-section" style="display:none;padding:12px;">
+                        <div class="opt-section-title" style="text-align:center;margin-bottom:8px;">🎁 FREE TRIAL — Google sign-in</div>
+                        <p id="google-trial-hint" class="google-trial-hint" style="font-size:10px;color:#6b7280;text-align:center;margin-bottom:8px;">One free trial per Google account</p>
+                        <p id="google-trial-user" class="google-trial-user" style="display:none;font-size:10px;color:#6b7280;text-align:center;margin-bottom:8px;"></p>
+                        <button type="button" id="google-trial-btn" class="google-trial-btn opt-btn" style="width:100%;padding:10px;background:#fff;border:1px solid #dadce0;color:#1f2937;font-weight:700;">Continue with Google</button>
+                    </div>
                     
                     <div class="opt-section" style="padding:12px;">
                         <label class="opt-label">Already have a License Key?</label>

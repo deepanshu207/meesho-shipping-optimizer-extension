@@ -1,6 +1,12 @@
 // Background service worker for Meesho Shipping Optimizer
 
-importScripts("config.js", "js/firebaseLicense.js", "js/machineId.js");
+importScripts(
+  "config.js",
+  "js/firebaseLicense.js",
+  "js/firebaseAuth.js",
+  "js/machineId.js",
+  "js/license.js",
+);
 
 class BackgroundService {
   constructor() {
@@ -85,6 +91,28 @@ class BackgroundService {
             ok: await this.openWhatsAppMobile(message),
           });
           break;
+        case "ACTIVATE_GOOGLE_TRIAL": {
+          if (typeof LicenseManager === "undefined") {
+            sendResponse({
+              success: false,
+              message: "License manager unavailable.",
+            });
+            break;
+          }
+          const trialResult = await LicenseManager.activateGoogleFreeTrial();
+          if (trialResult.success) {
+            safeNotify({ type: "LICENSE_UPDATED" });
+          }
+          sendResponse(trialResult);
+          break;
+        }
+        case "GOOGLE_SIGN_OUT": {
+          if (typeof FirebaseAuth !== "undefined") {
+            await FirebaseAuth.signOut();
+          }
+          sendResponse({ success: true });
+          break;
+        }
         default:
           sendResponse({ success: false, error: "Unknown message type" });
       }
