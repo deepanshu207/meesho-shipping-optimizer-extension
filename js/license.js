@@ -54,6 +54,7 @@ const LicenseManager = {
       creditsBalance:
         Number(info.creditsBalance ?? info.credits_balance ?? 0) || 0,
       creditsUsed: Number(info.creditsUsed ?? info.credits_used ?? 0) || 0,
+      accessStatus: info.accessStatus || info.access_status || "active",
     };
   },
 
@@ -249,6 +250,101 @@ const LicenseManager = {
     let text = `Total ${total} · Used ${used} · Left ${left}`;
     if (costPerRun > 0) text += ` · ${costPerRun}/run`;
     return text;
+  },
+
+  summarizeLicenseEntry(entry) {
+    const info = this.normalizeLicenseInfo(entry?.licenseInfo || {});
+    const validity = this.getLicenseValiditySummary(info);
+    const typeLabel = this.formatLicenseTypeLabel(info);
+    const role = this.getLicenseRoleLabel(entry);
+    const usage = this.getCreditsUsageSummary([entry]);
+    const accessOk = this.licenseEntryHasAccess(entry);
+    let status = info.accessStatus || "active";
+    let statusLabel = "Active";
+    if (!accessOk) {
+      if (validity.kind === "expired" || status === "expired") {
+        status = "expired";
+        statusLabel = "Expired";
+      } else if (
+        status === "credits_exhausted" ||
+        ((info.billingMode === "hybrid" || info.billingMode === "credits") &&
+          Number(info.creditsBalance ?? 0) <= 0)
+      ) {
+        status = "credits_exhausted";
+        statusLabel = "Credits exhausted";
+      } else {
+        status = "inactive";
+        statusLabel = "Inactive";
+      }
+    }
+    return {
+      key: entry?.key,
+      role,
+      typeLabel,
+      status,
+      statusLabel,
+      accessOk,
+      validity,
+      info,
+      usage,
+      creditsLine: this.formatCreditsUsageText(usage, 0),
+    };
+  },
+
+  renderLicenseStatusBannerHtml(licenses) {
+    const list = (licenses || []).filter(Boolean);
+    if (!list.length) return "";
+    return list
+      .map((entry) => {
+        const s = this.summarizeLicenseEntry(entry);
+        const key = this.maskLicenseKey(entry.key);
+        const expiry =
+          s.validity.kind === "expired"
+            ? `Expired ${s.info.expiresAt ? new Date(s.info.expiresAt).toLocaleDateString() : ""}`
+            : s.info.expiresAt
+              ? `Expires ${new Date(s.info.expiresAt).toLocaleDateString()}`
+              : s.info.unlimitedTime
+                ? "Never expires"
+                : "No expiry";
+        const statusColor =
+          s.status === "active"
+            ? "#059669"
+            : s.status === "credits_exhausted"
+              ? "#d97706"
+              : "#dc2626";
+        const credits =
+          s.creditsLine && s.usage.applies
+            ? `<div style="margin-top:6px;font-size:11px;color:#3d2914;">💳 ${this.escapeHtml(s.creditsLine)}</div>`
+            : "";
+        const renewHint =
+          s.status === "expired"
+            ? `<div style="margin-top:8px;font-size:11px;color:#b45309;">Renew below with the same license key — your key stays on this device.</div>`
+            : s.status === "credits_exhausted"
+              ? `<div style="margin-top:8px;font-size:11px;color:#b45309;">Buy a credit pack below to continue with the same license.</div>`
+              : "";
+        return `<div class="license-status-card" style="background:#fff;border:1px solid #f0e0c8;border-radius:10px;padding:12px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+            <div style="min-width:0;">
+              <div style="font-size:10px;font-weight:700;color:#c45f12;text-transform:uppercase;">${this.escapeHtml(s.role)}</div>
+              <div style="font-size:13px;font-weight:700;color:#1f2937;margin-top:4px;">${this.escapeHtml(s.typeLabel)}</div>
+              <div style="font-family:Consolas,monospace;font-size:11px;color:#6b7280;margin-top:4px;word-break:break-all;">${key}</div>
+            </div>
+            <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;white-space:nowrap;color:${statusColor};background:${statusColor}1a;">${this.escapeHtml(s.statusLabel)}</span>
+          </div>
+          <div style="font-size:11px;color:#6b7280;margin-top:8px;line-height:1.45;">${this.escapeHtml(expiry)}</div>
+          ${credits}
+          ${renewHint}
+        </div>`;
+      })
+      .join("");
+  },
+
+  escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   },
 
   licenseEntryHasAccess(entry) {
@@ -499,6 +595,14 @@ const LicenseManager = {
               });
             } else if (refreshed.reason === "License not found or deactivated") {
               // Drop only when admin deactivated the key.
+            } else if (refreshed.license) {
+              updated.push({
+                ...entry,
+                licenseInfo: this.mergeRefreshedLicenseInfo(
+                  entry.licenseInfo,
+                  refreshed.license,
+                ),
+              });
             } else {
               // Keep license in session (credits exhausted, expiry, network, device issues).
               updated.push(entry);
@@ -1185,23 +1289,37 @@ const LicenseManager = {
           trimmedKey,
           machineId,
         );
-        if (fbResult.valid === true) {
-          const entry = {
-            key: trimmedKey,
-            licenseInfo: fbResult.license || {
+        if (fbResult.valid === true || fbResult.reactivatable || fbResult.license) {
+          const licenseInfo = this.normalizeLicenseInfo(
+            fbResult.license || {
               key: trimmedKey,
               planType: "premium",
               activatedAt: new Date().toISOString(),
             },
-            activatedAt: new Date().toISOString(),
+          );
+          const entry = {
+            key: trimmedKey,
+            licenseInfo,
+            activatedAt: licenseInfo.activatedAt || new Date().toISOString(),
           };
           const existing = await this.getActiveLicenses();
           const merged = this.mergeLicenseEntry(existing, entry);
           await this.saveActiveLicenses(merged);
-          this.isLicensed = true;
+          this.isLicensed = this.licensesHaveAccess(merged);
           this.licenseKey = this.pickPrimaryLicense(merged)?.key || trimmedKey;
-          this.licenseInfo = fbResult.license;
-          return { success: true, merged: merged.length > 1 };
+          this.licenseInfo = licenseInfo;
+          if (fbResult.valid) {
+            return { success: true, merged: merged.length > 1 };
+          }
+          return {
+            success: true,
+            limited: true,
+            merged: merged.length > 1,
+            message: fbResult.reason || "License saved — renew or buy credits to continue",
+            needsTopUp: fbResult.needsTopUp,
+            needsRenewal: fbResult.needsRenewal,
+            accessStatus: fbResult.accessStatus,
+          };
         }
         return {
           success: false,

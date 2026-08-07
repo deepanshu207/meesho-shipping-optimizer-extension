@@ -1307,6 +1307,54 @@ Please share payment details.`;
     return mode === "credits" || mode === "hybrid";
   },
 
+  describeLicenseAccess(lic, plan, resolvedExpiresAt) {
+    const mode = this.resolveBillingMode(lic, plan);
+    const unlimitedTime = this.resolveUnlimitedTime(lic, plan);
+    const credits = this.resolveCreditsBalance(lic);
+    const expired =
+      !unlimitedTime &&
+      resolvedExpiresAt &&
+      new Date() > new Date(resolvedExpiresAt);
+
+    if (this.licenseHasAccess(lic, plan, resolvedExpiresAt)) {
+      return {
+        accessStatus: "active",
+        reason: "",
+        needsTopUp: false,
+        needsRenewal: false,
+        reactivatable: true,
+      };
+    }
+
+    if (mode === "credits" || (mode === "hybrid" && credits <= 0 && !expired)) {
+      return {
+        accessStatus: "credits_exhausted",
+        reason: "Credits exhausted — buy more credits to continue",
+        needsTopUp: true,
+        needsRenewal: false,
+        reactivatable: true,
+      };
+    }
+
+    if (expired) {
+      return {
+        accessStatus: "expired",
+        reason: "License expired — renew to continue with the same key",
+        needsTopUp: false,
+        needsRenewal: true,
+        reactivatable: true,
+      };
+    }
+
+    return {
+      accessStatus: "inactive",
+      reason: "License inactive — contact support or renew",
+      needsTopUp: this.isCreditsBilling(mode),
+      needsRenewal: true,
+      reactivatable: true,
+    };
+  },
+
   licenseHasAccess(lic, plan, resolvedExpiresAt) {
     const mode = this.resolveBillingMode(lic, plan);
     const unlimitedTime = this.resolveUnlimitedTime(lic, plan);
@@ -1437,6 +1485,7 @@ Please share payment details.`;
         : extras.expiresAt || lic.expiresAt || lic.expires_at || null,
       activatedAt:
         extras.activatedAt || lic.activatedAt || lic.activated_at || null,
+      accessStatus: extras.accessStatus || lic.access_status || lic.accessStatus || "active",
       customerName: lic.customer_name || lic.customerName || "",
       customerPhone: lic.customer_phone || lic.customerPhone || "",
     };
@@ -1747,16 +1796,41 @@ Please share payment details.`;
         resolvedExpiresAt,
       )
     ) {
-      const mode = billingMode;
-      if (mode === "credits" || (mode === "hybrid" && creditsBalance <= 0)) {
-        return {
-          valid: false,
-          reason: "Credits exhausted — buy more credits to continue",
-          needsTopUp: true,
+      const access = this.describeLicenseAccess(
+        { ...lic, credits_balance: creditsBalance },
+        plan,
+        resolvedExpiresAt,
+      );
+      const finalCreditInfo = this.resolveLicenseCredits(
+        { ...lic, credits_balance: creditsBalance },
+        plan,
+      );
+      return {
+        valid: false,
+        reactivatable: true,
+        license: this.buildLicensePayload(lic, plan, {
+          key,
+          planDays,
+          planName: plan?.name,
+          deviceIds,
+          maxDevices,
+          unlimitedTime,
+          unlimitedCredits,
+          unlimitedDevices: binding.unlimitedDevices,
           creditsBalance,
-        };
-      }
-      return { valid: false, reason: "License expired" };
+          includedCredits: finalCreditInfo.included,
+          addonCredits: finalCreditInfo.addon,
+          addonCreditIds: finalCreditInfo.addonIds,
+          expiresAt: resolvedExpiresAt,
+          activatedAt: resolvedActivatedAt,
+          accessStatus: access.accessStatus,
+        }),
+        reason: access.reason,
+        needsTopUp: access.needsTopUp,
+        needsRenewal: access.needsRenewal,
+        accessStatus: access.accessStatus,
+        creditsBalance,
+      };
     }
 
     const finalCreditInfo = this.resolveLicenseCredits(
@@ -1805,28 +1879,46 @@ Please share payment details.`;
       return { valid: false, reason: "This device is not registered on this license" };
     }
     const resolvedExpiresAt = lic.expiresAt || lic.expires_at || null;
+    const payloadExtras = {
+      key,
+      planDays: await this.resolvePlanDays(lic),
+      planName: plan?.name,
+      deviceIds,
+      maxDevices: this.resolveMaxDevices(lic, plan),
+      unlimitedTime: this.resolveUnlimitedTime(lic, plan),
+      unlimitedCredits: this.resolveUnlimitedCredits(lic, plan),
+      unlimitedDevices,
+      creditsBalance: this.resolveCreditsBalance(lic),
+      expiresAt: resolvedExpiresAt,
+      activatedAt: lic.activatedAt || lic.activated_at,
+    };
+    const creditInfo = this.resolveLicenseCredits(lic, plan);
+    payloadExtras.includedCredits = creditInfo.included;
+    payloadExtras.addonCredits = creditInfo.addon;
+    payloadExtras.addonCreditIds = creditInfo.addonIds;
+
     if (!this.licenseHasAccess(lic, plan, resolvedExpiresAt)) {
+      const access = this.describeLicenseAccess(lic, plan, resolvedExpiresAt);
       return {
         valid: false,
-        reason: "License expired or credits exhausted",
-        needsTopUp: this.isCreditsBilling(this.resolveBillingMode(lic, plan)),
+        reactivatable: true,
+        license: this.buildLicensePayload(lic, plan, {
+          ...payloadExtras,
+          accessStatus: access.accessStatus,
+        }),
+        reason: access.reason,
+        needsTopUp: access.needsTopUp,
+        needsRenewal: access.needsRenewal,
+        accessStatus: access.accessStatus,
       };
     }
     return {
       valid: true,
       license: this.buildLicensePayload(lic, plan, {
-        key,
-        planDays: await this.resolvePlanDays(lic),
-        planName: plan?.name,
-        deviceIds,
-        maxDevices: this.resolveMaxDevices(lic, plan),
-        unlimitedTime: this.resolveUnlimitedTime(lic, plan),
-        unlimitedCredits: this.resolveUnlimitedCredits(lic, plan),
-        unlimitedDevices,
-        creditsBalance: this.resolveCreditsBalance(lic),
-        expiresAt: resolvedExpiresAt,
-        activatedAt: lic.activatedAt || lic.activated_at,
+        ...payloadExtras,
+        accessStatus: "active",
       }),
+      accessStatus: "active",
     };
   },
 

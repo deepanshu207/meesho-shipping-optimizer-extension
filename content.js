@@ -387,15 +387,37 @@ class MeeshoShippingOptimizer {
           this.openModal();
           sendResponse({ success: true });
         } else if (message.type === "LICENSE_UPDATED") {
-          void this.checkLicense().then((valid) => {
-            if (!valid && this.modal && !this.isProcessing) {
-              OptimizerUtils.showNotification(
-                "License expired — please activate again",
-                "error",
-              );
-              this.closeModal();
-              setTimeout(() => this.openModal(), 400);
+          void this.checkLicense().then(async () => {
+            const licenses =
+              typeof LicenseManager !== "undefined"
+                ? await LicenseManager.getActiveLicenses()
+                : [];
+            if (!this.modal || !licenses.length) return;
+            const canOperate =
+              typeof LicenseManager !== "undefined" &&
+              LicenseManager.licensesHaveAccess(licenses);
+            this.isLicensed = canOperate;
+            if (canOperate) {
+              void this.refreshImageGenQuotaUi();
+              return;
             }
+            const summary = LicenseManager.summarizeLicenseEntry(
+              LicenseManager.pickPrimaryLicense(licenses),
+            );
+            if (this.isProcessing) {
+              void this.refreshImageGenQuotaUi();
+              this.notifyUser(
+                summary.status === "expired"
+                  ? "License expired — renew to continue"
+                  : summary.status === "credits_exhausted"
+                    ? "Credits exhausted — buy more credits to continue"
+                    : "License inactive — renew or buy credits",
+                "warning",
+                { licenseRelated: true, duration: 8000 },
+              );
+              return;
+            }
+            await this.openModal();
           });
           sendResponse({ success: true });
         }
@@ -1047,6 +1069,14 @@ class MeeshoShippingOptimizer {
     }
 
     await this.checkLicense();
+    const storedLicenses =
+      typeof LicenseManager !== "undefined"
+        ? await LicenseManager.getActiveLicenses()
+        : [];
+    const canOperate =
+      typeof LicenseManager !== "undefined" &&
+      LicenseManager.licensesHaveAccess(storedLicenses);
+    this.isLicensed = canOperate;
 
     if (window.WEB_OPTIMIZER_MODE && typeof MeeshoAPI !== "undefined") {
       MeeshoAPI.init();
@@ -1093,8 +1123,10 @@ class MeeshoShippingOptimizer {
     if (this.isLicensed) {
       this.setupMainEvents();
       this.attachCategoryAutocompleteModalHandlers();
+      void this.refreshImageGenQuotaUi();
     } else {
       this.setupLicenseEvents();
+      void this.renderStoredLicenseStatus(storedLicenses);
     }
 
     this.modal.onclick = (e) => {
@@ -1459,17 +1491,28 @@ class MeeshoShippingOptimizer {
           const result = await LicenseManager.verifyLicenseKey(key);
 
           if (result.success) {
-            this.isLicensed = true;
-            OptimizerUtils.showNotification(
-              "License activated successfully!",
-              "success"
+            this.isLicensed = LicenseManager.licensesHaveAccess(
+              await LicenseManager.getActiveLicenses(),
             );
+            if (result.limited) {
+              this.notifyUser(
+                result.message ||
+                  "License saved — renew or buy credits to continue",
+                "warning",
+                { licenseRelated: true, duration: 8000 },
+              );
+            } else {
+              this.notifyUser("License activated successfully!", "success", {
+                licenseRelated: true,
+              });
+            }
             this.closeModal();
             setTimeout(() => this.openModal(), 300);
           } else {
-            OptimizerUtils.showNotification(
+            this.notifyUser(
               result.message || "License verification failed",
-              "error"
+              "error",
+              { licenseRelated: true },
             );
             activateBtn.textContent = "Activate License";
             activateBtn.disabled = false;
@@ -1738,11 +1781,26 @@ class MeeshoShippingOptimizer {
     }
   }
 
+  async renderStoredLicenseStatus(licenses) {
+    const el = document.getElementById("license-stored-status");
+    if (!el || typeof LicenseManager === "undefined") return;
+    const list = licenses || (await LicenseManager.getActiveLicenses());
+    if (!list.length) {
+      el.style.display = "none";
+      el.innerHTML = "";
+      return;
+    }
+    el.innerHTML = LicenseManager.renderLicenseStatusBannerHtml(list);
+    el.style.display = "block";
+  }
+
   /** Show credits balance + generation limits on the optimizer screen. */
   async refreshImageGenQuotaUi() {
     const creditsEl = document.getElementById("image-gen-credits");
     const quotaEl = document.getElementById("image-gen-quota");
     const creditsBar = document.getElementById("optimizer-credits-bar");
+    const licenseBar = document.getElementById("optimizer-license-bar");
+    const smpCredits = document.getElementById("smp-credits");
     if (!this.requiresLicense() || typeof LicenseManager === "undefined") return;
     try {
       const summary = await LicenseManager.getImageGenSummary();
@@ -1776,6 +1834,33 @@ class MeeshoShippingOptimizer {
         } else {
           creditsBar.style.display = "none";
           creditsBar.classList.remove("exhausted");
+        }
+      }
+
+      if (smpCredits) {
+        if (summary.creditsApply && creditsHtml) {
+          smpCredits.style.display = "block";
+          smpCredits.innerHTML = creditsHtml;
+        } else {
+          smpCredits.style.display = "none";
+        }
+      }
+
+      if (licenseBar) {
+        const licenses = await LicenseManager.getActiveLicenses();
+        const primary = LicenseManager.pickPrimaryLicense(licenses);
+        if (primary) {
+          const s = LicenseManager.summarizeLicenseEntry(primary);
+          const statusColor =
+            s.status === "active"
+              ? "#059669"
+              : s.status === "credits_exhausted"
+                ? "#d97706"
+                : "#dc2626";
+          licenseBar.style.display = "block";
+          licenseBar.innerHTML = `<strong>${LicenseManager.escapeHtml(s.typeLabel)}</strong> · <span style="color:${statusColor};">${LicenseManager.escapeHtml(s.statusLabel)}</span> · ${LicenseManager.escapeHtml(s.validity.label)}`;
+        } else {
+          licenseBar.style.display = "none";
         }
       }
 
@@ -3848,6 +3933,7 @@ class MeeshoShippingOptimizer {
           ${logoHtml}
           <h3 style="margin:0 0 5px 0;color:#059669;font-size:${compact ? "15px" : "18px"};">${compact ? "Searching again…" : "Finding best shipping"}</h3>
           <p id="smp-attempts" style="color:#9ca3af;font-size:11px;margin-bottom:5px;">0 / ${maxAttempts}</p>
+          <p id="smp-credits" style="display:none;font-size:11px;color:#3d2914;margin:0 0 8px;font-weight:600;"></p>
           <p id="smp-time" style="color:#e67e22;font-size:12px;margin-bottom:12px;">⏱️ 0s</p>
           <div id="smp-best-wrap" style="background:rgba(230,126,34,0.12);border:1px solid rgba(230,126,34,0.28);border-radius:12px;padding:14px 12px 12px;margin-bottom:12px;overflow:visible;">
             <div style="font-size:28px;color:#e67e22;">🔍</div>
