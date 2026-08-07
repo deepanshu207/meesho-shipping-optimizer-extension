@@ -518,6 +518,26 @@ Extension generates Device ID per browser profile (e.g. `M1A2B3C4D5E6`). Kiwi An
 
 Extension shows: badge **Lifetime**, validity **Never expires**, no expiry warnings.
 
+### Renewal / re-activation with the **same license key**
+
+The extension must **never sign the user off** when credits are exhausted or a subscription expires. The same key stays on the device so the customer can renew or buy add-ons.
+
+| Scenario | Firebase / admin action | Extension behavior |
+|----------|-------------------------|-------------------|
+| **Credits exhausted** (hybrid / credits) | Top up `credits_balance` on the **same** license doc after payment | User re-enters same key OR refresh picks up new balance; status shows **Credits exhausted** until topped up |
+| **Subscription expired** | Extend `expiresAt` on the **same** license doc (or set new `planDays` from activation) | User re-activates same key; status shows **Expired** with renew CTA; plans + credit packs visible |
+| **Add-on credits on monthly/hybrid** | Set `addon_credits`, `addon_credit_ids`, increase `credits_balance` on same license | Show type **Monthly · Plan + credits** with base + addon breakdown |
+| **Admin deactivated** | `active: false` on license doc | Only case where extension removes the key |
+
+**Paid license editor fields for renewal (same doc, same key):**
+- `expiresAt` — push forward for subscription/hybrid renewal
+- `credits_balance` — add pack credits or reset included credits
+- `addon_credits`, `addon_credit_ids`, `included_credits` — for add-on purchases
+- `billing_mode` — `subscription` \| `hybrid` \| `credits` (shown in extension as plan type)
+- `active: true` — must stay true for customer access
+
+**Do not** create a new license key for renewals unless the customer wants a separate credit-top-up key (stacked license).
+
 ### Stacked licenses (plan + credit top-up)
 
 The extension supports **multiple active keys on one device**:

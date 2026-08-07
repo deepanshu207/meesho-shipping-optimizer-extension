@@ -691,6 +691,8 @@ const OptimizerUI = {
                     <h2>License Required</h2>
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
+                <div id="optimizer-inline-alert" class="optimizer-inline-alert" role="alert" aria-live="polite"></div>
+                <div id="license-stored-status" style="display:none;padding:8px 12px 0;"></div>
                 <div class="opt-body">
                     <div style="text-align:center;padding:10px 0;">
                         <div style="font-size:40px;margin-bottom:8px;">🚀</div>
@@ -748,6 +750,7 @@ const OptimizerUI = {
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
                 <div id="optimizer-inline-alert" class="optimizer-inline-alert" role="alert" aria-live="polite"></div>
+                <div id="optimizer-license-bar" class="optimizer-credits-bar" style="display:none;font-size:10px;" aria-live="polite"></div>
                 <div id="optimizer-credits-bar" class="optimizer-credits-bar" style="display:none;" aria-live="polite"></div>
                 <div class="opt-body">
                     <div class="opt-section" style="padding:12px;">

@@ -211,8 +211,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         const totalCredits = LicenseManager.getTotalCreditsBalance(licenses);
         const creditUsage = LicenseManager.getCreditsUsageSummary(licenses);
         const validity = LicenseManager.getLicenseValiditySummary(info);
+        const summary = LicenseManager.summarizeLicenseEntry(primary);
 
         let infoHTML = `<div class="license-type-pill">${LicenseManager.getLicenseRoleLabel(primary)}</div>`;
+        infoHTML += `<div style="font-size:10px;font-weight:700;color:${
+          summary.status === "active"
+            ? "#059669"
+            : summary.status === "credits_exhausted"
+              ? "#d97706"
+              : "#dc2626"
+        };margin-bottom:4px;">${summary.statusLabel}</div>`;
         infoHTML += `<div style="font-size:14px;font-weight:700;color:var(--mso-ink);margin-bottom:6px;">${typeLabel}</div>`;
         infoHTML += `<div class="license-key">${maskKey(primary.key)}</div>`;
         infoHTML += `<p style="font-size:11px;color:var(--mso-muted);margin-top:8px;line-height:1.45;">`;
@@ -722,12 +730,20 @@ document.addEventListener("DOMContentLoaded", async () => {
           ? await LicenseManager.verifyLicenseKey(key)
           : await verifyLicenseWithServer(key);
       if (result.success) {
-        showMessage(
-          result.merged
-            ? "License added — multiple licenses now active"
-            : "License activated successfully!",
-          "success",
-        );
+        if (result.limited) {
+          showMessage(
+            result.message ||
+              "License saved on this device — renew or buy credits to continue",
+            "error",
+          );
+        } else {
+          showMessage(
+            result.merged
+              ? "License added — multiple licenses now active"
+              : "License activated successfully!",
+            "success",
+          );
+        }
         await loadLicenseStatus();
       } else {
         showMessage(result.message || "License verification failed", "error");
