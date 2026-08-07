@@ -24,9 +24,66 @@ The Firestore REST base URL is derived automatically from `projectId`, so this b
 
 | Collection | Document ID | Purpose |
 |------------|-------------|---------|
-| `shipping_optimizer_config` | `app` | Pricing plans, WhatsApp number/message, optional inline demo keys |
+| `shipping_optimizer_config` | `app` | Pricing plans, WhatsApp number/message, optional inline demo keys, **google_trial** settings |
 | `shipping_optimizer_demo_keys` | License key (e.g. `MEESHO-DEMOFREE`) | Promo / demo keys with expiry days |
 | `shipping_optimizer_licenses` | Paid license key | Activation, machine binding, expiry |
+| `shipping_optimizer_google_trials` | Firebase Auth `uid` | One trial per Google account (created by Cloud Function only) |
+
+## Google free trial (v1.6+)
+
+Users sign in with **Google (Gmail)** in the extension popup or Meesho modal. A **Cloud Function** (`claimGoogleTrial`) verifies the Firebase ID token server-side and creates a trial license — users cannot extend trial days or credits from the client.
+
+### Prerequisites
+
+1. **Firebase Authentication** → enable **Google** provider on project `extension-e6e32`.
+2. **Google Cloud OAuth** → create a **Web application** OAuth client. Add authorized redirect URI:
+   - `https://<YOUR_EXTENSION_ID>.chromiumapp.org/`
+   - Find extension ID on `chrome://extensions` (Developer mode).
+3. Put the OAuth client ID in `shipping_optimizer_config/app` → `google_trial.oauth_client_id` (or `config.js` → `FIREBASE.oauthClientId`).
+4. Deploy Cloud Function (repo `functions/`):
+   ```bash
+   cd functions && npm install
+   firebase deploy --only functions:claimGoogleTrial --project extension-e6e32
+   ```
+5. Set function URL in `app.google_trial.function_url` (default in `config.js`):
+   `https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial`
+
+### App config — `google_trial` on `shipping_optimizer_config/app`
+
+```json
+{
+  "google_trial": {
+    "enabled": true,
+    "days": 7,
+    "credits": 30,
+    "max_devices": 1,
+    "label": "Google free trial",
+    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com",
+    "function_url": "https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial"
+  }
+}
+```
+
+| Field | Notes |
+|-------|-------|
+| `enabled` | `false` hides Google button in extension |
+| `days` | Trial length (admin-controlled; enforced server-side) |
+| `credits` | Included image-gen credits granted at claim time |
+| `max_devices` | Device slots per trial license |
+| `oauth_client_id` | Google OAuth Web client for `chrome.identity` |
+| `function_url` | HTTPS endpoint for `claimGoogleTrial` |
+
+### Trial license documents
+
+Created automatically by the function at `shipping_optimizer_licenses/GTRIAL-…`:
+
+- `plan_type`: `google_trial`
+- `google_uid`, `customer_email` — bound to Google account
+- `expiresAt` — set at claim time from `google_trial.days`
+- `trial`: `true`, `source`: `google_auth`
+- One row per Google UID in `shipping_optimizer_google_trials/{uid}`
+
+**Security:** Clients cannot create trial licenses directly. Only the Cloud Function (Admin SDK) writes trial + license docs. Re-claim returns the same license if still valid; expired trials return `trialExpired: true`.
 
 ## 1. App config (`shipping_optimizer_config/app`)
 
@@ -507,6 +564,12 @@ service cloud.firestore {
           'images_generated_today_date', 'images_generated_month',
           'images_generated_month_key'
         ]);
+    }
+
+    // Google trials — admin read; writes only via Cloud Function (Admin SDK bypasses rules)
+    match /shipping_optimizer_google_trials/{uid} {
+      allow read: if isShippingOptimizerSuperAdmin();
+      allow write: if false;
     }
   }
 }

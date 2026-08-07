@@ -1465,6 +1465,44 @@ class MeeshoShippingOptimizer {
       FirebaseLicense.hydrateLicenseUi(this.modal)
         .then(() => bindPlanButtons())
         .catch((e) => console.warn("Firebase license UI hydrate failed:", e));
+
+      const runGoogleTrial = async () => {
+        const btn = this.modal?.querySelector("#google-trial-btn");
+        if (!btn) return;
+        btn.disabled = true;
+        const prev = btn.textContent;
+        btn.textContent = "Signing in…";
+        try {
+          const result = await LicenseManager.activateGoogleFreeTrial();
+          if (result.success) {
+            this.isLicensed = LicenseManager.licensesHaveAccess(
+              await LicenseManager.getActiveLicenses(),
+            );
+            this.notifyUser(result.message || "Free trial activated!", "success", {
+              licenseRelated: true,
+            });
+            this.closeModal();
+            setTimeout(() => this.openModal(), 300);
+          } else {
+            this.notifyUser(
+              result.message || "Could not start free trial.",
+              "error",
+              { licenseRelated: true, duration: 8000 },
+            );
+          }
+        } catch (error) {
+          this.notifyUser(error.message || "Google sign-in failed.", "error", {
+            licenseRelated: true,
+          });
+        } finally {
+          btn.disabled = false;
+          btn.textContent = prev || "Continue with Google";
+        }
+      };
+
+      FirebaseLicense.hydrateGoogleTrialUi(this.modal, { onClick: runGoogleTrial }).catch(
+        (e) => console.warn("Google trial UI hydrate failed:", e),
+      );
     }
 
     // License activation

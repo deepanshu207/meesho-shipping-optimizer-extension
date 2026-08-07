@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "1.5.15",
+  "version": "1.6.0",
   "name": "Shipping Optimizer",
   "short_name": "Shipping Optimizer",
   "description": "Generate image variants, check live Meesho shipping, preview results, and apply the best image to your catalog.",
@@ -14,11 +14,17 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "identity"
   ],
   "host_permissions": [
     "*://supplier.meesho.com/*",
-    "https://firestore.googleapis.com/*"
+    "https://firestore.googleapis.com/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*",
+    "https://us-central1-extension-e6e32.cloudfunctions.net/*"
   ],
   "content_scripts": [
     {
@@ -45,6 +51,7 @@
       "js": [
         "config.js",
         "js/firebaseLicense.js",
+        "js/firebaseAuth.js",
         "js/machineId.js",
         "js/utils.js",
         "js/whatsappLink.js",
