@@ -681,6 +681,25 @@ class MeeshoShippingOptimizer {
     return !window.WEB_OPTIMIZER_MODE;
   }
 
+  notifyUser(message, type = "info", options = {}) {
+    const licenseRelated =
+      options.licenseRelated ||
+      /credit|license|activate|expired|exhausted/i.test(String(message || ""));
+    const modalOpen = !!document.getElementById("opt-modal");
+    if (licenseRelated && modalOpen && typeof OptimizerUtils !== "undefined") {
+      OptimizerUtils.showNotification(message, type, {
+        scope: "modal",
+        duration: options.duration || 6000,
+      });
+      return;
+    }
+    OptimizerUtils.showNotification(
+      message,
+      type,
+      options.duration || 4000,
+    );
+  }
+
   async ensureLicensed(actionLabel) {
     if (!this.requiresLicense()) return true;
     const gate = await LicenseManager.ensureCanOperate(actionLabel);
@@ -688,12 +707,13 @@ class MeeshoShippingOptimizer {
       this.isLicensed = true;
       return true;
     }
-    OptimizerUtils.showNotification(
+    this.notifyUser(
       gate.reason ||
         (actionLabel
           ? `${actionLabel} requires an active license`
           : "License required — activate in extension popup"),
       "error",
+      { licenseRelated: true },
     );
     this.openModal();
     return false;
@@ -720,12 +740,17 @@ class MeeshoShippingOptimizer {
       return true;
     }
 
-    OptimizerUtils.showNotification(
-      result.reason || "Could not charge credits for this run.",
-      "error",
-      6000,
-    );
-    return false;
+    if (!charged) {
+      this.notifyUser(
+        result.reason || "Could not charge credits for this run.",
+        "error",
+        { licenseRelated: true },
+      );
+      if (result.needsTopUp) {
+        await this.openModal();
+      }
+      return false;
+    }
   }
 
   /** Record one generation run (upload → variants), even if stopped or zero results. */
@@ -1717,20 +1742,40 @@ class MeeshoShippingOptimizer {
   async refreshImageGenQuotaUi() {
     const creditsEl = document.getElementById("image-gen-credits");
     const quotaEl = document.getElementById("image-gen-quota");
+    const creditsBar = document.getElementById("optimizer-credits-bar");
     if (!this.requiresLicense() || typeof LicenseManager === "undefined") return;
     try {
       const summary = await LicenseManager.getImageGenSummary();
       const cfg = summary.config;
-      const bal =
-        summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
+      const usage = summary.creditsUsage || { left: summary.creditsBalance };
+      const cost = summary.costPerRun || 1;
+      const usageText = LicenseManager.formatCreditsUsageText(usage, cost);
+      const exhausted = summary.creditsApply && usage.left <= 0;
+
+      const creditsHtml = usageText
+        ? `💳 <strong>${usageText}</strong>`
+        : "";
 
       if (creditsEl) {
-        if (summary.creditsApply) {
-          const cost = summary.costPerRun || 1;
+        if (summary.creditsApply && creditsHtml) {
           creditsEl.style.display = "block";
-          creditsEl.innerHTML = `💳 Credits: <strong>${bal}</strong> left · <strong>${cost}</strong> per generation run`;
+          creditsEl.innerHTML = creditsHtml;
+          creditsEl.style.borderColor = exhausted ? "rgba(239,68,68,0.35)" : "#f0e0c8";
+          creditsEl.style.background = exhausted ? "rgba(239,68,68,0.08)" : "#fff";
+          creditsEl.style.color = exhausted ? "#b91c1c" : "#3d2914";
         } else {
           creditsEl.style.display = "none";
+        }
+      }
+
+      if (creditsBar) {
+        if (summary.creditsApply && creditsHtml) {
+          creditsBar.style.display = "block";
+          creditsBar.innerHTML = creditsHtml;
+          creditsBar.classList.toggle("exhausted", exhausted);
+        } else {
+          creditsBar.style.display = "none";
+          creditsBar.classList.remove("exhausted");
         }
       }
 
@@ -3358,6 +3403,7 @@ class MeeshoShippingOptimizer {
     this._runPreviousResults = null;
     this._activeRunMeta = null;
     await this.recordImageGenerationForRun();
+    void this.refreshImageGenQuotaUi();
     this.finishOptimizerRun();
   }
 
@@ -3394,15 +3440,15 @@ class MeeshoShippingOptimizer {
       const batchCount = LiveSmart.readMainSmartModeSettings().maxAttempts;
       imageGenGate = await LicenseManager.ensureCanGenerateImages(batchCount);
       if (!imageGenGate.ok) {
-        OptimizerUtils.showNotification(
+        if (imageGenGate.openModal || imageGenGate.needsTopUp) {
+          await this.openModal();
+        }
+        this.notifyUser(
           imageGenGate.reason || "Cannot generate right now",
-          "error",
-          6000,
+          imageGenGate.needsTopUp ? "warning" : "error",
+          { licenseRelated: true, duration: 8000 },
         );
         this.isLicensed = LicenseManager.isLicensed;
-        if (imageGenGate.openModal || imageGenGate.needsTopUp) {
-          this.openModal();
-        }
         return;
       }
       this.isLicensed = true;
@@ -4166,6 +4212,7 @@ class MeeshoShippingOptimizer {
     this.isProcessing = false;
     this.shouldStop = false;
     this.enableAllGenerateButtons();
+    void this.refreshImageGenQuotaUi();
   }
 
   restoreOptimizerChromeAfterResults() {

@@ -209,6 +209,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         );
         const typeLabel = LicenseManager.formatLicenseTypeLabel(info);
         const totalCredits = LicenseManager.getTotalCreditsBalance(licenses);
+        const creditUsage = LicenseManager.getCreditsUsageSummary(licenses);
         const validity = LicenseManager.getLicenseValiditySummary(info);
 
         let infoHTML = `<div class="license-type-pill">${LicenseManager.getLicenseRoleLabel(primary)}</div>`;
@@ -230,17 +231,27 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         const addonCredits = Number(info.addonCredits) || 0;
         const showCredits =
+          creditUsage.applies ||
           info.billingMode === "credits" ||
           info.billingMode === "hybrid" ||
-          addonCredits > 0;
+          addonCredits > 0 ||
+          creditUsage.used > 0;
         if (showCredits) {
           if (info.unlimitedCredits) {
             infoHTML += ` · Credits: <strong>Unlimited</strong>`;
           } else {
-            const balance = Number(info.creditsBalance) || 0;
-            const baseCredits = Number(info.includedCredits) || 0;
-            infoHTML += ` · Credits: <strong>${balance}</strong>`;
+            const usageLine = LicenseManager.formatCreditsUsageText(
+              creditUsage,
+              0,
+            );
+            if (usageLine) {
+              infoHTML += ` · ${usageLine}`;
+            } else {
+              const balance = Number(info.creditsBalance) || 0;
+              infoHTML += ` · Credits left: <strong>${balance}</strong>`;
+            }
             if (addonCredits > 0) {
+              const baseCredits = Number(info.includedCredits) || 0;
               infoHTML += ` <span style="color:var(--mso-muted);">(${baseCredits} base + ${addonCredits} addon)</span>`;
             }
           }
@@ -803,12 +814,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       const parts = [];
 
       if (summary.creditsApply) {
-        const bal =
-          summary.creditsBalance === Infinity ? "∞" : summary.creditsBalance;
-        const cost = summary.costPerRun || 1;
-        parts.push(
-          `💳 <strong>${bal}</strong> credits · <strong>${cost}</strong>/run`,
+        const usageText = LicenseManager.formatCreditsUsageText(
+          summary.creditsUsage,
+          summary.costPerRun || 1,
         );
+        if (usageText) {
+          parts.push(`💳 <strong>${usageText}</strong>`);
+        }
       }
 
       if (cfg.configured && cfg.enabled) {

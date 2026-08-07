@@ -589,6 +589,47 @@ const OptimizerUI = {
                 }
                 .plan-detail-subtitle { font-size: 12px; color: #6b7280; margin: 0 0 6px; }
                 .plan-detail-footer { font-size: 10px; color: #6b7280; text-align: center; margin-top: 10px; }
+                .optimizer-credits-bar {
+                    padding: 8px 12px;
+                    background: linear-gradient(135deg, rgba(255,215,0,0.16) 0%, rgba(245,166,35,0.1) 100%);
+                    border-bottom: 1px solid #f0e0c8;
+                    font-size: 11px;
+                    color: #3d2914;
+                    font-weight: 600;
+                    line-height: 1.45;
+                    text-align: center;
+                }
+                .optimizer-credits-bar.exhausted {
+                    background: rgba(239,68,68,0.12);
+                    color: #b91c1c;
+                    border-bottom-color: rgba(239,68,68,0.25);
+                }
+                .optimizer-inline-alert {
+                    display: none;
+                    margin: 0;
+                    padding: 10px 12px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    line-height: 1.45;
+                    border-bottom: 1px solid #f0e0c8;
+                }
+                .optimizer-inline-alert.error {
+                    background: rgba(239,68,68,0.12);
+                    color: #b91c1c;
+                    border-bottom-color: rgba(239,68,68,0.25);
+                }
+                .optimizer-inline-alert.warning {
+                    background: rgba(245,158,11,0.14);
+                    color: #b45309;
+                }
+                .optimizer-inline-alert.info {
+                    background: rgba(255,215,0,0.14);
+                    color: #c45f12;
+                }
+                .optimizer-inline-alert.success {
+                    background: rgba(5,150,105,0.12);
+                    color: #047857;
+                }
             </style>
         `;
 
@@ -706,6 +747,8 @@ const OptimizerUI = {
                     ${this.brandHeaderHtml("Shipping Optimizer")}
                     <button class="opt-close" id="close-modal">&times;</button>
                 </div>
+                <div id="optimizer-inline-alert" class="optimizer-inline-alert" role="alert" aria-live="polite"></div>
+                <div id="optimizer-credits-bar" class="optimizer-credits-bar" style="display:none;" aria-live="polite"></div>
                 <div class="opt-body">
                     <div class="opt-section" style="padding:12px;">
                         <div class="opt-section-title" style="display:flex;justify-content:space-between;align-items:center;">
