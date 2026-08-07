@@ -1594,4 +1594,6 @@ const LicenseManager = {
   },
 };
 
-window.LicenseManager = LicenseManager;
+if (typeof globalThis !== "undefined") {
+  globalThis.LicenseManager = LicenseManager;
+}
