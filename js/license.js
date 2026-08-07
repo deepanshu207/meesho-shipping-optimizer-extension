@@ -51,6 +51,9 @@ const LicenseManager = {
       expiresAt: unlimitedTime ? null : info.expiresAt || info.expires_at || null,
       billingMode:
         info.billingMode || info.billing_mode || "subscription",
+      creditsBalance:
+        Number(info.creditsBalance ?? info.credits_balance ?? 0) || 0,
+      creditsUsed: Number(info.creditsUsed ?? info.credits_used ?? 0) || 0,
     };
   },
 
@@ -435,7 +438,10 @@ const LicenseManager = {
             if (refreshed.valid && refreshed.license) {
               updated.push({
                 ...entry,
-                licenseInfo: this.normalizeLicenseInfo(refreshed.license),
+                licenseInfo: this.mergeRefreshedLicenseInfo(
+                  entry.licenseInfo,
+                  refreshed.license,
+                ),
               });
             }
           } catch (e) {
@@ -506,6 +512,35 @@ const LicenseManager = {
   async refreshLicenseInfoFromFirebase() {
     await this.checkLicense();
     return this.licenseInfo;
+  },
+
+  mergeRefreshedLicenseInfo(localInfo, remoteInfo) {
+    const local = this.normalizeLicenseInfo(localInfo || {});
+    const remote = this.normalizeLicenseInfo(remoteInfo || {});
+    const merged = { ...remote };
+
+    if (remote.unlimitedCredits) return merged;
+
+    const localBal = Number(local.creditsBalance ?? 0);
+    const remoteBal = Number(remote.creditsBalance ?? 0);
+    const localUsed = Number(local.creditsUsed ?? 0);
+    const remoteUsed = Number(remote.creditsUsed ?? 0);
+
+    // Never restore a higher balance from stale Firebase after a local deduction.
+    if (localBal < remoteBal) {
+      merged.creditsBalance = localBal;
+      merged.creditsUsed = Math.max(localUsed, remoteUsed);
+    }
+
+    return merged;
+  },
+
+  isImageGenCreditChargeSuccess(result, expectedCost) {
+    if (!result?.ok) return false;
+    if (result.deducted != null || result.local) return true;
+    if (expectedCost <= 0) return true;
+    if (result.skipped && result.unlimited) return true;
+    return false;
   },
 
   /** True when this license has a finite credit balance to spend on image generation. */
@@ -584,7 +619,9 @@ const LicenseManager = {
     if (remote.ok && !remote.skipped) return remote;
     if (remote.skipped && remote.unlimited) return remote;
     if (remote.ok && remote.skipped) {
-      return this.consumeCreditsLocal(n);
+      const local = await this.consumeCreditsLocal(n);
+      if (local.ok) return local;
+      return remote;
     }
     if (
       remote.reason === "Credits sync unavailable" ||
@@ -719,7 +756,15 @@ const LicenseManager = {
   },
 
   _imageCreditsApply(licenses, config) {
-    if (licenses.some((e) => e.licenseInfo?.unlimitedCredits)) return false;
+    if (
+      (licenses || []).some(
+        (e) =>
+          this.licenseEntryHasAccess(e) &&
+          this.normalizeLicenseInfo(e.licenseInfo).unlimitedCredits,
+      )
+    ) {
+      return false;
+    }
     return this._hasCreditsBillingLicense(licenses);
   },
 
@@ -778,6 +823,18 @@ const LicenseManager = {
         creditsBalance: newBalance,
         creditsUsed: used,
       });
+      if (
+        CONFIG?.USE_FIREBASE_LICENSE &&
+        typeof FirebaseLicense !== "undefined" &&
+        FirebaseLicense.isEnabled()
+      ) {
+        void FirebaseLicense.patchDoc(
+          "licenses",
+          entry.key,
+          { credits_balance: newBalance, credits_used: used },
+          ["credits_balance", "credits_used"],
+        );
+      }
       const refreshed = await this.getActiveLicenses();
       this.licenseInfo = this.pickPrimaryLicense(refreshed)?.licenseInfo;
       this.isLicensed = refreshed.length > 0 && this.licensesHaveAccess(refreshed);
