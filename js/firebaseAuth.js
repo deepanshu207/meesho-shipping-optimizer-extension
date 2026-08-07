@@ -56,11 +56,13 @@ const FirebaseAuth = {
   async launchGoogleOAuth(clientId) {
     if (!clientId) {
       throw new Error(
-        "Google sign-in is not configured yet. Ask admin to set google_oauth_client_id in Firebase.",
+        "Google sign-in is not configured yet. Ask admin to set google_trial.oauth_client_id in Firebase.",
       );
     }
     if (!chrome?.identity?.launchWebAuthFlow) {
-      throw new Error("Chrome identity API is unavailable in this context.");
+      throw new Error(
+        "Google sign-in needs Chrome or Kiwi with identity support. Use a license key instead.",
+      );
     }
 
     const redirectUri = this.getRedirectUri();

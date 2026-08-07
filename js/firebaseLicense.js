@@ -2436,11 +2436,16 @@ Please share payment details.`;
     if (!section) return { enabled: false };
 
     const cfg = await this.getGoogleTrialPublicConfig();
-    const enabled = cfg.enabled && !!cfg.oauth_client_id;
-    section.style.display = enabled ? "block" : "none";
-    if (!enabled) return { enabled: false, config: cfg };
+    const showSection = this.isEnabled() && cfg.enabled !== false;
+    section.style.display = showSection ? "block" : "none";
+    if (!showSection) return { enabled: false, config: cfg };
 
-    if (hint) hint.textContent = this.formatGoogleTrialHint(cfg);
+    const hasOAuth = !!(cfg.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId);
+    if (hint) {
+      hint.textContent = hasOAuth
+        ? this.formatGoogleTrialHint(cfg)
+        : "Free trial via Google — admin must set oauth_client_id in Firebase (see FIREBASE_SETUP.md)";
+    }
 
     let user = null;
     if (typeof FirebaseAuth !== "undefined") {
