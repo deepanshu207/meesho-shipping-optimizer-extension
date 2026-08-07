@@ -709,9 +709,10 @@ class MeeshoShippingOptimizer {
 
     const expectedCost = await LicenseManager.getImageGenRunCost(gate);
     const result = await LicenseManager.chargeImageGenerationRun(gate);
-    const charged =
-      result.ok &&
-      (!result.skipped || expectedCost <= 0 || result.deducted != null || result.local);
+    const charged = LicenseManager.isImageGenCreditChargeSuccess(
+      result,
+      expectedCost,
+    );
     if (charged) {
       this._imageGenCreditsCharged = true;
       this.isLicensed = LicenseManager.isLicensed;
@@ -739,13 +740,7 @@ class MeeshoShippingOptimizer {
       if (!this._imageGenCreditsCharged) {
         const expectedCost = await LicenseManager.getImageGenRunCost(gate);
         const charge = await LicenseManager.chargeImageGenerationRun(gate);
-        if (
-          charge.ok &&
-          (!charge.skipped ||
-            expectedCost <= 0 ||
-            charge.deducted != null ||
-            charge.local)
-        ) {
+        if (LicenseManager.isImageGenCreditChargeSuccess(charge, expectedCost)) {
           this._imageGenCreditsCharged = true;
         }
       }
@@ -1724,7 +1719,6 @@ class MeeshoShippingOptimizer {
     const quotaEl = document.getElementById("image-gen-quota");
     if (!this.requiresLicense() || typeof LicenseManager === "undefined") return;
     try {
-      await LicenseManager.checkLicense();
       const summary = await LicenseManager.getImageGenSummary();
       const cfg = summary.config;
       const bal =
