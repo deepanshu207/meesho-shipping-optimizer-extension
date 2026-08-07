@@ -197,6 +197,60 @@ const LicenseManager = {
     return unlimited ? Infinity : total;
   },
 
+  /** Aggregate credits total / used / remaining for UI. */
+  getCreditsUsageSummary(licenses) {
+    let balance = 0;
+    let used = 0;
+    let unlimited = false;
+    let applies = false;
+
+    (licenses || []).forEach((entry) => {
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      if (info.unlimitedCredits) {
+        unlimited = true;
+        return;
+      }
+      const bal = Number(info.creditsBalance ?? 0) || 0;
+      const u = Number(info.creditsUsed ?? 0) || 0;
+      if (this.licenseHasSpendableCredits(info) || bal > 0 || u > 0) {
+        applies = true;
+        balance += bal;
+        used += u;
+      }
+    });
+
+    if (unlimited) {
+      return {
+        applies: false,
+        unlimited: true,
+        balance: Infinity,
+        used,
+        total: Infinity,
+        left: Infinity,
+      };
+    }
+
+    return {
+      applies,
+      unlimited: false,
+      balance,
+      used,
+      total: balance + used,
+      left: balance,
+    };
+  },
+
+  formatCreditsUsageText(usage, costPerRun) {
+    if (!usage || usage.unlimited) return "Credits: Unlimited";
+    if (!usage.applies && usage.left <= 0 && usage.used <= 0) return "";
+    const left = usage.left ?? usage.balance ?? 0;
+    const used = usage.used ?? 0;
+    const total = usage.total ?? left + used;
+    let text = `Total ${total} · Used ${used} · Left ${left}`;
+    if (costPerRun > 0) text += ` · ${costPerRun}/run`;
+    return text;
+  },
+
   licenseEntryHasAccess(entry) {
     const info = this.normalizeLicenseInfo(entry?.licenseInfo || {});
     const mode = info.billingMode || "subscription";
@@ -443,6 +497,11 @@ const LicenseManager = {
                   refreshed.license,
                 ),
               });
+            } else if (refreshed.reason === "License not found or deactivated") {
+              // Drop only when admin deactivated the key.
+            } else {
+              // Keep license in session (credits exhausted, expiry, network, device issues).
+              updated.push(entry);
             }
           } catch (e) {
             if (this.licenseEntryHasAccess(entry)) updated.push(entry);
@@ -1055,6 +1114,7 @@ const LicenseManager = {
       ? await this.resolveImageGenRunCost(licenses, config)
       : 0;
     const balance = this.getTotalCreditsBalance(licenses);
+    const usage = this.getCreditsUsageSummary(licenses);
     const remainingDaily =
       config.daily_limit > 0
         ? Math.max(0, config.daily_limit - counters.today)
@@ -1068,6 +1128,7 @@ const LicenseManager = {
       counters,
       creditsApply,
       creditsBalance: balance,
+      creditsUsage: usage,
       costPerRun,
       /** @deprecated use costPerRun — kept for older callers */
       costPerImage: costPerRun,

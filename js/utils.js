@@ -50,8 +50,32 @@ const OptimizerUtils = {
         });
     },
 
-    // Show notification with dark theme
-    showNotification: function(message, type) {
+    // Show notification — pass { scope: 'modal' } to show inside extension UI only
+    showNotification: function(message, type, durationOrOptions, maybeOptions) {
+        let duration = 4000;
+        let options = {};
+        if (typeof durationOrOptions === "number") {
+            duration = durationOrOptions;
+            options = maybeOptions || {};
+        } else if (typeof durationOrOptions === "object" && durationOrOptions) {
+            options = durationOrOptions;
+            duration = options.duration || 4000;
+        }
+
+        const modalRoot = document.querySelector("#opt-modal .opt-modal-ext");
+        const inlineAlert = modalRoot?.querySelector("#optimizer-inline-alert");
+        if (options.scope === "modal" && inlineAlert) {
+            inlineAlert.className = `optimizer-inline-alert ${type || "info"}`;
+            inlineAlert.textContent = message;
+            inlineAlert.style.display = "block";
+            clearTimeout(inlineAlert._hideTimer);
+            inlineAlert._hideTimer = setTimeout(() => {
+                inlineAlert.style.display = "none";
+                inlineAlert.textContent = "";
+            }, duration);
+            return;
+        }
+
         const existing = document.querySelector('.optimizer-notification');
         if (existing) existing.remove();
 
@@ -109,7 +133,7 @@ const OptimizerUtils = {
                 notification.remove();
                 styleEl.remove();
             }, 300);
-        }, 4000);
+        }, duration);
     },
 
     // Debounce function
