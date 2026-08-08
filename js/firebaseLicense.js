@@ -2840,17 +2840,17 @@ Please share payment details.`;
       try {
         const diag = await FirebaseAuth.getOAuthDiagnostics();
         redirectEl.style.display = diag.redirectUri ? "block" : "none";
-        const clientShort = diag.clientId
-          ? `${String(diag.clientId).slice(0, 20)}…`
-          : "not set";
-        redirectEl.innerHTML = diag.extensionId
-          ? `<strong>OAuth setup (must match Google Cloud):</strong><br>` +
-            `Client: <code style="font-size:8px;">${clientShort}</code><br>` +
-            `Redirect: <code style="font-size:8px;">${diag.redirectUri}</code>`
-          : "";
-        redirectEl.title =
-          `Add redirect URI on OAuth client ${diag.clientId || ""}. ` +
-          `Also try without trailing slash: ${diag.redirectNoSlash || ""}`;
+        const uris = (diag.redirectUris || [diag.redirectUri]).filter(Boolean);
+        redirectEl.innerHTML =
+          `<strong>Add ALL redirect URIs on OAuth client:</strong><br>` +
+          `<code style="font-size:8px;word-break:break-all;">${diag.clientId || "not set"}</code><br>` +
+          uris
+            .map(
+              (u) =>
+                `<code style="font-size:8px;word-break:break-all;display:block;margin-top:4px;">${u}</code>`,
+            )
+            .join("");
+        redirectEl.title = `Extension ID: ${diag.extensionId || ""}`;
       } catch (_) {
         redirectEl.style.display = "none";
       }

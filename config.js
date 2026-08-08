@@ -10,7 +10,7 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.6.5",
+  VERSION: "1.6.6",
 
   /** Default Meesho single-catalog add page (supplier panel). */
   MEESHO_CATALOG_URL:
@@ -26,8 +26,9 @@ const CONFIG = {
     messagingSenderId: "860976240598",
     appId: "1:860976240598:web:e5d903d52db5b71e48b677",
     measurementId: "G-WCTXFCDXLT",
-    /** Google OAuth Web client ID (Chrome extension redirect). Override via shipping_optimizer_config/app.google_trial.oauth_client_id */
-    oauthClientId: "",
+    /** Firebase auto-created Web client — must match Google Cloud + Authorized redirect URIs for this extension ID */
+    oauthClientId:
+      "860976240598-82l82a6dp7btp6eucdmlqh68fuf2s0bs.apps.googleusercontent.com",
   },
 
   /** HTTPS Cloud Function URL — claimGoogleTrial (set after deploy; also in Firebase app config). */
