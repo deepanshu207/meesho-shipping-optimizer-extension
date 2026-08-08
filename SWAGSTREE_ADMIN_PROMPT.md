@@ -19,7 +19,7 @@ Build a **Shipping Optimizer Extension** admin panel in Swagstree **Superadmin**
 4. Paid Licenses
 5. **Google Free Trial**
 
-Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` → `FIREBASE_SETUP.md`, `ACTIVATION_GUIDE.md`, `functions/` (Cloud Function `claimGoogleTrial`)
+Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` → `FIREBASE_SETUP.md`, `firestore.rules` (Spark — no Cloud Function required)
 
 ---
 
@@ -30,7 +30,7 @@ Reference extension repo: `deepanshu207/meesho-shipping-optimizer-extension` →
 | `shipping_optimizer_config` | `app` | WhatsApp, plans[], credits{}, demo_keys{}, announcement, **google_trial{}** |
 | `shipping_optimizer_demo_keys` | `{KEY}` | Extra promo codes |
 | `shipping_optimizer_licenses` | `{LICENSE_KEY}` | Paid + Google trial licenses |
-| `shipping_optimizer_google_trials` | `{firebase_auth_uid}` | One trial per Google account (written by Cloud Function) |
+| `shipping_optimizer_google_trials` | `{firebase_auth_uid}` | One trial per Google account (extension writes with user ID token + rules) |
 
 ### Firestore rules (merge)
 
@@ -58,9 +58,16 @@ match /shipping_optimizer_licenses/{key} {
     ]);
 }
 match /shipping_optimizer_google_trials/{uid} {
+  allow read: if request.auth != null && request.auth.uid == uid;
   allow read: if isShippingOptimizerSuperAdmin();
-  allow write: if false;
+  allow create, update: if request.auth != null && request.auth.uid == uid;
+  allow delete: if isShippingOptimizerSuperAdmin();
 }
+```
+
+**Use the full rules from extension repo `firestore.rules`** (trial credits, device limits, increment caps). Deploy:
+```bash
+firebase deploy --only firestore:rules --project extension-e6e32
 ```
 
 ---
@@ -564,67 +571,92 @@ The extension supports **multiple active keys on one device**:
 
 ## TAB 5: Google Free Trial
 
-Manage secure Gmail-based free trials (extension v1.6+). Trials are **not** shareable demo keys — one per Google account, provisioned by Cloud Function `claimGoogleTrial` (see extension repo `functions/`).
+Manage secure Gmail-based free trials (extension v1.6.3+). Trials are **not** shareable demo keys — one per Google account. Extension writes `shipping_optimizer_google_trials/{uid}` directly using the user's Firebase ID token; **Firestore rules** enforce limits (Spark plan — no Cloud Function required).
+
+### Trial credits vs paid plan credits
+
+| Pool | Source | Consumed when |
+|------|--------|----------------|
+| **Trial credits** | Google sign-in → `google_trials` doc | First — e.g. 3 free runs per Gmail |
+| **Paid credits** | `shipping_optimizer_licenses` doc | After trial credits are used up |
+
+Extension stacks Google trial with paid license keys on the same device. Trial credits and plan credits are **separate counters** — admin sets `trial_credits` in config; paid `credits_balance` is unchanged until trial pool is empty.
 
 ### Config editor (`google_trial` on `shipping_optimizer_config/app`)
 
 | Field | UI | Notes |
 |-------|-----|-------|
-| `enabled` | Toggle | Shows/hides "Continue with Google" in extension |
-| `days` | Number input | Trial length (e.g. 7, 14, 30) — enforced server-side |
-| `credits` | Number input | Image-gen credits included at claim |
-| `max_devices` | Number input | Default `1` |
+| `google_login_enabled` | Toggle | **Master Google sign-in switch** — `false` hides "Continue with Google" in extension anytime |
+| `enabled` | Toggle | `false` blocks **new** trial claims; existing trials still work; sign-in still allowed if `google_login_enabled` |
+| `days` | Number input | Trial length (e.g. 7, 14, 30) — enforced in Firestore rules |
+| `trial_credits` | Number input | Free generation runs per Google account (e.g. **3**) — preferred field |
+| `image_run_limit` | Number input | Legacy alias for `trial_credits` |
+| `max_devices` | Number input | Default `1` — enforced in rules + extension |
+| `max_increment_per_run` | Number input | Anti-cheat cap per request (default `10`) |
 | `label` | Text | Shown in extension license type |
 | `oauth_client_id` | Text | Google OAuth Web client ID (Chrome extension redirect) |
-| `function_url` | Text (read-only hint) | `https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial` |
 
 ```json
 {
   "google_trial": {
+    "google_login_enabled": true,
     "enabled": true,
     "days": 7,
-    "credits": 30,
+    "trial_credits": 3,
+    "image_run_limit": 3,
     "max_devices": 1,
+    "max_increment_per_run": 10,
     "label": "Google free trial",
-    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com",
-    "function_url": "https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial"
+    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com"
   }
 }
 ```
 
+**Admin toggles (common scenarios):**
+
+| google_login_enabled | enabled | Extension behavior |
+|---------------------|---------|-------------------|
+| ✅ | ✅ | Show Google button; new users get trial |
+| ✅ | ❌ | Show Google button; sign-in only for existing trials |
+| ❌ | ✅ | Hide Google button entirely |
+| ❌ | ❌ | Hide Google button entirely |
+
 ### Trials list (`shipping_optimizer_google_trials`)
 
-Read-only table for superadmin:
+Read-only table for superadmin (superadmin read via rules):
 
 | Column | Source |
 |--------|--------|
 | Email | `email` |
 | Google UID | doc id |
-| License key | `license_key` |
+| Trial credits | `images_used` / `images_limit` (label **"Trial credits used"**) |
 | Created | `created_at` |
 | Expires | `expires_at` |
-| Days / credits granted | `days_granted`, `credits_granted` |
-| Devices | `machine_ids[]` length |
+| Days granted | `days_granted` |
+| Devices | `machine_ids[]` length / `max_devices` from config |
 
-**Actions:** Link to paid license doc · Revoke trial (set license `active: false` + note in `support_notes`).
+**Actions:**
+- **Revoke trial** — set `active: false` on trial doc (superadmin write)
+- **Reset devices** — clear `machine_ids[]` (support)
+- Link customer to paid license after trial credits used
 
 ### Setup checklist (show in admin UI)
 
 1. Firebase Console → Authentication → Google → Enable
-2. Google Cloud → OAuth Web client → redirect `https://<extension-id>.chromiumapp.org/`
-3. Deploy `claimGoogleTrial` function: `firebase deploy --only functions:claimGoogleTrial --project extension-e6e32`
-4. Paste `oauth_client_id` above · set `enabled: true`
+2. Google Cloud → OAuth Web client → redirect `https://kgnmnoaobnpfaaipnjkkidekbajpldlm.chromiumapp.org/`
+3. Paste `oauth_client_id` in config above
+4. Set `trial_credits: 3` (or desired free runs)
+5. **Deploy Firestore rules** from extension repo:
+   ```bash
+   firebase deploy --only firestore:rules --project extension-e6e32
+   ```
+6. Set `google_login_enabled: true` and `enabled: true`
 
-### Firestore rules addition
+### Smart Mode dropdown (Config tab or Credits tab)
 
-```javascript
-match /shipping_optimizer_google_trials/{uid} {
-  allow read: if isShippingOptimizerSuperAdmin();
-  allow write: if false;
-}
-```
+Edit `smart_mode` on `shipping_optimizer_config/app` — extension reads this for the **Max Variants** dropdown dynamically (add/remove/reorder options without extension release). See TAB 2 `smart_mode` section above.
 
-Trial **license** docs use `plan_type: google_trial` in `shipping_optimizer_licenses` — filter in Paid Licenses tab.
+Google trial does **not** use a row in `shipping_optimizer_licenses` — trial state lives only in `shipping_optimizer_google_trials/{uid}`.
 
 ---
 
@@ -654,6 +686,10 @@ Trial **license** docs use `plan_type: google_trial` in `shipping_optimizer_lice
 13. Create license with `unlimited_time: true` → extension shows **Lifetime** / **Never expires**, no expiry warnings
 14. Lifetime subscription + empty credit top-up → generate still works (subscription not blocked by empty top-up)
 15. Demo key with `unlimited_time: true` → never expires in extension
+16. Google trial `trial_credits: 3` + paid hybrid license → first 3 runs use trial, then paid credits deduct
+17. `google_login_enabled: false` → Google button hidden; `enabled: false` → no new trials
+18. Edit `smart_mode.variant_options` → Max Variants dropdown updates without extension release
+19. Trial `max_devices: 1` → second device blocked with clear message
 
 ---
 

@@ -2386,11 +2386,15 @@ Please share payment details.`;
 
   resolveGoogleTrialImageRunLimit(cfg) {
     const src = cfg || {};
+    const trialCredits = Number(src.trial_credits ?? src.trialCredits);
+    if (Number.isFinite(trialCredits) && trialCredits > 0) {
+      return Math.floor(trialCredits);
+    }
     const explicit = Number(src.image_run_limit ?? src.imageRunLimit);
     if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
     const credits = Number(src.credits);
     if (Number.isFinite(credits) && credits > 0) return Math.floor(credits);
-    return 30;
+    return 3;
   },
 
   normalizeGoogleTrialDoc(doc) {
@@ -2454,6 +2458,11 @@ Please share payment details.`;
   normalizeGoogleTrialConfig(raw) {
     const src = raw && typeof raw === "object" ? raw : {};
     const enabled = src.enabled !== false && src.enabled !== "false";
+    const googleLoginEnabled =
+      src.google_login_enabled !== false &&
+      src.google_login_enabled !== "false" &&
+      src.googleLoginEnabled !== false &&
+      src.googleLoginEnabled !== "false";
     const days = Math.max(1, Number(src.days) || 7);
     const imageRunLimit = this.resolveGoogleTrialImageRunLimit(src);
     const maxDevices = Math.max(1, Number(src.max_devices ?? src.maxDevices) || 1);
@@ -2463,7 +2472,9 @@ Please share payment details.`;
     );
     return {
       enabled,
+      google_login_enabled: googleLoginEnabled,
       days,
+      trial_credits: imageRunLimit,
       credits: imageRunLimit,
       image_run_limit: imageRunLimit,
       max_increment_per_run: maxIncrement,
@@ -2491,14 +2502,20 @@ Please share payment details.`;
     return !!(cfg.enabled && (cfg.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId));
   },
 
+  async isGoogleLoginEnabled() {
+    const cfg = await this.getGoogleTrialPublicConfig();
+    const hasOAuth = !!(cfg.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId);
+    return !!(cfg.google_login_enabled !== false && hasOAuth);
+  },
+
   formatGoogleTrialHint(cfg) {
     const c = cfg || {};
     const parts = [];
     if (c.days) parts.push(`${c.days}-day trial`);
-    const runs = c.image_run_limit || c.credits;
-    if (runs > 0) parts.push(`${runs} image runs`);
+    const runs = c.trial_credits || c.image_run_limit || c.credits;
+    if (runs > 0) parts.push(`${runs} free trial credits`);
     if (!parts.length) return "One free trial per Google account";
-    return `${parts.join(" · ")} · one per Google account`;
+    return `${parts.join(" · ")} · then paid plan credits`;
   },
 
   async refreshGoogleTrial(uid, idToken, machineId) {
@@ -2524,12 +2541,21 @@ Please share payment details.`;
     ) {
       return {
         ok: false,
-        reason: "Trial device limit reached for this Google account.",
+        reason: `Trial device limit reached (${trial.machineIds.length}/${cfg.max_devices}). Sign off on another device or contact support.`,
         license,
+        deviceLimit: true,
       };
     }
 
     if (machineId && !trial.machineIds.includes(machineId)) {
+      if (cfg.max_devices > 0 && trial.machineIds.length >= cfg.max_devices) {
+        return {
+          ok: false,
+          reason: `Trial device limit reached (${cfg.max_devices} device${cfg.max_devices === 1 ? "" : "s"}).`,
+          license,
+          deviceLimit: true,
+        };
+      }
       const nextIds = [...trial.machineIds, machineId];
       await this.patchDocAuth(
         this.googleTrialCollection(),
@@ -2556,8 +2582,40 @@ Please share payment details.`;
 
   async claimGoogleFreeTrial(machineId, idToken, userMeta = {}) {
     const cfg = await this.getGoogleTrialPublicConfig(true);
+    if (!cfg.google_login_enabled) {
+      return { success: false, reason: "Google sign-in is disabled by admin." };
+    }
     if (!cfg.enabled) {
-      return { success: false, reason: "Google free trial is not available right now." };
+      const uid = userMeta.uid || userMeta.localId;
+      if (uid && idToken) {
+        const existing = await this.fetchDocAuth(
+          this.googleTrialCollection(),
+          uid,
+          idToken,
+        );
+        if (existing) {
+          const refresh = await this.refreshGoogleTrial(uid, idToken, machineId);
+          if (refresh.license) {
+            return {
+              success: true,
+              limited: !refresh.ok,
+              existing: true,
+              licenseKey: this.buildGoogleTrialLicenseKey(uid),
+              license: refresh.license,
+              trialExpired: !!refresh.expired,
+              runsExhausted: !!refresh.runsExhausted,
+              reason: refresh.reason,
+              message:
+                refresh.reason ||
+                "Signed in with Google — activate a paid license to continue after trial credits.",
+            };
+          }
+        }
+      }
+      return {
+        success: false,
+        reason: "New Google free trials are paused. Activate a license key or contact support.",
+      };
     }
     if (!idToken) {
       return { success: false, reason: "Please sign in with Google first." };
@@ -2594,6 +2652,7 @@ Please share payment details.`;
           email,
           display_name: userMeta.displayName || "",
           photo_url: userMeta.photoUrl || "",
+          trial_credits: cfg.trial_credits,
           images_limit: cfg.image_run_limit,
           images_used: 0,
           expires_at: expiresAt,
@@ -2745,15 +2804,25 @@ Please share payment details.`;
     if (!section) return { enabled: false };
 
     const cfg = await this.getGoogleTrialPublicConfig();
-    const showSection = this.isEnabled() && cfg.enabled !== false;
+    const showSection =
+      this.isEnabled() &&
+      cfg.google_login_enabled !== false &&
+      (cfg.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId);
     section.style.display = showSection ? "block" : "none";
     if (!showSection) return { enabled: false, config: cfg };
 
     const hasOAuth = !!(cfg.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId);
+    const trialAvailable = cfg.enabled !== false;
     if (hint) {
-      hint.textContent = hasOAuth
-        ? this.formatGoogleTrialHint(cfg)
-        : "Free trial via Google — admin must set oauth_client_id in Firebase (see FIREBASE_SETUP.md)";
+      if (!hasOAuth) {
+        hint.textContent =
+          "Free trial via Google — admin must set oauth_client_id in Firebase (see FIREBASE_SETUP.md)";
+      } else if (!trialAvailable) {
+        hint.textContent =
+          "Google sign-in is on — new free trials are paused by admin. Sign in to use an existing trial or activate a license key.";
+      } else {
+        hint.textContent = this.formatGoogleTrialHint(cfg);
+      }
     }
 
     let user = null;
@@ -2766,7 +2835,9 @@ Please share payment details.`;
     }
     if (btn) {
       btn.textContent = user?.email
-        ? "Start free trial with Google"
+        ? trialAvailable
+          ? "Start free trial with Google"
+          : "Continue with Google"
         : "Continue with Google";
       if (handlers.onClick && !btn.dataset.googleTrialBound) {
         btn.dataset.googleTrialBound = "1";

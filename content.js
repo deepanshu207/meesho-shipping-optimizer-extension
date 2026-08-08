@@ -1847,28 +1847,46 @@ class MeeshoShippingOptimizer {
       const cost = summary.costPerRun || 1;
       const usageText = LicenseManager.formatCreditsUsageText(usage, cost);
       const exhausted = summary.creditsApply && usage.left <= 0;
-
-      const creditsHtml = usageText
-        ? `💳 <strong>${usageText}</strong>`
+      const trialParts = [];
+      if (summary.trialApplies && summary.trialLimit > 0) {
+        trialParts.push(
+          `Trial ${summary.trialRemaining}/${summary.trialLimit} left`,
+        );
+      }
+      const trialHtml = trialParts.length
+        ? `🎁 <strong>${trialParts.join(" · ")}</strong>`
         : "";
+      const creditsHtml = [trialHtml, usageText ? `💳 <strong>${usageText}</strong>` : ""]
+        .filter(Boolean)
+        .join(" · ");
 
       if (creditsEl) {
-        if (summary.creditsApply && creditsHtml) {
+        if (creditsHtml) {
           creditsEl.style.display = "block";
           creditsEl.innerHTML = creditsHtml;
-          creditsEl.style.borderColor = exhausted ? "rgba(239,68,68,0.35)" : "#f0e0c8";
-          creditsEl.style.background = exhausted ? "rgba(239,68,68,0.08)" : "#fff";
-          creditsEl.style.color = exhausted ? "#b91c1c" : "#3d2914";
+          creditsEl.style.borderColor =
+            exhausted && summary.trialRemaining <= 0
+              ? "rgba(239,68,68,0.35)"
+              : "#f0e0c8";
+          creditsEl.style.background =
+            exhausted && summary.trialRemaining <= 0
+              ? "rgba(239,68,68,0.08)"
+              : "#fff";
+          creditsEl.style.color =
+            exhausted && summary.trialRemaining <= 0 ? "#b91c1c" : "#3d2914";
         } else {
           creditsEl.style.display = "none";
         }
       }
 
       if (creditsBar) {
-        if (summary.creditsApply && creditsHtml) {
+        if (creditsHtml) {
           creditsBar.style.display = "block";
           creditsBar.innerHTML = creditsHtml;
-          creditsBar.classList.toggle("exhausted", exhausted);
+          creditsBar.classList.toggle(
+            "exhausted",
+            exhausted && summary.trialRemaining <= 0,
+          );
         } else {
           creditsBar.style.display = "none";
           creditsBar.classList.remove("exhausted");
@@ -1876,7 +1894,7 @@ class MeeshoShippingOptimizer {
       }
 
       if (smpCredits) {
-        if (summary.creditsApply && creditsHtml) {
+        if (creditsHtml) {
           smpCredits.style.display = "block";
           smpCredits.innerHTML = creditsHtml;
         } else {
