@@ -2485,6 +2485,11 @@ Please share payment details.`;
         src.oauthClientId ||
         CONFIG?.FIREBASE?.oauthClientId ||
         "",
+      oauth_web_client_id:
+        src.oauth_web_client_id ||
+        src.oauthWebClientId ||
+        CONFIG?.FIREBASE?.oauthWebClientId ||
+        "",
       chrome_extension_id:
         src.chrome_extension_id ||
         src.chromeExtensionId ||
@@ -2502,6 +2507,8 @@ Please share payment details.`;
       ...trial,
       oauth_client_id:
         trial.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId || "",
+      oauth_web_client_id:
+        trial.oauth_web_client_id || CONFIG?.FIREBASE?.oauthWebClientId || "",
     };
   },
 
@@ -2852,8 +2859,9 @@ Please share payment details.`;
         redirectEl.innerHTML =
           `<strong>OAuth setup</strong><br>` +
           `Extension ID: <code style="font-size:8px;">${diag.extensionId || "?"}</code><br>` +
-          `Client: <code style="font-size:8px;word-break:break-all;">${diag.clientId || "?"}</code><br>` +
-          `<span style="font-size:8px;color:#b45309;">Kiwi fix: create OAuth client type <b>Chrome extension</b> with extension ID above (no redirect URI needed).</span><br>` +
+          `Chrome client (getAuthToken): <code style="font-size:8px;word-break:break-all;">${diag.chromeClientId || diag.clientId || "?"}</code><br>` +
+          `Web client (Kiwi fallback): <code style="font-size:8px;word-break:break-all;">${diag.webClientId || "(set oauth_web_client_id)"}</code><br>` +
+          `<span style="font-size:8px;color:#b45309;">Kiwi uses Web client + redirect URI below. Add URI to Web application client in Google Cloud.</span><br>` +
           uris
             .map(
               (u) =>

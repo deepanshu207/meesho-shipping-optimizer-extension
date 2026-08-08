@@ -594,7 +594,8 @@ Extension stacks Google trial with paid license keys on the same device. Trial c
 | `max_devices` | Number input | Default `1` — enforced in rules + extension |
 | `max_increment_per_run` | Number input | Anti-cheat cap per request (default `10`) |
 | `label` | Text | Shown in extension license type |
-| `oauth_client_id` | Text | **Chrome Extension** OAuth client ID — must match extension `manifest.json` `oauth2.client_id` |
+| `oauth_client_id` | Text | **Chrome Extension** OAuth client — `getAuthToken` + `manifest.json` oauth2 |
+| `oauth_web_client_id` | Text | **Web application** OAuth client — Kiwi `launchWebAuthFlow`; add redirect URI in Google Cloud |
 | `chrome_extension_id` | Text | Extension Item ID from `chrome://extensions` (e.g. Kiwi: `dhhlaikkdfkaofbiacpoaadfademdmne`) — admin reference only |
 
 ```json
@@ -609,6 +610,7 @@ Extension stacks Google trial with paid license keys on the same device. Trial c
     "max_increment_per_run": 10,
     "label": "Google free trial",
     "oauth_client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
+    "oauth_web_client_id": "860976240598-9djjnlud57s4fv0aul9eqdi2o8a11vr0.apps.googleusercontent.com",
     "chrome_extension_id": "dhhlaikkdfkaofbiacpoaadfademdmne"
   }
 }
@@ -636,9 +638,19 @@ Extension stacks Google trial with paid license keys on the same device. Trial c
 - Web client ID = same `oauth_client_id` (Chrome extension client)
 - Web client secret: if Chrome extension client has no secret, keep Firebase linked to the Firebase auto-created Web client for backend only; extension uses Chrome extension client via `getAuthToken`
 
-**Step D — Optional Web client (desktop dev fallback)**
+**Step D — Web application client (Kiwi / mobile fallback — required)**
 
-- Web client `9djj...` with redirect URIs for desktop extension ID `kgnmnoaobnpfaaipnjkkidekbajpldlm` — only if testing desktop sideload separately
+1. Google Cloud → Credentials → **Web application** OAuth client (e.g. `9djj...`)
+2. **Authorized redirect URIs** — add:
+   ```
+   https://dhhlaikkdfkaofbiacpoaadfademdmne.chromiumapp.org/
+   ```
+3. Copy that Web client ID → `oauth_web_client_id` in config above
+4. **Do NOT** use the Chrome Extension client ID here — causes **401 invalid_client** on Kiwi
+
+**Step E — Optional desktop dev Web client**
+
+- Add redirect URI for desktop extension ID `kgnmnoaobnpfaaipnjkkidekbajpldlm` to the same Web application client if testing desktop sideload separately.
 
 **Do NOT use** `function_url` / `claimGoogleTrial` for sign-in — extension uses Firestore rules (Spark plan).
 
@@ -654,6 +666,7 @@ Extension stacks Google trial with paid license keys on the same device. Trial c
     "max_increment_per_run": 10,
     "label": "Google free trial",
     "oauth_client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
+    "oauth_web_client_id": "860976240598-9djjnlud57s4fv0aul9eqdi2o8a11vr0.apps.googleusercontent.com",
     "chrome_extension_id": "dhhlaikkdfkaofbiacpoaadfademdmne"
   }
 }

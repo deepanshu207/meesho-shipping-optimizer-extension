@@ -74,13 +74,17 @@ const FirebaseAuth = {
 
   async saveOAuthDebug(extra = {}) {
     try {
-      const clientId = await this.getOAuthClientId();
+      const chromeClientId = this.getOAuthChromeClientId();
+      const webClientId = await this.getOAuthWebClientId();
       const hint = this.getOAuthSetupHint();
       await chrome.storage.local.set({
         [this.OAUTH_DEBUG_KEY]: {
           ...hint,
-          clientId,
+          clientId: chromeClientId,
+          chromeClientId,
+          webClientId,
           clientSource: this._lastClientSource || "",
+          webClientSource: this._lastWebClientSource || "",
           ...extra,
           timestamp: Date.now(),
         },
@@ -89,12 +93,16 @@ const FirebaseAuth = {
   },
 
   async getOAuthDiagnostics() {
-    const clientId = await this.getOAuthClientId();
+    const chromeClientId = this.getOAuthChromeClientId();
+    const webClientId = await this.getOAuthWebClientId();
     const hint = this.getOAuthSetupHint();
     const stored = await chrome.storage.local.get([this.OAUTH_DEBUG_KEY]);
     return {
-      clientId,
+      clientId: chromeClientId,
+      chromeClientId,
+      webClientId,
       clientSource: this._lastClientSource || "",
+      webClientSource: this._lastWebClientSource || "",
       lastAttempt: stored[this.OAUTH_DEBUG_KEY] || null,
       ...hint,
     };
@@ -105,26 +113,79 @@ const FirebaseAuth = {
     const msg = String(err?.message || err || "");
     if (!/redirect_uri_mismatch/i.test(msg)) return msg;
     const uris = (hint.redirectUris || []).filter(Boolean).join("\n");
-    const clientLine = hint.clientId
-      ? `OAuth client in use:\n${hint.clientId}\n\n`
-      : "";
+    const webClient = hint.webClientId || "";
+    const clientLine = webClient
+      ? `Web OAuth client (for Kiwi fallback):\n${webClient}\n\n`
+      : hint.clientId
+        ? `OAuth client in use:\n${hint.clientId}\n\n`
+        : "";
     const extId = hint.extensionId || "unknown";
     return (
       `Google OAuth redirect mismatch.\n\n` +
       clientLine +
-      `FIX FOR KIWI (recommended):\n` +
-      `Google Cloud → Create Credentials → OAuth client ID → type CHROME EXTENSION → Application ID:\n${extId}\n` +
-      `Put that new client ID in Firestore oauth_client_id + manifest oauth2 + Firebase Auth Google.\n\n` +
-      `OR add these redirect URIs to Web client 1 (9djj...):\n${uris}\n\n` +
-      `Extension ID: ${extId}`
+      `Add these redirect URIs to your Web application OAuth client in Google Cloud:\n${uris}\n\n` +
+      `Extension ID: ${extId}\n\n` +
+      `Do NOT use the Chrome Extension client ID with redirect URIs — that causes invalid_client.`
     );
   },
 
-  async getOAuthClientId() {
+  formatInvalidClientHelp(err, diagnostics) {
+    const hint = diagnostics || this.getOAuthSetupHint();
+    const extId = hint.extensionId || "unknown";
+    const chromeClient = hint.chromeClientId || hint.clientId || "";
+    const webClient = hint.webClientId || "";
+    return (
+      `Google OAuth client not found (invalid_client).\n\n` +
+      `Kiwi/mobile uses launchWebAuthFlow, which needs a Web application client — not the Chrome Extension client.\n\n` +
+      `Chrome Extension client (getAuthToken only):\n${chromeClient || "(manifest oauth2)"}\n\n` +
+      `Web client (launchWebAuthFlow — set oauth_web_client_id in Firebase):\n${webClient || "(missing — add to config)"}\n\n` +
+      `1. Google Cloud → Credentials → Web application client\n` +
+      `2. Add redirect URI: https://${extId}.chromiumapp.org/\n` +
+      `3. Set google_trial.oauth_web_client_id to that Web client ID\n` +
+      `4. Ensure extension ID matches Chrome Extension client Item ID: ${extId}`
+    );
+  },
+
+  getOAuthChromeClientId() {
     const manifestId = this.getManifestOAuthClientId();
     if (manifestId) {
-      this._lastClientSource = "manifest.oauth2";
+      this._lastChromeClientSource = "manifest.oauth2";
       return manifestId;
+    }
+    if (this.firebase?.oauthClientId) {
+      this._lastChromeClientSource = "config.js";
+      return this.firebase.oauthClientId;
+    }
+    this._lastChromeClientSource = "";
+    return "";
+  },
+
+  async getOAuthWebClientId() {
+    if (
+      typeof FirebaseLicense !== "undefined" &&
+      FirebaseLicense.getGoogleTrialPublicConfig
+    ) {
+      try {
+        const cfg = await FirebaseLicense.getGoogleTrialPublicConfig(true);
+        if (cfg?.oauth_web_client_id || cfg?.oauthWebClientId) {
+          this._lastWebClientSource = "firebase";
+          return cfg.oauth_web_client_id || cfg.oauthWebClientId;
+        }
+      } catch (_) {}
+    }
+    if (this.firebase?.oauthWebClientId) {
+      this._lastWebClientSource = "config.js";
+      return this.firebase.oauthWebClientId;
+    }
+    this._lastWebClientSource = "";
+    return "";
+  },
+
+  async getOAuthClientId() {
+    const chromeId = this.getOAuthChromeClientId();
+    if (chromeId) {
+      this._lastClientSource = this._lastChromeClientSource || "manifest.oauth2";
+      return chromeId;
     }
     if (
       typeof FirebaseLicense !== "undefined" &&
@@ -137,10 +198,6 @@ const FirebaseAuth = {
           return cfg.oauth_client_id || cfg.oauthClientId;
         }
       } catch (_) {}
-    }
-    if (this.firebase?.oauthClientId) {
-      this._lastClientSource = "config.js";
-      return this.firebase.oauthClientId;
     }
     this._lastClientSource = "";
     return "";
@@ -240,22 +297,18 @@ const FirebaseAuth = {
     return { accessToken, redirectUri, method: "launchWebAuthFlow" };
   },
 
-  async launchGoogleOAuth(clientId) {
-    if (!clientId) {
-      throw new Error(
-        "Google sign-in is not configured yet. Ask admin to set google_trial.oauth_client_id in Firebase.",
-      );
-    }
-
+  async launchGoogleOAuth() {
+    const chromeClientId = this.getOAuthChromeClientId();
+    const webClientId = await this.getOAuthWebClientId();
     const diagnostics = await this.getOAuthDiagnostics();
     const redirectUri = this.getRedirectUri();
 
-    // Preferred on Chrome/Kiwi extensions — no manual redirect URI in Google Cloud when using Chrome Extension OAuth client type.
-    if (chrome?.identity?.getAuthToken && this.getManifestOAuthClientId()) {
+    // Preferred on desktop Chrome — uses manifest Chrome Extension client (no redirect URI).
+    if (chrome?.identity?.getAuthToken && chromeClientId) {
       try {
         await this.saveOAuthDebug({
           method: "getAuthToken",
-          clientId,
+          clientId: chromeClientId,
           redirectUri,
         });
         const accessToken = await this.getGoogleAccessTokenViaAuthToken();
@@ -263,8 +316,10 @@ const FirebaseAuth = {
       } catch (e) {
         console.warn("[Shipping Optimizer] getAuthToken failed:", e.message);
         const msg = String(e.message || "");
-        if (!/redirect_uri|bad client id|invalid_client/i.test(msg)) {
-          // Non-redirect errors may still be recoverable via web flow
+        if (/invalid_client|bad client id/i.test(msg)) {
+          console.warn(
+            "[Shipping Optimizer] Chrome Extension client rejected — trying Web client flow",
+          );
         }
       }
     }
@@ -275,15 +330,25 @@ const FirebaseAuth = {
       );
     }
 
+    if (!webClientId) {
+      throw new Error(
+        "Google sign-in fallback needs oauth_web_client_id (Web application client). " +
+          "See FIREBASE_SETUP.md — Chrome Extension client cannot be used with redirect flow.",
+      );
+    }
+
     const redirects = this.getRedirectUriCandidates();
     let lastError = null;
 
     for (const uri of redirects) {
       try {
-        return await this.launchGoogleOAuthWithRedirect(clientId, uri);
+        return await this.launchGoogleOAuthWithRedirect(webClientId, uri);
       } catch (e) {
         lastError = e;
         const msg = String(e?.message || e || "");
+        if (/invalid_client/i.test(msg)) {
+          throw new Error(this.formatInvalidClientHelp(e, diagnostics));
+        }
         if (!/redirect_uri_mismatch/i.test(msg)) {
           throw new Error(this.formatRedirectMismatchHelp(e, diagnostics));
         }
@@ -413,8 +478,14 @@ const FirebaseAuth = {
     if (!this.isEnabled()) {
       throw new Error("Firebase auth is not enabled.");
     }
-    const clientId = await this.getOAuthClientId();
-    const { accessToken, redirectUri } = await this.launchGoogleOAuth(clientId);
+    const chromeClientId = this.getOAuthChromeClientId();
+    const webClientId = await this.getOAuthWebClientId();
+    if (!chromeClientId && !webClientId) {
+      throw new Error(
+        "Google sign-in is not configured yet. Ask admin to set google_trial.oauth_client_id and oauth_web_client_id in Firebase.",
+      );
+    }
+    const { accessToken, redirectUri } = await this.launchGoogleOAuth();
     const session = await this.signInWithGoogleAccessToken(
       accessToken,
       redirectUri,

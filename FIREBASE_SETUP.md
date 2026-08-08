@@ -60,7 +60,14 @@ Set in:
 
 **OAuth consent screen:** If app is in **Testing**, add each Gmail as a **test user** — otherwise sign-in is blocked even with a correct OAuth client.
 
-Extension v1.6.8+ uses `chrome.identity.getAuthToken` (Chrome extension client) then falls back to `launchWebAuthFlow` (Web client + redirect URIs).
+Extension v1.7.0+ uses **two** OAuth clients:
+
+| Client | Type | Used by | Field |
+|--------|------|---------|-------|
+| Chrome Extension | `lfncv478...` | `getAuthToken` (desktop Chrome) | `oauth_client_id` + `manifest.json` oauth2 |
+| Web application | `9djj...` | `launchWebAuthFlow` (Kiwi/mobile fallback) | `oauth_web_client_id` |
+
+**Important:** Do **not** use the Chrome Extension client ID with `launchWebAuthFlow` — Google returns **401 invalid_client**. Kiwi needs the Web client with redirect URI.
 
 **You do NOT add a redirect URI per user.** Every customer who installs the **same** extension build shares the same extension ID.
 
@@ -113,6 +120,7 @@ The extension popup shows **OAuth redirect (admin)** under the Google button so 
     "max_devices": 1,
     "label": "Google free trial",
     "oauth_client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
+    "oauth_web_client_id": "860976240598-9djjnlud57s4fv0aul9eqdi2o8a11vr0.apps.googleusercontent.com",
     "chrome_extension_id": "dhhlaikkdfkaofbiacpoaadfademdmne"
   }
 }
@@ -128,7 +136,8 @@ The extension popup shows **OAuth redirect (admin)** under the Google button so 
 | `credits` | Legacy alias for `trial_credits` |
 | `max_increment_per_run` | Max runs deducted per request (anti-cheat; default 10) |
 | `max_devices` | Devices per trial (enforced in rules + extension) |
-| `oauth_client_id` | **Chrome Extension** OAuth client ID (not Web client) — must match `manifest.json` `oauth2.client_id` |
+| `oauth_client_id` | **Chrome Extension** OAuth client ID — `getAuthToken` + `manifest.json` oauth2 |
+| `oauth_web_client_id` | **Web application** OAuth client ID — Kiwi `launchWebAuthFlow` fallback; add redirect URI in Google Cloud |
 | `chrome_extension_id` | Extension Item ID used when creating the Chrome Extension OAuth client (admin reference) |
 
 ### Trial document (`shipping_optimizer_google_trials/{uid}`)
