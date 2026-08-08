@@ -730,6 +730,7 @@ const OptimizerUI = {
                         <div class="opt-section-title" style="text-align:center;margin-bottom:8px;">🎁 FREE TRIAL — Google sign-in</div>
                         <p id="google-trial-hint" class="google-trial-hint" style="font-size:10px;color:#6b7280;text-align:center;margin-bottom:8px;">One free trial per Google account</p>
                         <p id="google-trial-user" class="google-trial-user" style="display:none;font-size:10px;color:#6b7280;text-align:center;margin-bottom:8px;"></p>
+                        <p id="google-trial-redirect" class="google-trial-redirect" style="display:none;font-size:9px;color:#9ca3af;text-align:center;margin-bottom:8px;word-break:break-all;line-height:1.35;"></p>
                         <button type="button" id="google-trial-btn" class="google-trial-btn opt-btn" style="width:100%;padding:10px;background:#fff;border:1px solid #dadce0;color:#1f2937;font-weight:700;">Continue with Google</button>
                     </div>
                     

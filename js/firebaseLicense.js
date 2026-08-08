@@ -2800,6 +2800,9 @@ Please share payment details.`;
     const userEl =
       root?.querySelector?.("#google-trial-user") ||
       root?.querySelector?.(".google-trial-user");
+    const redirectEl =
+      root?.querySelector?.("#google-trial-redirect") ||
+      root?.querySelector?.(".google-trial-redirect");
 
     if (!section) return { enabled: false };
 
@@ -2832,6 +2835,14 @@ Please share payment details.`;
     if (userEl) {
       userEl.style.display = user?.email ? "block" : "none";
       userEl.textContent = user?.email ? `Signed in as ${user.email}` : "";
+    }
+    if (redirectEl && typeof FirebaseAuth !== "undefined") {
+      const setup = FirebaseAuth.getOAuthSetupHint();
+      redirectEl.style.display = setup.redirectUri ? "block" : "none";
+      redirectEl.textContent = setup.extensionId
+        ? `OAuth redirect (admin): ${setup.redirectUri}`
+        : "";
+      redirectEl.title = setup.instruction || "";
     }
     if (btn) {
       btn.textContent = user?.email

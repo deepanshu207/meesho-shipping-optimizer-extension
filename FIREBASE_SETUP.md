@@ -35,6 +35,41 @@ Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimiz
 
 **Trial credits vs paid credits:** Google trial grants a separate pool of **trial credits** (e.g. 3 free generation runs). Those are consumed **first**. After trial credits are used up, the extension charges **paid plan credits** from any activated license on the same device. Google trial stacks with paid keys — it does not replace them.
 
+### OAuth redirect URIs (Chrome + Kiwi mobile)
+
+Google sign-in uses `chrome.identity.getRedirectURL()`:
+
+```
+https://<EXTENSION_ID>.chromiumapp.org/
+```
+
+**You do NOT add a redirect URI per user.** Every customer who installs the **same** extension build shares the same extension ID.
+
+| Install method | Extension ID | Who shares it |
+|----------------|--------------|---------------|
+| **Chrome Web Store** (recommended) | One fixed store ID | **All** Chrome + Kiwi users who install from the store |
+| Unpacked / dev load on desktop | e.g. `kgnmnoaobnpfaaipnjkkidekbajpldlm` | Only that dev install |
+| Unpacked / dev load on Kiwi | e.g. `dhhlaikkdfkaofbiacpoaadfademdmne` | Only that Kiwi install |
+
+**For production (all mobile users):** publish to Chrome Web Store, then add **one** redirect URI for the store extension ID.
+
+**For your current Kiwi dev install**, add this redirect URI in Google Cloud → Credentials → OAuth **Web application** client → **Authorized redirect URIs**:
+
+```
+https://dhhlaikkdfkaofbiacpoaadfademdmne.chromiumapp.org/
+```
+
+If you also test on desktop dev build, add both (trailing slash required):
+
+```
+https://kgnmnoaobnpfaaipnjkkidekbajpldlm.chromiumapp.org/
+https://dhhlaikkdfkaofbiacpoaadfademdmne.chromiumapp.org/
+```
+
+After saving in Google Cloud, wait **1–2 minutes** before retrying sign-in.
+
+The extension popup shows **OAuth redirect (admin)** under the Google button so you can copy the exact URI for the device you are on.
+
 ### Prerequisites
 
 1. **Firebase Authentication** → enable **Google** provider.
