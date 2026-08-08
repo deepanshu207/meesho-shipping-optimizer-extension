@@ -26,9 +26,9 @@ const CONFIG = {
     messagingSenderId: "860976240598",
     appId: "1:860976240598:web:e5d903d52db5b71e48b677",
     measurementId: "G-WCTXFCDXLT",
-    /** Firebase auto-created Web client — must match Google Cloud + Authorized redirect URIs for this extension ID */
+    /** Fallback OAuth client — Firestore google_trial.oauth_client_id takes priority */
     oauthClientId:
-      "860976240598-82l82a6dp7btp6eucdmlqh68fuf2s0bs.apps.googleusercontent.com",
+      "860976240598-9djjnlud57s4fv0aul9eqdi2o8a11vr0.apps.googleusercontent.com",
   },
 
   /** HTTPS Cloud Function URL — claimGoogleTrial (set after deploy; also in Firebase app config). */

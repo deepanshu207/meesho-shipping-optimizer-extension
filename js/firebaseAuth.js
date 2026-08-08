@@ -86,21 +86,21 @@ const FirebaseAuth = {
   },
 
   async getOAuthClientId() {
-    if (this.firebase?.oauthClientId) {
-      this._lastClientSource = "config.js";
-      return this.firebase.oauthClientId;
-    }
     if (
       typeof FirebaseLicense !== "undefined" &&
       FirebaseLicense.getGoogleTrialPublicConfig
     ) {
       try {
-        const cfg = await FirebaseLicense.getGoogleTrialPublicConfig();
+        const cfg = await FirebaseLicense.getGoogleTrialPublicConfig(true);
         if (cfg?.oauth_client_id || cfg?.oauthClientId) {
           this._lastClientSource = "firebase";
           return cfg.oauth_client_id || cfg.oauthClientId;
         }
       } catch (_) {}
+    }
+    if (this.firebase?.oauthClientId) {
+      this._lastClientSource = "config.js";
+      return this.firebase.oauthClientId;
     }
     this._lastClientSource = "";
     return "";
