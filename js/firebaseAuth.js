@@ -28,22 +28,38 @@ const FirebaseAuth = {
   /** Shown in admin docs / error hints — must match Google Cloud OAuth redirect URIs. */
   getOAuthSetupHint() {
     const redirectUri = this.getRedirectUri();
+    const redirectNoSlash = redirectUri.replace(/\/$/, "");
     return {
       redirectUri,
+      redirectNoSlash,
       extensionId:
         typeof chrome !== "undefined" && chrome.runtime?.id
           ? chrome.runtime.id
           : null,
-      instruction: `Add this exact URI in Google Cloud → Credentials → OAuth Web client → Authorized redirect URIs: ${redirectUri}`,
+      instruction: `Add redirect URI(s) on the SAME OAuth Web client as oauth_client_id in Firebase.`,
     };
   },
 
-  formatRedirectMismatchHelp(err) {
+  async getOAuthDiagnostics() {
+    const clientId = await this.getOAuthClientId();
     const hint = this.getOAuthSetupHint();
+    return { clientId, ...hint };
+  },
+
+  formatRedirectMismatchHelp(err, diagnostics) {
+    const hint = diagnostics || this.getOAuthSetupHint();
     const msg = String(err?.message || err || "");
     if (!/redirect_uri_mismatch/i.test(msg)) return msg;
+    const clientLine = hint.clientId
+      ? `OAuth client in use: ${hint.clientId}\n\n`
+      : "";
     return (
-      `Google OAuth redirect mismatch. Add this URI in Google Cloud Console (OAuth Web client → Authorized redirect URIs), save, wait 2 minutes, then retry:\n\n${hint.redirectUri}\n\nExtension ID on this device: ${hint.extensionId || "unknown"}\n\nAll users who install the same Chrome Web Store build share one ID — you do not add a URI per user.`
+      `Google OAuth redirect mismatch.\n\n` +
+      `${clientLine}` +
+      `Add these redirect URIs to THAT SAME OAuth client in Google Cloud → Credentials → Authorized redirect URIs (save, wait 2 min):\n\n` +
+      `${hint.redirectUri}\n` +
+      `${hint.redirectNoSlash || hint.redirectUri.replace(/\/$/, "")}\n\n` +
+      `Extension ID: ${hint.extensionId || "unknown"}`
     );
   },
 
@@ -88,6 +104,12 @@ const FirebaseAuth = {
     }
 
     const redirectUri = this.getRedirectUri();
+    const diagnostics = await this.getOAuthDiagnostics();
+    console.info("[Shipping Optimizer] Google OAuth", {
+      clientId,
+      redirectUri,
+      extensionId: diagnostics.extensionId,
+    });
     const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     authUrl.searchParams.set("client_id", clientId);
     authUrl.searchParams.set("response_type", "token");
@@ -102,7 +124,10 @@ const FirebaseAuth = {
           if (chrome.runtime.lastError) {
             reject(
               new Error(
-                this.formatRedirectMismatchHelp(chrome.runtime.lastError.message),
+                this.formatRedirectMismatchHelp(
+                  chrome.runtime.lastError.message,
+                  diagnostics,
+                ),
               ),
             );
             return;
@@ -121,6 +146,7 @@ const FirebaseAuth = {
       throw new Error(
         this.formatRedirectMismatchHelp(
           params.error_description || params.error,
+          diagnostics,
         ),
       );
     }

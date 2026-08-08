@@ -2837,12 +2837,23 @@ Please share payment details.`;
       userEl.textContent = user?.email ? `Signed in as ${user.email}` : "";
     }
     if (redirectEl && typeof FirebaseAuth !== "undefined") {
-      const setup = FirebaseAuth.getOAuthSetupHint();
-      redirectEl.style.display = setup.redirectUri ? "block" : "none";
-      redirectEl.textContent = setup.extensionId
-        ? `OAuth redirect (admin): ${setup.redirectUri}`
-        : "";
-      redirectEl.title = setup.instruction || "";
+      try {
+        const diag = await FirebaseAuth.getOAuthDiagnostics();
+        redirectEl.style.display = diag.redirectUri ? "block" : "none";
+        const clientShort = diag.clientId
+          ? `${String(diag.clientId).slice(0, 20)}…`
+          : "not set";
+        redirectEl.innerHTML = diag.extensionId
+          ? `<strong>OAuth setup (must match Google Cloud):</strong><br>` +
+            `Client: <code style="font-size:8px;">${clientShort}</code><br>` +
+            `Redirect: <code style="font-size:8px;">${diag.redirectUri}</code>`
+          : "";
+        redirectEl.title =
+          `Add redirect URI on OAuth client ${diag.clientId || ""}. ` +
+          `Also try without trailing slash: ${diag.redirectNoSlash || ""}`;
+      } catch (_) {
+        redirectEl.style.display = "none";
+      }
     }
     if (btn) {
       btn.textContent = user?.email
