@@ -594,7 +594,8 @@ Extension stacks Google trial with paid license keys on the same device. Trial c
 | `max_devices` | Number input | Default `1` — enforced in rules + extension |
 | `max_increment_per_run` | Number input | Anti-cheat cap per request (default `10`) |
 | `label` | Text | Shown in extension license type |
-| `oauth_client_id` | Text | Google OAuth Web client ID (Chrome extension redirect) |
+| `oauth_client_id` | Text | **Chrome Extension** OAuth client ID — must match extension `manifest.json` `oauth2.client_id` |
+| `chrome_extension_id` | Text | Extension Item ID from `chrome://extensions` (e.g. Kiwi: `dhhlaikkdfkaofbiacpoaadfademdmne`) — admin reference only |
 
 ```json
 {
@@ -607,7 +608,53 @@ Extension stacks Google trial with paid license keys on the same device. Trial c
     "max_devices": 1,
     "max_increment_per_run": 10,
     "label": "Google free trial",
-    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com"
+    "oauth_client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
+    "chrome_extension_id": "dhhlaikkdfkaofbiacpoaadfademdmne"
+  }
+}
+```
+
+### Google Cloud OAuth setup (admin UI helper text)
+
+**Step A — Chrome Extension client (Kiwi / mobile — recommended)**
+
+1. Google Cloud → project `extension-e6e32` → Credentials → **+ Create client**
+2. Type: **Chrome extension** (NOT Web application)
+3. **Item ID:** 32-char extension ID from `chrome://extensions` (lowercase)
+   - Kiwi dev example: `dhhlaikkdfkaofbiacpoaadfademdmne`
+4. Copy Client ID → save to `oauth_client_id` above
+5. **No redirect URIs** needed for Chrome extension type
+
+**Step B — OAuth consent screen**
+
+- If status is **Testing**: add customer Gmail addresses under **Test users**
+- For production: publish app or add all users as test users until published
+
+**Step C — Firebase Authentication**
+
+- Authentication → Google → enable
+- Web client ID = same `oauth_client_id` (Chrome extension client)
+- Web client secret: if Chrome extension client has no secret, keep Firebase linked to the Firebase auto-created Web client for backend only; extension uses Chrome extension client via `getAuthToken`
+
+**Step D — Optional Web client (desktop dev fallback)**
+
+- Web client `9djj...` with redirect URIs for desktop extension ID `kgnmnoaobnpfaaipnjkkidekbajpldlm` — only if testing desktop sideload separately
+
+**Do NOT use** `function_url` / `claimGoogleTrial` for sign-in — extension uses Firestore rules (Spark plan).
+
+```json
+{
+  "google_trial": {
+    "google_login_enabled": true,
+    "enabled": true,
+    "days": 7,
+    "trial_credits": 3,
+    "image_run_limit": 3,
+    "max_devices": 1,
+    "max_increment_per_run": 10,
+    "label": "Google free trial",
+    "oauth_client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
+    "chrome_extension_id": "dhhlaikkdfkaofbiacpoaadfademdmne"
   }
 }
 ```
@@ -643,14 +690,15 @@ Read-only table for superadmin (superadmin read via rules):
 ### Setup checklist (show in admin UI)
 
 1. Firebase Console → Authentication → Google → Enable
-2. Google Cloud → OAuth Web client → redirect `https://kgnmnoaobnpfaaipnjkkidekbajpldlm.chromiumapp.org/`
-3. Paste `oauth_client_id` in config above
-4. Set `trial_credits: 3` (or desired free runs)
-5. **Deploy Firestore rules** from extension repo:
+2. Google Cloud → Create **Chrome extension** OAuth client with extension Item ID
+3. Paste `oauth_client_id` + `chrome_extension_id` in config above
+4. OAuth consent screen → add **Test users** (your Gmail) if app is in Testing
+5. Set `trial_credits: 3` (or desired free runs)
+6. **Deploy Firestore rules** from extension repo:
    ```bash
    firebase deploy --only firestore:rules --project extension-e6e32
    ```
-6. Set `google_login_enabled: true` and `enabled: true`
+7. Set `google_login_enabled: true` and `enabled: true`
 
 ### Smart Mode dropdown (Config tab or Credits tab)
 

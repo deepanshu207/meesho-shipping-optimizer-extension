@@ -2481,7 +2481,15 @@ Please share payment details.`;
       max_devices: maxDevices,
       label: src.label || src.name || "Google free trial",
       oauth_client_id:
-        src.oauth_client_id || src.oauthClientId || CONFIG?.FIREBASE?.oauthClientId || "",
+        src.oauth_client_id ||
+        src.oauthClientId ||
+        CONFIG?.FIREBASE?.oauthClientId ||
+        "",
+      chrome_extension_id:
+        src.chrome_extension_id ||
+        src.chromeExtensionId ||
+        CONFIG?.CHROME_EXTENSION_ID ||
+        "",
     };
   },
 

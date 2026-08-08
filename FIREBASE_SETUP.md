@@ -43,21 +43,24 @@ Google sign-in uses `chrome.identity.getRedirectURL()`:
 https://<EXTENSION_ID>.chromiumapp.org/
 ```
 
-### Recommended for Kiwi / mobile: Chrome Extension OAuth client
+### Chrome Extension OAuth client (recommended — Kiwi / mobile)
 
-If **Web application** + redirect URIs still gives `redirect_uri_mismatch` on Kiwi, use a **Chrome extension** OAuth client instead (no redirect URIs to add manually):
+**Current Kiwi dev client (v1.6.9+):**
 
-1. Google Cloud → project **extension** → **Credentials** → **+ Create client**
-2. Application type: **Chrome extension** (not Web application)
-3. **Application ID:** your extension ID from `chrome://extensions`  
-   Example Kiwi: `dhhlaikkdfkaofbiacpoaadfademdmne`
-4. Create → copy the new **Client ID**
-5. Put that Client ID in **all three** places:
-   - `manifest.json` → `oauth2.client_id`
-   - Firestore `google_trial.oauth_client_id`
-   - Firebase Console → Authentication → Google → Web client ID + secret (from this same client if shown, or link Web client)
+| Setting | Value |
+|---------|--------|
+| OAuth client type | **Chrome extension** |
+| Item ID | `dhhlaikkdfkaofbiacpoaadfademdmne` |
+| Client ID | `860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com` |
 
-Extension v1.6.8+ uses `chrome.identity.getAuthToken` first (works with Chrome extension OAuth client), then falls back to `launchWebAuthFlow`.
+Set in:
+- `manifest.json` → `oauth2.client_id`
+- Firestore `google_trial.oauth_client_id`
+- Firebase Console → Authentication → Google → Web client ID
+
+**OAuth consent screen:** If app is in **Testing**, add each Gmail as a **test user** — otherwise sign-in is blocked even with a correct OAuth client.
+
+Extension v1.6.8+ uses `chrome.identity.getAuthToken` (Chrome extension client) then falls back to `launchWebAuthFlow` (Web client + redirect URIs).
 
 **You do NOT add a redirect URI per user.** Every customer who installs the **same** extension build shares the same extension ID.
 
@@ -109,7 +112,8 @@ The extension popup shows **OAuth redirect (admin)** under the Google button so 
     "max_increment_per_run": 10,
     "max_devices": 1,
     "label": "Google free trial",
-    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com"
+    "oauth_client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
+    "chrome_extension_id": "dhhlaikkdfkaofbiacpoaadfademdmne"
   }
 }
 ```
@@ -124,7 +128,8 @@ The extension popup shows **OAuth redirect (admin)** under the Google button so 
 | `credits` | Legacy alias for `trial_credits` |
 | `max_increment_per_run` | Max runs deducted per request (anti-cheat; default 10) |
 | `max_devices` | Devices per trial (enforced in rules + extension) |
-| `oauth_client_id` | Google OAuth Web client for extension |
+| `oauth_client_id` | **Chrome Extension** OAuth client ID (not Web client) — must match `manifest.json` `oauth2.client_id` |
+| `chrome_extension_id` | Extension Item ID used when creating the Chrome Extension OAuth client (admin reference) |
 
 ### Trial document (`shipping_optimizer_google_trials/{uid}`)
 

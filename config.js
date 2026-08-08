@@ -10,7 +10,7 @@ const CONFIG = {
 
   EXTENSION_NAME: "Shipping Optimizer",
   AUTHOR: "Deepanshu Arora",
-  VERSION: "1.6.8",
+  VERSION: "1.6.9",
 
   /** Default Meesho single-catalog add page (supplier panel). */
   MEESHO_CATALOG_URL:
@@ -26,10 +26,13 @@ const CONFIG = {
     messagingSenderId: "860976240598",
     appId: "1:860976240598:web:e5d903d52db5b71e48b677",
     measurementId: "G-WCTXFCDXLT",
-    /** Fallback OAuth client — Firestore google_trial.oauth_client_id takes priority */
+    /** Chrome Extension OAuth client (Kiwi / mobile). Also set in Firestore google_trial.oauth_client_id */
     oauthClientId:
-      "860976240598-9djjnlud57s4fv0aul9eqdi2o8a11vr0.apps.googleusercontent.com",
+      "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
   },
+
+  /** Kiwi sideload extension ID — Chrome Extension OAuth client Item ID in Google Cloud */
+  CHROME_EXTENSION_ID: "dhhlaikkdfkaofbiacpoaadfademdmne",
 
   /** HTTPS Cloud Function URL — claimGoogleTrial (set after deploy; also in Firebase app config). */
   GOOGLE_TRIAL_FUNCTION_URL:

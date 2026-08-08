@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "1.6.8",
+  "version": "1.6.9",
   "name": "Shipping Optimizer",
   "short_name": "Shipping Optimizer",
   "description": "Generate image variants, check live Meesho shipping, preview results, and apply the best image to your catalog.",
@@ -18,7 +18,7 @@
     "identity"
   ],
   "oauth2": {
-    "client_id": "860976240598-9djjnlud57s4fv0aul9eqdi2o8a11vr0.apps.googleusercontent.com",
+    "client_id": "860976240598-lfncv478meb0hel45vr3elf8fu5muv17.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "email",
