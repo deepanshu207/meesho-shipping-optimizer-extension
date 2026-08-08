@@ -1602,15 +1602,7 @@ const LicenseManager = {
   },
 
   async activateGoogleFreeTrial() {
-    const isExtensionPage =
-      typeof location !== "undefined" &&
-      String(location.protocol || "").startsWith("chrome-extension");
-
-    if (
-      !isExtensionPage &&
-      typeof chrome !== "undefined" &&
-      chrome.runtime?.sendMessage
-    ) {
+    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
       try {
         const response = await chrome.runtime.sendMessage({
           type: "ACTIVATE_GOOGLE_TRIAL",

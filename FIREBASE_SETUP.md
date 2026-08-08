@@ -43,6 +43,22 @@ Google sign-in uses `chrome.identity.getRedirectURL()`:
 https://<EXTENSION_ID>.chromiumapp.org/
 ```
 
+### Recommended for Kiwi / mobile: Chrome Extension OAuth client
+
+If **Web application** + redirect URIs still gives `redirect_uri_mismatch` on Kiwi, use a **Chrome extension** OAuth client instead (no redirect URIs to add manually):
+
+1. Google Cloud → project **extension** → **Credentials** → **+ Create client**
+2. Application type: **Chrome extension** (not Web application)
+3. **Application ID:** your extension ID from `chrome://extensions`  
+   Example Kiwi: `dhhlaikkdfkaofbiacpoaadfademdmne`
+4. Create → copy the new **Client ID**
+5. Put that Client ID in **all three** places:
+   - `manifest.json` → `oauth2.client_id`
+   - Firestore `google_trial.oauth_client_id`
+   - Firebase Console → Authentication → Google → Web client ID + secret (from this same client if shown, or link Web client)
+
+Extension v1.6.8+ uses `chrome.identity.getAuthToken` first (works with Chrome extension OAuth client), then falls back to `launchWebAuthFlow`.
+
 **You do NOT add a redirect URI per user.** Every customer who installs the **same** extension build shares the same extension ID.
 
 | Install method | Extension ID | Who shares it |

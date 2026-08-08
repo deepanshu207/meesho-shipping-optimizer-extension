@@ -2839,18 +2839,19 @@ Please share payment details.`;
     if (redirectEl && typeof FirebaseAuth !== "undefined") {
       try {
         const diag = await FirebaseAuth.getOAuthDiagnostics();
-        redirectEl.style.display = diag.redirectUri ? "block" : "none";
-        const uris = (diag.redirectUris || [diag.redirectUri]).filter(Boolean);
+        redirectEl.style.display = diag.extensionId ? "block" : "none";
+        const uris = (diag.redirectUris || []).filter(Boolean);
         redirectEl.innerHTML =
-          `<strong>Add ALL redirect URIs on OAuth client:</strong><br>` +
-          `<code style="font-size:8px;word-break:break-all;">${diag.clientId || "not set"}</code><br>` +
+          `<strong>OAuth setup</strong><br>` +
+          `Extension ID: <code style="font-size:8px;">${diag.extensionId || "?"}</code><br>` +
+          `Client: <code style="font-size:8px;word-break:break-all;">${diag.clientId || "?"}</code><br>` +
+          `<span style="font-size:8px;color:#b45309;">Kiwi fix: create OAuth client type <b>Chrome extension</b> with extension ID above (no redirect URI needed).</span><br>` +
           uris
             .map(
               (u) =>
-                `<code style="font-size:8px;word-break:break-all;display:block;margin-top:4px;">${u}</code>`,
+                `<code style="font-size:8px;word-break:break-all;display:block;margin-top:2px;">${u}</code>`,
             )
             .join("");
-        redirectEl.title = `Extension ID: ${diag.extensionId || ""}`;
       } catch (_) {
         redirectEl.style.display = "none";
       }
