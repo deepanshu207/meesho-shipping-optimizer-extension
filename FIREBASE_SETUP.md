@@ -27,53 +27,65 @@ The Firestore REST base URL is derived automatically from `projectId`, so this b
 | `shipping_optimizer_config` | `app` | Pricing plans, WhatsApp number/message, optional inline demo keys, **google_trial** settings |
 | `shipping_optimizer_demo_keys` | License key (e.g. `MEESHO-DEMOFREE`) | Promo / demo keys with expiry days |
 | `shipping_optimizer_licenses` | Paid license key | Activation, machine binding, expiry |
-| `shipping_optimizer_google_trials` | Firebase Auth `uid` | One trial per Google account (created by Cloud Function only) |
+| `shipping_optimizer_google_trials` | Firebase Auth `uid` | One Google trial per account (email + uid stored; image run limits) |
 
-## Google free trial (v1.6+)
+## Google free trial (v1.6.2+) — Spark plan (no Cloud Function)
 
-Users sign in with **Google (Gmail)** in the extension popup or Meesho modal. A **Cloud Function** (`claimGoogleTrial`) verifies the Firebase ID token server-side and creates a trial license — users cannot extend trial days or credits from the client.
+Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimizer_google_trials/{uid}` using the user's **Firebase ID token**. **Firestore security rules** enforce one trial per Google account, trial length, and image run limits — works on the **free Spark plan** (no Blaze / Cloud Functions required).
 
 ### Prerequisites
 
-1. **Firebase Authentication** → enable **Google** provider on project `extension-e6e32`.
-2. **Google Cloud OAuth** → create a **Web application** OAuth client. Add authorized redirect URI:
-   - `https://<YOUR_EXTENSION_ID>.chromiumapp.org/`
-   - Find extension ID on `chrome://extensions` (Developer mode).
-3. Put the OAuth client ID in `shipping_optimizer_config/app` → `google_trial.oauth_client_id` (or `config.js` → `FIREBASE.oauthClientId`).
-4. Deploy Cloud Function (repo `functions/`):
+1. **Firebase Authentication** → enable **Google** provider.
+2. **Google Cloud OAuth** → Web application client + redirect URI `https://<EXTENSION_ID>.chromiumapp.org/`
+3. Firestore `shipping_optimizer_config/app` → `google_trial.oauth_client_id`
+4. **Deploy Firestore rules** from repo `firestore.rules`:
    ```bash
-   cd functions && npm install
-   firebase deploy --only functions:claimGoogleTrial --project extension-e6e32
+   firebase deploy --only firestore:rules --project extension-e6e32
    ```
-5. Set function URL in `app.google_trial.function_url` (default in `config.js`):
-   `https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial`
 
-### App config — `google_trial` on `shipping_optimizer_config/app`
+### App config — `google_trial`
 
 ```json
 {
   "google_trial": {
     "enabled": true,
     "days": 7,
-    "credits": 30,
+    "image_run_limit": 30,
+    "max_increment_per_run": 10,
     "max_devices": 1,
     "label": "Google free trial",
-    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com",
-    "function_url": "https://us-central1-extension-e6e32.cloudfunctions.net/claimGoogleTrial"
+    "oauth_client_id": "860976240598-xxxxxxxx.apps.googleusercontent.com"
   }
 }
 ```
 
 | Field | Notes |
 |-------|-------|
-| `enabled` | `false` hides Google button in extension |
-| `days` | Trial length (admin-controlled; enforced server-side) |
-| `credits` | Included image-gen credits granted at claim time |
-| `max_devices` | Device slots per trial license |
-| `oauth_client_id` | Google OAuth Web client for `chrome.identity` |
-| `function_url` | HTTPS endpoint for `claimGoogleTrial` |
+| `enabled` | `false` hides Google button |
+| `days` | Trial validity (rules enforce max expiry window) |
+| `image_run_limit` | Max **generation runs** per Google account (also accepts legacy `credits`) |
+| `max_increment_per_run` | Max runs deducted per request (anti-cheat; default 10) |
+| `max_devices` | Devices per trial |
+| `oauth_client_id` | Google OAuth Web client for extension |
 
-### Trial license documents
+### Trial document (`shipping_optimizer_google_trials/{uid}`)
+
+| Field | Notes |
+|-------|-------|
+| `google_uid` | Firebase Auth uid (doc id) |
+| `email` | Gmail from Google sign-in |
+| `images_limit` | Copied from admin config at create (immutable) |
+| `images_used` | Incremented per generation run |
+| `expires_at` | Set at first sign-in + `days` |
+| `machine_ids` | Devices used |
+
+**Misuse prevention:** Rules block second trial doc for same uid, block changing `images_limit` / `expires_at`, only allow `images_used` to increase (capped per request). Admin can list trials in Firebase Console or Swagstree admin.
+
+### Optional Cloud Function (Blaze only)
+
+Repo `functions/claimGoogleTrial` is optional if you upgrade to Blaze later. Extension v1.6.2+ uses Firestore rules path by default.
+
+### Trial license documents (legacy / optional)
 
 Created automatically by the function at `shipping_optimizer_licenses/GTRIAL-…`:
 

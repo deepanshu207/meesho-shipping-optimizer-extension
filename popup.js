@@ -724,7 +724,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         const result = await LicenseManager.activateGoogleFreeTrial();
         if (result.success) {
-          showMessage(result.message || "Free trial activated!", "success");
+          if (result.limited) {
+            showMessage(
+              result.message ||
+                "Trial saved — runs used up or expired. Buy a plan to continue.",
+              "error",
+            );
+          } else {
+            showMessage(result.message || "Free trial activated!", "success");
+          }
           await loadLicenseStatus();
           await FirebaseLicense.hydrateGoogleTrialUi(document, {
             onClick: runTrial,
@@ -732,7 +740,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
           showMessage(
             result.message || "Could not start free trial.",
-            result.trialExpired ? "error" : "error",
+            "error",
           );
         }
       } catch (e) {

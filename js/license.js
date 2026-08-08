@@ -55,6 +55,17 @@ const LicenseManager = {
         Number(info.creditsBalance ?? info.credits_balance ?? 0) || 0,
       creditsUsed: Number(info.creditsUsed ?? info.credits_used ?? 0) || 0,
       accessStatus: info.accessStatus || info.access_status || "active",
+      imagesLimit: Number(info.imagesLimit ?? info.images_limit ?? 0) || 0,
+      imagesUsed: Number(info.imagesUsed ?? info.images_used ?? 0) || 0,
+      imagesRemaining:
+        Number(info.imagesRemaining ?? info.images_remaining ?? NaN) ||
+        Math.max(
+          0,
+          (Number(info.imagesLimit ?? info.images_limit ?? 0) || 0) -
+            (Number(info.imagesUsed ?? info.images_used ?? 0) || 0),
+        ),
+      googleUid: info.googleUid || info.google_uid || null,
+      customerEmail: info.customerEmail || info.customer_email || null,
     };
   },
 
@@ -269,11 +280,16 @@ const LicenseManager = {
         statusLabel = "Expired";
       } else if (
         status === "credits_exhausted" ||
+        status === "runs_exhausted" ||
         ((info.billingMode === "hybrid" || info.billingMode === "credits") &&
-          Number(info.creditsBalance ?? 0) <= 0)
+          Number(info.creditsBalance ?? 0) <= 0) ||
+        (info.planType === "google_trial" &&
+          info.imagesLimit > 0 &&
+          Number(info.imagesRemaining ?? 0) <= 0)
       ) {
-        status = "credits_exhausted";
-        statusLabel = "Credits exhausted";
+        status = info.planType === "google_trial" ? "runs_exhausted" : "credits_exhausted";
+        statusLabel =
+          info.planType === "google_trial" ? "Trial runs used up" : "Credits exhausted";
       } else {
         status = "inactive";
         statusLabel = "Inactive";
@@ -359,6 +375,14 @@ const LicenseManager = {
       if (unlimitedTime) return true;
       if (!info.expiresAt) return true;
       return new Date() <= new Date(info.expiresAt);
+    }
+
+    if (info.planType === "google_trial" || mode === "google_trial") {
+      if (info.expiresAt && new Date() > new Date(info.expiresAt)) return false;
+      const limit = Number(info.imagesLimit ?? 0);
+      const used = Number(info.imagesUsed ?? 0);
+      if (limit > 0 && used >= limit) return false;
+      return info.active !== false;
     }
 
     if (mode === "credits") {
@@ -574,6 +598,40 @@ const LicenseManager = {
             continue;
           }
           updated.push(entry);
+          continue;
+        }
+
+        if (
+          info.planType === "google_trial" &&
+          CONFIG?.USE_FIREBASE_LICENSE &&
+          typeof FirebaseLicense !== "undefined" &&
+          FirebaseLicense.isEnabled() &&
+          typeof FirebaseAuth !== "undefined"
+        ) {
+          try {
+            const uid = info.googleUid;
+            const idToken = uid ? await FirebaseAuth.getIdToken() : null;
+            if (uid && idToken) {
+              const refreshed = await FirebaseLicense.refreshGoogleTrial(
+                uid,
+                idToken,
+                machineId,
+              );
+              if (refreshed.license) {
+                updated.push({
+                  ...entry,
+                  licenseInfo: this.normalizeLicenseInfo({
+                    ...entry.licenseInfo,
+                    ...refreshed.license,
+                  }),
+                });
+                continue;
+              }
+            }
+          } catch (e) {
+            console.warn("Google trial refresh failed:", e.message);
+          }
+          if (this.licenseEntryHasAccess(entry)) updated.push(entry);
           continue;
         }
 
@@ -1023,6 +1081,47 @@ const LicenseManager = {
     const runs = 1;
 
     const licenses = await this.getActiveLicenses();
+    const primary = this.pickPrimaryLicense(licenses);
+    const primaryInfo = this.normalizeLicenseInfo(primary?.licenseInfo || {});
+
+    if (primaryInfo.planType === "google_trial") {
+      if (primaryInfo.expiresAt && new Date() > new Date(primaryInfo.expiresAt)) {
+        return {
+          ok: false,
+          reason:
+            "Your Google free trial has expired. Purchase a plan to continue.",
+          config,
+          cost: 0,
+          trialExpired: true,
+        };
+      }
+      const remaining = Number(primaryInfo.imagesRemaining ?? 0);
+      if (primaryInfo.imagesLimit > 0 && remaining <= 0) {
+        return {
+          ok: false,
+          reason:
+            "Free trial image runs used up. Buy a plan to continue.",
+          config,
+          cost: 0,
+          runsExhausted: true,
+        };
+      }
+      if (config.max_batch_size > 0 && variants > config.max_batch_size) {
+        return {
+          ok: false,
+          reason: `Max ${config.max_batch_size} variants per generation — reduce the count and try again.`,
+          config,
+          cost: 0,
+        };
+      }
+      return {
+        ok: true,
+        config,
+        cost: 0,
+        googleTrial: true,
+        runsRemaining: remaining,
+      };
+    }
 
     if (!config.configured) {
       const creditsApply = this._imageCreditsApply(licenses, config);
@@ -1149,6 +1248,46 @@ const LicenseManager = {
   async chargeImageGenerationRun(gate) {
     const config = gate?.config || (await this.getImageGenConfig());
     const licenses = await this.getActiveLicenses();
+    const primary = this.pickPrimaryLicense(licenses);
+    const info = this.normalizeLicenseInfo(primary?.licenseInfo || {});
+
+    if (info.planType === "google_trial") {
+      const uid = info.googleUid;
+      if (
+        !uid ||
+        typeof FirebaseAuth === "undefined" ||
+        typeof FirebaseLicense === "undefined"
+      ) {
+        return { ok: false, reason: "Google trial session expired — sign in again." };
+      }
+      const idToken = await FirebaseAuth.getIdToken();
+      if (!idToken) {
+        return { ok: false, reason: "Google sign-in expired — open popup and sign in again." };
+      }
+      const res = await FirebaseLicense.incrementGoogleTrialRun(uid, idToken, 1);
+      if (res.ok && res.license && primary?.key) {
+        await this.updateLicenseEntry(primary.key, {
+          imagesUsed: res.imagesUsed,
+          imagesRemaining: res.imagesRemaining,
+          imagesLimit: res.license.imagesLimit,
+          accessStatus: res.license.accessStatus,
+        });
+        this.licenseInfo = this.normalizeLicenseInfo({
+          ...info,
+          imagesUsed: res.imagesUsed,
+          imagesRemaining: res.imagesRemaining,
+          accessStatus: res.license.accessStatus,
+        });
+      }
+      return res.ok
+        ? { ok: true, googleTrial: true, ...res }
+        : {
+            ok: false,
+            reason: res.reason || "Could not use trial run.",
+            runsExhausted: res.runsExhausted,
+          };
+    }
+
     let cost = Number(gate?.cost) || 0;
     if (cost <= 0) {
       cost = await this.resolveImageGenRunCost(licenses, config);
@@ -1168,6 +1307,10 @@ const LicenseManager = {
     const primary = this.pickPrimaryLicense(licenses);
     if (!primary) return { ok: false, reason: "No license" };
     const info = primary.licenseInfo || {};
+
+    if (info.planType === "google_trial") {
+      return { ok: true, skipped: true, googleTrial: true };
+    }
 
     const useFirebase =
       info.planType !== "demo" &&
@@ -1399,9 +1542,10 @@ const LicenseManager = {
       const claim = await FirebaseLicense.claimGoogleFreeTrial(
         machineId,
         idToken,
+        user,
       );
 
-      if (!claim.success) {
+      if (!claim.success && !claim.limited) {
         return {
           success: false,
           message: claim.reason || "Could not start free trial.",
@@ -1416,6 +1560,7 @@ const LicenseManager = {
         key: licenseKey,
         planType: "google_trial",
         planName: claim.license?.planName || "Google free trial",
+        billingMode: "google_trial",
         googleUid: user.uid,
         customerEmail: user.email,
       });
@@ -1434,9 +1579,16 @@ const LicenseManager = {
 
       return {
         success: true,
+        limited: !!claim.limited,
         existing: claim.existing,
-        message: claim.message || "Free trial activated!",
+        message:
+          claim.message ||
+          (claim.limited
+            ? claim.reason || "Trial saved — renew or buy a plan to continue"
+            : "Free trial activated!"),
         licenseKey,
+        trialExpired: claim.trialExpired,
+        runsExhausted: claim.runsExhausted,
       };
     } catch (e) {
       return {
@@ -1457,7 +1609,13 @@ const LicenseManager = {
     }
 
     const machineId = await this.getMachineId();
-    if (
+    if (entry.licenseInfo?.planType === "google_trial") {
+      if (typeof FirebaseAuth !== "undefined") {
+        try {
+          await FirebaseAuth.signOut();
+        } catch (e) {}
+      }
+    } else if (
       entry.licenseInfo?.planType !== "demo" &&
       CONFIG?.USE_FIREBASE_LICENSE &&
       typeof FirebaseLicense !== "undefined" &&
