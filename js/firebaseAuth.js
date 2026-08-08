@@ -18,50 +18,91 @@ const FirebaseAuth = {
     );
   },
 
-  getRedirectUri() {
+  getExtensionId() {
+    return typeof chrome !== "undefined" ? chrome.runtime?.id || "" : "";
+  },
+
+  /** All redirect URIs this build may use — register every one in Google Cloud. */
+  getRedirectUriCandidates() {
+    const id = this.getExtensionId();
+    const candidates = [];
     if (typeof chrome !== "undefined" && chrome.identity?.getRedirectURL) {
-      return chrome.identity.getRedirectURL();
+      candidates.push(chrome.identity.getRedirectURL());
+      const slash = chrome.identity.getRedirectURL();
+      if (slash.endsWith("/")) {
+        candidates.push(slash.slice(0, -1));
+      } else {
+        candidates.push(`${slash}/`);
+      }
     }
+    if (id) {
+      candidates.push(`https://${id}.chromiumapp.org/`);
+      candidates.push(`https://${id}.chromiumapp.org`);
+    }
+    return [...new Set(candidates.filter(Boolean))];
+  },
+
+  getRedirectUri() {
+    const list = this.getRedirectUriCandidates();
+    if (list.length) return list[0];
     return `https://${this.firebase?.authDomain || "localhost"}/__/auth/handler`;
   },
 
-  /** Shown in admin docs / error hints — must match Google Cloud OAuth redirect URIs. */
   getOAuthSetupHint() {
-    const redirectUri = this.getRedirectUri();
+    const redirectUris = this.getRedirectUriCandidates();
     return {
-      redirectUri,
-      extensionId:
-        typeof chrome !== "undefined" && chrome.runtime?.id
-          ? chrome.runtime.id
-          : null,
-      instruction: `Add this exact URI in Google Cloud → Credentials → OAuth Web client → Authorized redirect URIs: ${redirectUri}`,
+      redirectUri: redirectUris[0] || "",
+      redirectNoSlash: (redirectUris[0] || "").replace(/\/$/, ""),
+      redirectUris,
+      extensionId: this.getExtensionId() || null,
+      instruction:
+        "Add every redirect URI below to the SAME OAuth Web client as oauth_client_id.",
     };
   },
 
-  formatRedirectMismatchHelp(err) {
+  async getOAuthDiagnostics() {
+    const clientId = await this.getOAuthClientId();
     const hint = this.getOAuthSetupHint();
+    return { clientId, clientSource: this._lastClientSource || "", ...hint };
+  },
+
+  formatRedirectMismatchHelp(err, diagnostics) {
+    const hint = diagnostics || this.getOAuthSetupHint();
     const msg = String(err?.message || err || "");
     if (!/redirect_uri_mismatch/i.test(msg)) return msg;
+    const uris = (hint.redirectUris || [hint.redirectUri, hint.redirectNoSlash])
+      .filter(Boolean)
+      .join("\n");
+    const clientLine = hint.clientId
+      ? `OAuth client in use:\n${hint.clientId}\n\n`
+      : "";
     return (
-      `Google OAuth redirect mismatch. Add this URI in Google Cloud Console (OAuth Web client → Authorized redirect URIs), save, wait 2 minutes, then retry:\n\n${hint.redirectUri}\n\nExtension ID on this device: ${hint.extensionId || "unknown"}\n\nAll users who install the same Chrome Web Store build share one ID — you do not add a URI per user.`
+      `Google OAuth redirect mismatch.\n\n` +
+      clientLine +
+      `Add ALL of these redirect URIs to that SAME OAuth client in Google Cloud → Credentials → Authorized redirect URIs. Save, wait 2–5 min, reload extension:\n\n` +
+      `${uris}\n\n` +
+      `Extension ID: ${hint.extensionId || "unknown"}`
     );
   },
 
   async getOAuthClientId() {
-    if (this.firebase?.oauthClientId) {
-      return this.firebase.oauthClientId;
-    }
     if (
       typeof FirebaseLicense !== "undefined" &&
       FirebaseLicense.getGoogleTrialPublicConfig
     ) {
       try {
-        const cfg = await FirebaseLicense.getGoogleTrialPublicConfig();
+        const cfg = await FirebaseLicense.getGoogleTrialPublicConfig(true);
         if (cfg?.oauth_client_id || cfg?.oauthClientId) {
+          this._lastClientSource = "firebase";
           return cfg.oauth_client_id || cfg.oauthClientId;
         }
       } catch (_) {}
     }
+    if (this.firebase?.oauthClientId) {
+      this._lastClientSource = "config.js";
+      return this.firebase.oauthClientId;
+    }
+    this._lastClientSource = "";
     return "";
   },
 
@@ -73,6 +114,48 @@ const FirebaseAuth = {
       out[k] = v;
     });
     return out;
+  },
+
+  async launchGoogleOAuthWithRedirect(clientId, redirectUri) {
+    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authUrl.searchParams.set("client_id", clientId);
+    authUrl.searchParams.set("response_type", "token");
+    authUrl.searchParams.set("redirect_uri", redirectUri);
+    authUrl.searchParams.set("scope", "openid email profile");
+    authUrl.searchParams.set("prompt", "select_account");
+
+    console.info("[Shipping Optimizer] Google OAuth attempt", {
+      clientId,
+      redirectUri,
+      extensionId: this.getExtensionId(),
+    });
+
+    const responseUrl = await new Promise((resolve, reject) => {
+      chrome.identity.launchWebAuthFlow(
+        { url: authUrl.toString(), interactive: true },
+        (callbackUrl) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          if (!callbackUrl) {
+            reject(new Error("Google sign-in was cancelled."));
+            return;
+          }
+          resolve(callbackUrl);
+        },
+      );
+    });
+
+    const params = this.parseFragmentParams(responseUrl);
+    if (params.error) {
+      throw new Error(params.error_description || params.error);
+    }
+    const accessToken = params.access_token;
+    if (!accessToken) {
+      throw new Error("Google did not return an access token.");
+    }
+    return { accessToken, redirectUri };
   },
 
   async launchGoogleOAuth(clientId) {
@@ -87,53 +170,30 @@ const FirebaseAuth = {
       );
     }
 
-    const redirectUri = this.getRedirectUri();
-    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    authUrl.searchParams.set("client_id", clientId);
-    authUrl.searchParams.set("response_type", "token");
-    authUrl.searchParams.set("redirect_uri", redirectUri);
-    authUrl.searchParams.set("scope", "openid email profile");
-    authUrl.searchParams.set("prompt", "select_account");
+    const redirects = this.getRedirectUriCandidates();
+    const diagnostics = await this.getOAuthDiagnostics();
+    let lastError = null;
 
-    const responseUrl = await new Promise((resolve, reject) => {
-      chrome.identity.launchWebAuthFlow(
-        { url: authUrl.toString(), interactive: true },
-        (callbackUrl) => {
-          if (chrome.runtime.lastError) {
-            reject(
-              new Error(
-                this.formatRedirectMismatchHelp(chrome.runtime.lastError.message),
-              ),
-            );
-            return;
-          }
-          if (!callbackUrl) {
-            reject(new Error("Google sign-in was cancelled."));
-            return;
-          }
-          resolve(callbackUrl);
-        },
-      );
-    });
+    for (const redirectUri of redirects) {
+      try {
+        return await this.launchGoogleOAuthWithRedirect(clientId, redirectUri);
+      } catch (e) {
+        lastError = e;
+        const msg = String(e?.message || e || "");
+        if (!/redirect_uri_mismatch/i.test(msg)) {
+          throw new Error(this.formatRedirectMismatchHelp(e, diagnostics));
+        }
+      }
+    }
 
-    const params = this.parseFragmentParams(responseUrl);
-    if (params.error) {
-      throw new Error(
-        this.formatRedirectMismatchHelp(
-          params.error_description || params.error,
-        ),
-      );
-    }
-    const accessToken = params.access_token;
-    if (!accessToken) {
-      throw new Error("Google did not return an access token.");
-    }
-    return accessToken;
+    throw new Error(
+      this.formatRedirectMismatchHelp(lastError || "redirect_uri_mismatch", diagnostics),
+    );
   },
 
-  async signInWithGoogleAccessToken(accessToken) {
+  async signInWithGoogleAccessToken(accessToken, requestUri) {
     const apiKey = this.firebase.apiKey;
-    const requestUri = this.getRedirectUri();
+    const uri = requestUri || this.getRedirectUri();
     const postBody = `access_token=${encodeURIComponent(accessToken)}&providerId=google.com`;
     const res = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(apiKey)}`,
@@ -142,7 +202,7 @@ const FirebaseAuth = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postBody,
-          requestUri,
+          requestUri: uri,
           returnIdpCredential: true,
           returnSecureToken: true,
         }),
@@ -249,8 +309,11 @@ const FirebaseAuth = {
       throw new Error("Firebase auth is not enabled.");
     }
     const clientId = await this.getOAuthClientId();
-    const accessToken = await this.launchGoogleOAuth(clientId);
-    const session = await this.signInWithGoogleAccessToken(accessToken);
+    const { accessToken, redirectUri } = await this.launchGoogleOAuth(clientId);
+    const session = await this.signInWithGoogleAccessToken(
+      accessToken,
+      redirectUri,
+    );
     await this.saveSession(session);
     return {
       uid: session.localId,

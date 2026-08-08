@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "version": "1.6.4",
+  "version": "1.6.7",
   "name": "Shipping Optimizer",
   "short_name": "Shipping Optimizer",
   "description": "Generate image variants, check live Meesho shipping, preview results, and apply the best image to your catalog.",

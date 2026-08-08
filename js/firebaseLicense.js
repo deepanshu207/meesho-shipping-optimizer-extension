@@ -2837,12 +2837,23 @@ Please share payment details.`;
       userEl.textContent = user?.email ? `Signed in as ${user.email}` : "";
     }
     if (redirectEl && typeof FirebaseAuth !== "undefined") {
-      const setup = FirebaseAuth.getOAuthSetupHint();
-      redirectEl.style.display = setup.redirectUri ? "block" : "none";
-      redirectEl.textContent = setup.extensionId
-        ? `OAuth redirect (admin): ${setup.redirectUri}`
-        : "";
-      redirectEl.title = setup.instruction || "";
+      try {
+        const diag = await FirebaseAuth.getOAuthDiagnostics();
+        redirectEl.style.display = diag.redirectUri ? "block" : "none";
+        const uris = (diag.redirectUris || [diag.redirectUri]).filter(Boolean);
+        redirectEl.innerHTML =
+          `<strong>Add ALL redirect URIs on OAuth client:</strong><br>` +
+          `<code style="font-size:8px;word-break:break-all;">${diag.clientId || "not set"}</code><br>` +
+          uris
+            .map(
+              (u) =>
+                `<code style="font-size:8px;word-break:break-all;display:block;margin-top:4px;">${u}</code>`,
+            )
+            .join("");
+        redirectEl.title = `Extension ID: ${diag.extensionId || ""}`;
+      } catch (_) {
+        redirectEl.style.display = "none";
+      }
     }
     if (btn) {
       btn.textContent = user?.email
