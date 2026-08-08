@@ -157,10 +157,52 @@ const LicenseManager = {
     const list = licenses || [];
     if (!list.length) return null;
     const primary = list.find((entry) => {
-      const mode = entry.licenseInfo?.billingMode || "subscription";
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      if (info.planType === "google_trial" || entry.role === "google_trial") {
+        return false;
+      }
+      const mode = info.billingMode || "subscription";
       return mode !== "credits" && entry.role !== "credits_topup";
     });
-    return primary || list[0];
+    if (primary) return primary;
+    const nonTrial = list.find((entry) => {
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      return info.planType !== "google_trial";
+    });
+    return nonTrial || list[0];
+  },
+
+  getGoogleTrialEntry(licenses) {
+    return (licenses || []).find((entry) => {
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      return info.planType === "google_trial" || entry.role === "google_trial";
+    });
+  },
+
+  getPaidLicenseEntries(licenses) {
+    return (licenses || []).filter((entry) => {
+      const info = this.normalizeLicenseInfo(entry.licenseInfo || {});
+      return info.planType !== "google_trial";
+    });
+  },
+
+  googleTrialHasRemainingRuns(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    if (n.planType !== "google_trial") return false;
+    if (n.expiresAt && new Date() > new Date(n.expiresAt)) return false;
+    const limit = Number(n.imagesLimit ?? 0);
+    if (limit <= 0) return true;
+    const remaining = Number(
+      n.imagesRemaining ??
+        Math.max(0, limit - (Number(n.imagesUsed ?? 0) || 0)),
+    );
+    return remaining > 0;
+  },
+
+  googleTrialIsExpired(info) {
+    const n = this.normalizeLicenseInfo(info || {});
+    if (n.planType !== "google_trial") return false;
+    return !!(n.expiresAt && new Date() > new Date(n.expiresAt));
   },
 
   getLicenseRoleLabel(entry) {
@@ -403,7 +445,14 @@ const LicenseManager = {
   },
 
   licensesHaveAccess(licenses) {
-    return (licenses || []).some((entry) => this.licenseEntryHasAccess(entry));
+    const list = licenses || [];
+    const paid = this.getPaidLicenseEntries(list);
+    if (paid.length && paid.some((entry) => this.licenseEntryHasAccess(entry))) {
+      return true;
+    }
+    const trial = this.getGoogleTrialEntry(list);
+    if (trial && this.licenseEntryHasAccess(trial)) return true;
+    return list.some((entry) => this.licenseEntryHasAccess(entry));
   },
 
   mergeLicenseEntry(existing, newEntry) {
@@ -412,6 +461,20 @@ const LicenseManager = {
     if (idx >= 0) {
       list[idx] = { ...list[idx], ...newEntry };
       return list;
+    }
+
+    const newPlanType = newEntry.licenseInfo?.planType;
+    if (newPlanType === "google_trial") {
+      const trialIdx = list.findIndex(
+        (e) =>
+          e.licenseInfo?.planType === "google_trial" || e.role === "google_trial",
+      );
+      const trialEntry = { ...newEntry, role: "google_trial" };
+      if (trialIdx >= 0) {
+        list[trialIdx] = { ...list[trialIdx], ...trialEntry };
+        return list;
+      }
+      return [...list, trialEntry];
     }
 
     const newMode = newEntry.licenseInfo?.billingMode || "subscription";
@@ -515,7 +578,23 @@ const LicenseManager = {
         let details = "";
 
         const addonCredits = Number(info.addonCredits) || 0;
-        if (mode === "credits" || mode === "hybrid" || addonCredits > 0) {
+        if (info.planType === "google_trial") {
+          if (info.unlimitedCredits) {
+            details += `<div>Credits: <strong>Unlimited</strong></div>`;
+          } else {
+            const trialLimit = Number(info.imagesLimit ?? 0) || 0;
+            const trialLeft = Number(
+              info.imagesRemaining ??
+                Math.max(
+                  0,
+                  trialLimit - (Number(info.imagesUsed ?? 0) || 0),
+                ),
+            );
+            if (trialLimit > 0) {
+              details += `<div>Trial credits: <strong>${trialLeft}</strong> left of ${trialLimit}</div>`;
+            }
+          }
+        } else if (mode === "credits" || mode === "hybrid" || addonCredits > 0) {
           if (info.unlimitedCredits) {
             details += `<div>Credits: <strong>Unlimited</strong></div>`;
           } else {
@@ -1081,31 +1160,14 @@ const LicenseManager = {
     const runs = 1;
 
     const licenses = await this.getActiveLicenses();
+    const trialEntry = this.getGoogleTrialEntry(licenses);
+    const trialInfo = this.normalizeLicenseInfo(trialEntry?.licenseInfo || {});
+    const hasTrialRuns = this.googleTrialHasRemainingRuns(trialInfo);
+    const paidLicenses = this.getPaidLicenseEntries(licenses);
     const primary = this.pickPrimaryLicense(licenses);
     const primaryInfo = this.normalizeLicenseInfo(primary?.licenseInfo || {});
 
-    if (primaryInfo.planType === "google_trial") {
-      if (primaryInfo.expiresAt && new Date() > new Date(primaryInfo.expiresAt)) {
-        return {
-          ok: false,
-          reason:
-            "Your Google free trial has expired. Purchase a plan to continue.",
-          config,
-          cost: 0,
-          trialExpired: true,
-        };
-      }
-      const remaining = Number(primaryInfo.imagesRemaining ?? 0);
-      if (primaryInfo.imagesLimit > 0 && remaining <= 0) {
-        return {
-          ok: false,
-          reason:
-            "Free trial image runs used up. Buy a plan to continue.",
-          config,
-          cost: 0,
-          runsExhausted: true,
-        };
-      }
+    if (hasTrialRuns) {
       if (config.max_batch_size > 0 && variants > config.max_batch_size) {
         return {
           ok: false,
@@ -1114,12 +1176,52 @@ const LicenseManager = {
           cost: 0,
         };
       }
+      const remaining = Number(
+        trialInfo.imagesRemaining ??
+          Math.max(
+            0,
+            (Number(trialInfo.imagesLimit ?? 0) || 0) -
+              (Number(trialInfo.imagesUsed ?? 0) || 0),
+          ),
+      );
       return {
         ok: true,
         config,
         cost: 0,
         googleTrial: true,
         runsRemaining: remaining,
+        trialFirst: true,
+      };
+    }
+
+    if (
+      trialEntry &&
+      this.googleTrialIsExpired(trialInfo) &&
+      !paidLicenses.some((e) => this.licenseEntryHasAccess(e))
+    ) {
+      return {
+        ok: false,
+        reason:
+          "Your Google free trial has expired. Purchase a plan to continue.",
+        config,
+        cost: 0,
+        trialExpired: true,
+      };
+    }
+
+    if (
+      trialEntry &&
+      !hasTrialRuns &&
+      trialInfo.imagesLimit > 0 &&
+      !paidLicenses.some((e) => this.licenseEntryHasAccess(e))
+    ) {
+      return {
+        ok: false,
+        reason:
+          "Free trial credits used up. Activate a paid plan or buy credits to continue.",
+        config,
+        cost: 0,
+        runsExhausted: true,
       };
     }
 
@@ -1248,11 +1350,11 @@ const LicenseManager = {
   async chargeImageGenerationRun(gate) {
     const config = gate?.config || (await this.getImageGenConfig());
     const licenses = await this.getActiveLicenses();
-    const primary = this.pickPrimaryLicense(licenses);
-    const info = this.normalizeLicenseInfo(primary?.licenseInfo || {});
+    const trialEntry = this.getGoogleTrialEntry(licenses);
+    const trialInfo = this.normalizeLicenseInfo(trialEntry?.licenseInfo || {});
 
-    if (info.planType === "google_trial") {
-      const uid = info.googleUid;
+    if (trialEntry && this.googleTrialHasRemainingRuns(trialInfo)) {
+      const uid = trialInfo.googleUid;
       if (
         !uid ||
         typeof FirebaseAuth === "undefined" ||
@@ -1265,28 +1367,25 @@ const LicenseManager = {
         return { ok: false, reason: "Google sign-in expired — open popup and sign in again." };
       }
       const res = await FirebaseLicense.incrementGoogleTrialRun(uid, idToken, 1);
-      if (res.ok && res.license && primary?.key) {
-        await this.updateLicenseEntry(primary.key, {
+      if (res.ok && res.license && trialEntry?.key) {
+        await this.updateLicenseEntry(trialEntry.key, {
           imagesUsed: res.imagesUsed,
           imagesRemaining: res.imagesRemaining,
           imagesLimit: res.license.imagesLimit,
           accessStatus: res.license.accessStatus,
         });
-        this.licenseInfo = this.normalizeLicenseInfo({
-          ...info,
-          imagesUsed: res.imagesUsed,
-          imagesRemaining: res.imagesRemaining,
-          accessStatus: res.license.accessStatus,
-        });
       }
       return res.ok
-        ? { ok: true, googleTrial: true, ...res }
+        ? { ok: true, googleTrial: true, trialCredit: true, ...res }
         : {
             ok: false,
-            reason: res.reason || "Could not use trial run.",
+            reason: res.reason || "Could not use trial credit.",
             runsExhausted: res.runsExhausted,
           };
     }
+
+    const primary = this.pickPrimaryLicense(licenses);
+    const info = this.normalizeLicenseInfo(primary?.licenseInfo || {});
 
     let cost = Number(gate?.cost) || 0;
     if (cost <= 0) {
@@ -1358,6 +1457,20 @@ const LicenseManager = {
     const config = await this.getImageGenConfig();
     const counters = await this.getImageGenCounters();
     const licenses = await this.getActiveLicenses();
+    const trialEntry = this.getGoogleTrialEntry(licenses);
+    const trialInfo = this.normalizeLicenseInfo(trialEntry?.licenseInfo || {});
+    const trialRemaining = this.googleTrialHasRemainingRuns(trialInfo)
+      ? Math.max(
+          0,
+          Number(
+            trialInfo.imagesRemaining ??
+              (Number(trialInfo.imagesLimit ?? 0) -
+                (Number(trialInfo.imagesUsed ?? 0) || 0)),
+          ),
+        )
+      : 0;
+    const trialLimit = Number(trialInfo.imagesLimit ?? 0) || 0;
+    const trialUsed = Number(trialInfo.imagesUsed ?? 0) || 0;
     const creditsApply = this._imageCreditsApply(licenses, config);
     const costPerRun = creditsApply
       ? await this.resolveImageGenRunCost(licenses, config)
@@ -1379,6 +1492,10 @@ const LicenseManager = {
       creditsBalance: balance,
       creditsUsage: usage,
       costPerRun,
+      trialApplies: trialLimit > 0 || trialEntry != null,
+      trialLimit,
+      trialUsed,
+      trialRemaining,
       /** @deprecated use costPerRun — kept for older callers */
       costPerImage: costPerRun,
       remainingDaily,
@@ -1567,6 +1684,7 @@ const LicenseManager = {
 
       const entry = {
         key: licenseKey,
+        role: "google_trial",
         licenseInfo,
         activatedAt: licenseInfo.activatedAt || new Date().toISOString(),
       };

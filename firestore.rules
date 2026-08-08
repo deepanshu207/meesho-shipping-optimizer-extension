@@ -18,12 +18,15 @@ service cloud.firestore {
 
     function trialImageRunLimit() {
       let cfg = googleTrialConfig();
+      let trialCredits = cfg.trial_credits;
       let explicit = cfg.image_run_limit;
       let credits = cfg.credits;
       return int(
-        explicit != null && explicit > 0
-          ? explicit
-          : (credits != null && credits > 0 ? credits : 30)
+        trialCredits != null && trialCredits > 0
+          ? trialCredits
+          : (explicit != null && explicit > 0
+              ? explicit
+              : (credits != null && credits > 0 ? credits : 3))
       );
     }
 
@@ -39,6 +42,24 @@ service cloud.firestore {
           ? cfg.max_increment_per_run
           : 10
       );
+    }
+
+    function trialMaxDevices() {
+      let cfg = googleTrialConfig();
+      return int(
+        cfg.max_devices != null && cfg.max_devices > 0 ? cfg.max_devices : 1
+      );
+    }
+
+    function trialMachineIdsValid() {
+      let prev = resource.data.machine_ids;
+      let next = request.resource.data.machine_ids;
+      return next == prev
+        || (
+          next.size() == prev.size() + 1
+          && next.size() <= trialMaxDevices()
+          && next.hasAll(prev)
+        );
     }
 
     match /shipping_optimizer_config/{doc} {
@@ -84,12 +105,15 @@ service cloud.firestore {
         && request.resource.data.active == true
         && request.resource.data.expires_at > request.time
         && request.resource.data.expires_at <= request.time + duration.value(trialDays(), 'D')
-        && request.resource.data.created_at == request.time;
+        && request.resource.data.created_at == request.time
+        && (
+          !('machine_ids' in request.resource.data)
+          || request.resource.data.machine_ids.size() <= trialMaxDevices()
+        );
 
       allow update: if request.auth != null
         && request.auth.uid == uid
         && resource.data.google_uid == uid
-        && resource.data.email == request.auth.token.email
         && request.resource.data.google_uid == resource.data.google_uid
         && request.resource.data.email == resource.data.email
         && request.resource.data.images_limit == resource.data.images_limit
@@ -99,7 +123,8 @@ service cloud.firestore {
         && request.resource.data.days_granted == resource.data.days_granted
         && request.resource.data.images_used >= resource.data.images_used
         && request.resource.data.images_used <= resource.data.images_limit
-        && request.resource.data.images_used <= resource.data.images_used + trialMaxIncrement();
+        && request.resource.data.images_used <= resource.data.images_used + trialMaxIncrement()
+        && trialMachineIdsValid();
 
       allow delete: if isShippingOptimizerSuperAdmin();
     }

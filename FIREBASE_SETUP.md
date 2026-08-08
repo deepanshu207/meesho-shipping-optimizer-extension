@@ -29,9 +29,46 @@ The Firestore REST base URL is derived automatically from `projectId`, so this b
 | `shipping_optimizer_licenses` | Paid license key | Activation, machine binding, expiry |
 | `shipping_optimizer_google_trials` | Firebase Auth `uid` | One Google trial per account (email + uid stored; image run limits) |
 
-## Google free trial (v1.6.2+) — Spark plan (no Cloud Function)
+## Google free trial (v1.6.3+) — Spark plan (no Cloud Function)
 
-Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimizer_google_trials/{uid}` using the user's **Firebase ID token**. **Firestore security rules** enforce one trial per Google account, trial length, and image run limits — works on the **free Spark plan** (no Blaze / Cloud Functions required).
+Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimizer_google_trials/{uid}` using the user's **Firebase ID token**. **Firestore security rules** enforce one trial per Google account, trial length, trial credits, and device limits — works on the **free Spark plan** (no Blaze / Cloud Functions required).
+
+**Trial credits vs paid credits:** Google trial grants a separate pool of **trial credits** (e.g. 3 free generation runs). Those are consumed **first**. After trial credits are used up, the extension charges **paid plan credits** from any activated license on the same device. Google trial stacks with paid keys — it does not replace them.
+
+### OAuth redirect URIs (Chrome + Kiwi mobile)
+
+Google sign-in uses `chrome.identity.getRedirectURL()`:
+
+```
+https://<EXTENSION_ID>.chromiumapp.org/
+```
+
+**You do NOT add a redirect URI per user.** Every customer who installs the **same** extension build shares the same extension ID.
+
+| Install method | Extension ID | Who shares it |
+|----------------|--------------|---------------|
+| **Chrome Web Store** (recommended) | One fixed store ID | **All** Chrome + Kiwi users who install from the store |
+| Unpacked / dev load on desktop | e.g. `kgnmnoaobnpfaaipnjkkidekbajpldlm` | Only that dev install |
+| Unpacked / dev load on Kiwi | e.g. `dhhlaikkdfkaofbiacpoaadfademdmne` | Only that Kiwi install |
+
+**For production (all mobile users):** publish to Chrome Web Store, then add **one** redirect URI for the store extension ID.
+
+**For your current Kiwi dev install**, add this redirect URI in Google Cloud → Credentials → OAuth **Web application** client → **Authorized redirect URIs**:
+
+```
+https://dhhlaikkdfkaofbiacpoaadfademdmne.chromiumapp.org/
+```
+
+If you also test on desktop dev build, add both (trailing slash required):
+
+```
+https://kgnmnoaobnpfaaipnjkkidekbajpldlm.chromiumapp.org/
+https://dhhlaikkdfkaofbiacpoaadfademdmne.chromiumapp.org/
+```
+
+After saving in Google Cloud, wait **1–2 minutes** before retrying sign-in.
+
+The extension popup shows **OAuth redirect (admin)** under the Google button so you can copy the exact URI for the device you are on.
 
 ### Prerequisites
 
@@ -48,9 +85,11 @@ Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimiz
 ```json
 {
   "google_trial": {
+    "google_login_enabled": true,
     "enabled": true,
     "days": 7,
-    "image_run_limit": 30,
+    "trial_credits": 3,
+    "image_run_limit": 3,
     "max_increment_per_run": 10,
     "max_devices": 1,
     "label": "Google free trial",
@@ -61,11 +100,14 @@ Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimiz
 
 | Field | Notes |
 |-------|-------|
-| `enabled` | `false` hides Google button |
+| `google_login_enabled` | `false` hides **Continue with Google** in extension (independent toggle) |
+| `enabled` | `false` blocks **new** trial claims; existing trials still refresh |
 | `days` | Trial validity (rules enforce max expiry window) |
-| `image_run_limit` | Max **generation runs** per Google account (also accepts legacy `credits`) |
+| `trial_credits` | Free generation runs per Google account (preferred field; default **3**) |
+| `image_run_limit` | Alias for `trial_credits` (legacy) |
+| `credits` | Legacy alias for `trial_credits` |
 | `max_increment_per_run` | Max runs deducted per request (anti-cheat; default 10) |
-| `max_devices` | Devices per trial |
+| `max_devices` | Devices per trial (enforced in rules + extension) |
 | `oauth_client_id` | Google OAuth Web client for extension |
 
 ### Trial document (`shipping_optimizer_google_trials/{uid}`)
@@ -74,8 +116,9 @@ Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimiz
 |-------|-------|
 | `google_uid` | Firebase Auth uid (doc id) |
 | `email` | Gmail from Google sign-in |
-| `images_limit` | Copied from admin config at create (immutable) |
-| `images_used` | Incremented per generation run |
+| `images_limit` | Copied from `trial_credits` / config at create (immutable) |
+| `trial_credits` | Same value stored at create for admin clarity |
+| `images_used` | Trial credits consumed (incremented per generation run) |
 | `expires_at` | Set at first sign-in + `days` |
 | `machine_ids` | Devices used |
 
@@ -83,7 +126,7 @@ Users sign in with **Google (Gmail)**. The extension writes to `shipping_optimiz
 
 ### Optional Cloud Function (Blaze only)
 
-Repo `functions/claimGoogleTrial` is optional if you upgrade to Blaze later. Extension v1.6.2+ uses Firestore rules path by default.
+Repo `functions/claimGoogleTrial` is optional if you upgrade to Blaze later. Extension v1.6.3+ uses Firestore rules path by default.
 
 ### Trial license documents (legacy / optional)
 

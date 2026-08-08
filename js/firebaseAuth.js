@@ -25,6 +25,28 @@ const FirebaseAuth = {
     return `https://${this.firebase?.authDomain || "localhost"}/__/auth/handler`;
   },
 
+  /** Shown in admin docs / error hints — must match Google Cloud OAuth redirect URIs. */
+  getOAuthSetupHint() {
+    const redirectUri = this.getRedirectUri();
+    return {
+      redirectUri,
+      extensionId:
+        typeof chrome !== "undefined" && chrome.runtime?.id
+          ? chrome.runtime.id
+          : null,
+      instruction: `Add this exact URI in Google Cloud → Credentials → OAuth Web client → Authorized redirect URIs: ${redirectUri}`,
+    };
+  },
+
+  formatRedirectMismatchHelp(err) {
+    const hint = this.getOAuthSetupHint();
+    const msg = String(err?.message || err || "");
+    if (!/redirect_uri_mismatch/i.test(msg)) return msg;
+    return (
+      `Google OAuth redirect mismatch. Add this URI in Google Cloud Console (OAuth Web client → Authorized redirect URIs), save, wait 2 minutes, then retry:\n\n${hint.redirectUri}\n\nExtension ID on this device: ${hint.extensionId || "unknown"}\n\nAll users who install the same Chrome Web Store build share one ID — you do not add a URI per user.`
+    );
+  },
+
   async getOAuthClientId() {
     if (this.firebase?.oauthClientId) {
       return this.firebase.oauthClientId;
@@ -78,7 +100,11 @@ const FirebaseAuth = {
         { url: authUrl.toString(), interactive: true },
         (callbackUrl) => {
           if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
+            reject(
+              new Error(
+                this.formatRedirectMismatchHelp(chrome.runtime.lastError.message),
+              ),
+            );
             return;
           }
           if (!callbackUrl) {
@@ -92,7 +118,11 @@ const FirebaseAuth = {
 
     const params = this.parseFragmentParams(responseUrl);
     if (params.error) {
-      throw new Error(params.error_description || params.error);
+      throw new Error(
+        this.formatRedirectMismatchHelp(
+          params.error_description || params.error,
+        ),
+      );
     }
     const accessToken = params.access_token;
     if (!accessToken) {
