@@ -1,0 +1,107 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isShippingOptimizerSuperAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'superadmin@swagstree.com';
+    }
+
+    function googleTrialConfig() {
+      return get(/databases/$(database)/documents/shipping_optimizer_config/app).data.google_trial;
+    }
+
+    function googleTrialEnabled() {
+      let cfg = googleTrialConfig();
+      return cfg != null && cfg.enabled != false;
+    }
+
+    function trialImageRunLimit() {
+      let cfg = googleTrialConfig();
+      let explicit = cfg.image_run_limit;
+      let credits = cfg.credits;
+      return int(
+        explicit != null && explicit > 0
+          ? explicit
+          : (credits != null && credits > 0 ? credits : 30)
+      );
+    }
+
+    function trialDays() {
+      let cfg = googleTrialConfig();
+      return int(cfg.days != null && cfg.days > 0 ? cfg.days : 7);
+    }
+
+    function trialMaxIncrement() {
+      let cfg = googleTrialConfig();
+      return int(
+        cfg.max_increment_per_run != null && cfg.max_increment_per_run > 0
+          ? cfg.max_increment_per_run
+          : 10
+      );
+    }
+
+    match /shipping_optimizer_config/{doc} {
+      allow read: if true;
+      allow write: if isShippingOptimizerSuperAdmin();
+    }
+
+    match /shipping_optimizer_demo_keys/{key} {
+      allow read: if true;
+      allow write: if isShippingOptimizerSuperAdmin();
+    }
+
+    match /shipping_optimizer_licenses/{key} {
+      allow read: if true;
+      allow create, update, delete: if isShippingOptimizerSuperAdmin();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'machineId', 'device_ids', 'max_devices', 'billing_mode',
+          'unlimited_time', 'unlimited_devices', 'unlimited_credits',
+          'activatedAt', 'lastVerifiedAt', 'expiresAt',
+          'credits_balance', 'credits_used',
+          'included_credits', 'addon_credits', 'addon_credit_ids',
+          'images_generated_total', 'images_generated_today',
+          'images_generated_today_date', 'images_generated_month',
+          'images_generated_month_key'
+        ]);
+    }
+
+    // Google free trial — Spark plan (no Cloud Function).
+    // Doc id MUST be Firebase Auth uid. One trial per Google account.
+    match /shipping_optimizer_google_trials/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow read: if isShippingOptimizerSuperAdmin();
+
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && googleTrialEnabled()
+        && !exists(/databases/$(database)/documents/shipping_optimizer_google_trials/$(uid))
+        && request.resource.data.google_uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.images_used == 0
+        && request.resource.data.images_limit == trialImageRunLimit()
+        && request.resource.data.active == true
+        && request.resource.data.expires_at > request.time
+        && request.resource.data.expires_at <= request.time + duration.value(trialDays(), 'D')
+        && request.resource.data.created_at == request.time;
+
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && resource.data.google_uid == uid
+        && resource.data.email == request.auth.token.email
+        && request.resource.data.google_uid == resource.data.google_uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.images_limit == resource.data.images_limit
+        && request.resource.data.expires_at == resource.data.expires_at
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.active == resource.data.active
+        && request.resource.data.days_granted == resource.data.days_granted
+        && request.resource.data.images_used >= resource.data.images_used
+        && request.resource.data.images_used <= resource.data.images_limit
+        && request.resource.data.images_used <= resource.data.images_used + trialMaxIncrement();
+
+      allow delete: if isShippingOptimizerSuperAdmin();
+    }
+  }
+}

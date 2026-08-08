@@ -155,6 +155,79 @@ const FirebaseLicense = {
     }
   },
 
+  async fetchDocAuth(collection, docId, idToken) {
+    if (!this.isEnabled() || !idToken) return null;
+    const url = `${this.docUrl(collection, docId)}`;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Cache-Control": "no-cache",
+        },
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) {
+        console.warn("Firebase auth read failed:", collection, docId, res.status);
+        return null;
+      }
+      return this.parseDocument(await res.json());
+    } catch (e) {
+      console.warn("Firebase auth read error:", e.message);
+      return null;
+    }
+  },
+
+  async createDocAuth(collection, docId, data, idToken) {
+    if (!this.isEnabled() || !idToken) return { ok: false, status: 0 };
+    const fields = {};
+    for (const [k, v] of Object.entries(data)) {
+      fields[k] = this.toFirestoreValue(v);
+    }
+    const url = `${this.collectionUrl(collection)}?documentId=${encodeURIComponent(docId)}`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ fields }),
+      });
+      if (res.ok) {
+        return { ok: true, status: res.status, doc: this.parseDocument(await res.json()) };
+      }
+      const err = await res.json().catch(() => ({}));
+      return { ok: false, status: res.status, error: err };
+    } catch (e) {
+      return { ok: false, status: 0, error: { message: e.message } };
+    }
+  },
+
+  async patchDocAuth(collection, docId, partial, updateFields, idToken) {
+    if (!this.isEnabled() || !idToken) return { ok: false, status: 0 };
+    const fields = {};
+    for (const [k, v] of Object.entries(partial)) {
+      fields[k] = this.toFirestoreValue(v);
+    }
+    const mask = (updateFields || Object.keys(partial))
+      .map((f) => `updateMask.fieldPaths=${encodeURIComponent(f)}`)
+      .join("&");
+    const url = `${this.docUrl(collection, docId)}?${mask}`;
+    try {
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ fields }),
+      });
+      return { ok: res.ok, status: res.status };
+    } catch (e) {
+      return { ok: false, status: 0, error: e.message };
+    }
+  },
+
   defaultPlans() {
     return [
       { id: "monthly", name: "Monthly", price: 599, days: 30, duration: "1 Month", save: "", best: false, active: true, order: 0 },
@@ -2299,25 +2372,105 @@ Please share payment details.`;
     return { plans, creditPacks, creditsConfig: creditsCfg, whatsapp: wa, announcement };
   },
 
+  googleTrialCollection() {
+    return "google_trials";
+  },
+
+  buildGoogleTrialLicenseKey(uid) {
+    const clean = String(uid || "")
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 12)
+      .toUpperCase();
+    return `GTRIAL-${clean || "USER"}`;
+  },
+
+  resolveGoogleTrialImageRunLimit(cfg) {
+    const src = cfg || {};
+    const explicit = Number(src.image_run_limit ?? src.imageRunLimit);
+    if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+    const credits = Number(src.credits);
+    if (Number.isFinite(credits) && credits > 0) return Math.floor(credits);
+    return 30;
+  },
+
+  normalizeGoogleTrialDoc(doc) {
+    if (!doc) return null;
+    const imagesLimit = Number(doc.images_limit ?? doc.imagesLimit ?? 0) || 0;
+    const imagesUsed = Number(doc.images_used ?? doc.imagesUsed ?? 0) || 0;
+    return {
+      googleUid: doc.google_uid || doc.googleUid || "",
+      email: doc.email || "",
+      displayName: doc.display_name || doc.displayName || "",
+      photoUrl: doc.photo_url || doc.photoUrl || "",
+      imagesLimit,
+      imagesUsed,
+      imagesRemaining: Math.max(0, imagesLimit - imagesUsed),
+      expiresAt: doc.expires_at || doc.expiresAt || null,
+      createdAt: doc.created_at || doc.createdAt || null,
+      active: doc.active !== false,
+      machineIds: Array.isArray(doc.machine_ids)
+        ? doc.machine_ids
+        : doc.machineId
+          ? [doc.machineId]
+          : [],
+      daysGranted: Number(doc.days_granted ?? doc.daysGranted) || 0,
+      label: doc.label || "Google free trial",
+    };
+  },
+
+  buildGoogleTrialLicensePayload(uid, trialDoc, cfg) {
+    const trial = this.normalizeGoogleTrialDoc(trialDoc);
+    const key = this.buildGoogleTrialLicenseKey(uid);
+    const now = new Date();
+    const expired =
+      trial.expiresAt && new Date(trial.expiresAt).getTime() < now.getTime();
+    const runsExhausted =
+      trial.imagesLimit > 0 && trial.imagesUsed >= trial.imagesLimit;
+    let accessStatus = "active";
+    if (expired) accessStatus = "expired";
+    else if (runsExhausted) accessStatus = "runs_exhausted";
+
+    return {
+      key,
+      planType: "google_trial",
+      planName: trial.label || cfg?.label || "Google free trial",
+      billingMode: "google_trial",
+      googleUid: uid,
+      customerEmail: trial.email,
+      customerName: trial.displayName,
+      imagesLimit: trial.imagesLimit,
+      imagesUsed: trial.imagesUsed,
+      imagesRemaining: trial.imagesRemaining,
+      expiresAt: trial.expiresAt,
+      activatedAt: trial.createdAt || now.toISOString(),
+      deviceCount: trial.machineIds.length || 1,
+      maxDevices: cfg?.max_devices || 1,
+      accessStatus,
+      unlimitedTime: false,
+      unlimitedCredits: false,
+    };
+  },
+
   normalizeGoogleTrialConfig(raw) {
     const src = raw && typeof raw === "object" ? raw : {};
     const enabled = src.enabled !== false && src.enabled !== "false";
     const days = Math.max(1, Number(src.days) || 7);
-    const credits = Math.max(0, Number(src.credits) || 0);
+    const imageRunLimit = this.resolveGoogleTrialImageRunLimit(src);
     const maxDevices = Math.max(1, Number(src.max_devices ?? src.maxDevices) || 1);
+    const maxIncrement = Math.max(
+      1,
+      Number(src.max_increment_per_run ?? src.maxIncrementPerRun) || 10,
+    );
     return {
       enabled,
       days,
-      credits,
+      credits: imageRunLimit,
+      image_run_limit: imageRunLimit,
+      max_increment_per_run: maxIncrement,
       max_devices: maxDevices,
       label: src.label || src.name || "Google free trial",
       oauth_client_id:
         src.oauth_client_id || src.oauthClientId || CONFIG?.FIREBASE?.oauthClientId || "",
-      function_url:
-        src.function_url ||
-        src.functionUrl ||
-        CONFIG?.GOOGLE_TRIAL_FUNCTION_URL ||
-        "",
     };
   },
 
@@ -2330,8 +2483,6 @@ Please share payment details.`;
       ...trial,
       oauth_client_id:
         trial.oauth_client_id || CONFIG?.FIREBASE?.oauthClientId || "",
-      function_url:
-        trial.function_url || CONFIG?.GOOGLE_TRIAL_FUNCTION_URL || "",
     };
   },
 
@@ -2344,72 +2495,177 @@ Please share payment details.`;
     const c = cfg || {};
     const parts = [];
     if (c.days) parts.push(`${c.days}-day trial`);
-    if (c.credits > 0) parts.push(`${c.credits} credits`);
+    const runs = c.image_run_limit || c.credits;
+    if (runs > 0) parts.push(`${runs} image runs`);
     if (!parts.length) return "One free trial per Google account";
     return `${parts.join(" · ")} · one per Google account`;
   },
 
-  async claimGoogleFreeTrial(machineId, idToken) {
+  async refreshGoogleTrial(uid, idToken, machineId) {
+    const cfg = await this.getGoogleTrialPublicConfig(true);
+    const doc = await this.fetchDocAuth(this.googleTrialCollection(), uid, idToken);
+    if (!doc) {
+      return { ok: false, reason: "Google trial not found. Sign in to start your free trial." };
+    }
+    const trial = this.normalizeGoogleTrialDoc(doc);
+    if (!trial.active) {
+      return { ok: false, reason: "Your Google trial was revoked. Contact support." };
+    }
+    const license = this.buildGoogleTrialLicensePayload(uid, doc, cfg);
+    const expired = license.accessStatus === "expired";
+    const exhausted = license.accessStatus === "runs_exhausted";
+
+    if (
+      machineId &&
+      trial.machineIds.length &&
+      cfg.max_devices > 0 &&
+      !trial.machineIds.includes(machineId) &&
+      trial.machineIds.length >= cfg.max_devices
+    ) {
+      return {
+        ok: false,
+        reason: "Trial device limit reached for this Google account.",
+        license,
+      };
+    }
+
+    if (machineId && !trial.machineIds.includes(machineId)) {
+      const nextIds = [...trial.machineIds, machineId];
+      await this.patchDocAuth(
+        this.googleTrialCollection(),
+        uid,
+        { machine_ids: nextIds },
+        ["machine_ids"],
+        idToken,
+      );
+      license.deviceCount = nextIds.length;
+    }
+
+    return {
+      ok: !expired && !exhausted,
+      license,
+      expired,
+      runsExhausted: exhausted,
+      reason: expired
+        ? "Your Google free trial has expired. Purchase a plan to continue."
+        : exhausted
+          ? "Free trial image runs used up. Buy a plan to continue."
+          : null,
+    };
+  },
+
+  async claimGoogleFreeTrial(machineId, idToken, userMeta = {}) {
     const cfg = await this.getGoogleTrialPublicConfig(true);
     if (!cfg.enabled) {
       return { success: false, reason: "Google free trial is not available right now." };
-    }
-    const functionUrl = (cfg.function_url || "").trim();
-    if (!functionUrl) {
-      return {
-        success: false,
-        reason:
-          "Trial service is not deployed yet. Contact support or use a license key.",
-      };
     }
     if (!idToken) {
       return { success: false, reason: "Please sign in with Google first." };
     }
 
+    const uid = userMeta.uid || userMeta.localId;
+    if (!uid) {
+      return { success: false, reason: "Google account id missing." };
+    }
+
+    const email = String(userMeta.email || "").trim().toLowerCase();
+    if (!email) {
+      return {
+        success: false,
+        reason: "Google account must have an email address.",
+      };
+    }
+
     try {
-      const res = await fetch(functionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ machineId: machineId || "" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        return {
-          success: false,
-          reason:
-            data?.error ||
-            data?.message ||
-            data?.reason ||
-            "Could not start free trial.",
-          code: data?.code || null,
-          trialExpired: !!data?.trialExpired,
+      let existing = await this.fetchDocAuth(
+        this.googleTrialCollection(),
+        uid,
+        idToken,
+      );
+      let created = false;
+
+      if (!existing) {
+        const now = new Date();
+        const expiresAt = new Date(
+          now.getTime() + cfg.days * 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const payload = {
+          google_uid: uid,
+          email,
+          display_name: userMeta.displayName || "",
+          photo_url: userMeta.photoUrl || "",
+          images_limit: cfg.image_run_limit,
+          images_used: 0,
+          expires_at: expiresAt,
+          created_at: now.toISOString(),
+          active: true,
+          machine_ids: machineId ? [machineId] : [],
+          days_granted: cfg.days,
+          label: cfg.label,
         };
+
+        const createRes = await this.createDocAuth(
+          this.googleTrialCollection(),
+          uid,
+          payload,
+          idToken,
+        );
+
+        if (createRes.ok) {
+          existing = createRes.doc || payload;
+          created = true;
+        } else if (createRes.status === 409 || createRes.status === 400) {
+          existing = await this.fetchDocAuth(
+            this.googleTrialCollection(),
+            uid,
+            idToken,
+          );
+          if (!existing) {
+            return {
+              success: false,
+              reason:
+                "Could not create trial. Ask admin to deploy Firestore security rules (see firestore.rules).",
+            };
+          }
+        } else {
+          return {
+            success: false,
+            reason:
+              createRes.error?.error?.message ||
+              "Could not start free trial. Check Firestore rules and try again.",
+          };
+        }
       }
 
-      const licenseKey = data.licenseKey || data.license_key;
-      if (!licenseKey) {
-        return { success: false, reason: "Trial service did not return a license." };
+      const refresh = await this.refreshGoogleTrial(uid, idToken, machineId);
+      const licenseKey = this.buildGoogleTrialLicenseKey(uid);
+
+      if (!refresh.license) {
+        return { success: false, reason: refresh.reason || "Trial unavailable." };
       }
 
-      const verify = await this.verifyPaidLicense(licenseKey, machineId);
-      if (!verify.valid && !verify.license) {
+      if (!refresh.ok) {
         return {
-          success: false,
-          reason: verify.reason || "Trial license could not be activated.",
+          success: true,
+          limited: true,
+          existing: !created,
+          licenseKey,
+          license: refresh.license,
+          trialExpired: !!refresh.expired,
+          runsExhausted: !!refresh.runsExhausted,
+          reason: refresh.reason,
+          message: refresh.reason || "Trial saved on this device.",
         };
       }
 
       return {
         success: true,
-        existing: !!data.existing,
+        existing: !created,
         licenseKey,
-        license: verify.license,
-        message: data.existing
-          ? "Welcome back — your Google trial license is active."
-          : `Free trial activated (${cfg.days} days).`,
+        license: refresh.license,
+        message: created
+          ? `Free trial activated (${cfg.days} days · ${cfg.image_run_limit} runs).`
+          : `Welcome back — ${refresh.license.imagesRemaining} run(s) left on your Google trial.`,
       };
     } catch (e) {
       return {
@@ -2417,6 +2673,59 @@ Please share payment details.`;
         reason: e.message || "Network error while claiming trial.",
       };
     }
+  },
+
+  async incrementGoogleTrialRun(uid, idToken, increment) {
+    const n = Math.max(1, Number(increment) || 1);
+    if (!uid || !idToken) return { ok: false, reason: "Not signed in" };
+
+    const doc = await this.fetchDocAuth(this.googleTrialCollection(), uid, idToken);
+    if (!doc) return { ok: false, reason: "Trial not found" };
+
+    const trial = this.normalizeGoogleTrialDoc(doc);
+    const cfg = await this.getGoogleTrialPublicConfig();
+    const maxStep = cfg.max_increment_per_run || 10;
+    if (n > maxStep) {
+      return { ok: false, reason: `Max ${maxStep} runs per request` };
+    }
+    if (trial.imagesLimit > 0 && trial.imagesUsed + n > trial.imagesLimit) {
+      return {
+        ok: false,
+        reason: "Free trial image runs used up.",
+        runsExhausted: true,
+      };
+    }
+
+    const nextUsed = trial.imagesUsed + n;
+    const patch = await this.patchDocAuth(
+      this.googleTrialCollection(),
+      uid,
+      {
+        images_used: nextUsed,
+        last_run_at: new Date().toISOString(),
+      },
+      ["images_used", "last_run_at"],
+      idToken,
+    );
+
+    if (!patch.ok) {
+      return {
+        ok: false,
+        reason: "Could not update trial usage. Check connection.",
+      };
+    }
+
+    const license = this.buildGoogleTrialLicensePayload(uid, {
+      ...doc,
+      images_used: nextUsed,
+    }, cfg);
+
+    return {
+      ok: true,
+      imagesUsed: nextUsed,
+      imagesRemaining: Math.max(0, trial.imagesLimit - nextUsed),
+      license,
+    };
   },
 
   async hydrateGoogleTrialUi(root, handlers = {}) {
