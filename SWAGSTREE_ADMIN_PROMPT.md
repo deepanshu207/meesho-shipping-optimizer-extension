@@ -704,7 +704,7 @@ Read-only table for superadmin (superadmin read via rules):
 
 1. Firebase Console → Authentication → Google → Enable
 2. Google Cloud → Create **Chrome extension** OAuth client with extension Item ID
-3. Paste `oauth_client_id` + `chrome_extension_id` in config above
+3. Paste `oauth_client_id` + `oauth_web_client_id` + `chrome_extension_id` in config above
 4. OAuth consent screen → add **Test users** (your Gmail) if app is in Testing
 5. Set `trial_credits: 3` (or desired free runs)
 6. **Deploy Firestore rules** from extension repo:
